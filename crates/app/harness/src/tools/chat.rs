@@ -15,8 +15,8 @@ use super::{
 use crate::Place;
 use crate::state::HELD_AT;
 
-fn ask(ctx: &ExecCtx, query: Query) -> Result<Reply, Error> {
-    ctx.query(chat::PROGRAM, &query)
+fn ask(ctx: &ExecCtx, seat: &Seat, query: Query) -> Result<Reply, Error> {
+    crate::reading::chat_for(ctx, seat.agent, &query)
 }
 
 fn agent(seat: &Seat) -> Principal {
@@ -69,8 +69,12 @@ pub(crate) struct ChannelsArgs {
     cursor: Option<String>,
 }
 
-fn channels(ctx: &ExecCtx, page: PageRequest) -> Result<chat::PageResponse<ChannelInfo>, Error> {
-    match ask(ctx, Query::Channels { page })? {
+fn channels(
+    ctx: &ExecCtx,
+    seat: &Seat,
+    page: PageRequest,
+) -> Result<chat::PageResponse<ChannelInfo>, Error> {
+    match ask(ctx, seat, Query::Channels { page })? {
         Reply::Channels(rows) => Ok(rows),
         other => Err(unexpected(chat::PROGRAM, "Channels", &other)),
     }
@@ -98,10 +102,10 @@ impl Tool for Channels {
         )
     }
 
-    fn run(ctx: &ExecCtx, _: &Seat, args: ChannelsArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, seat: &Seat, args: ChannelsArgs) -> Result<Run, Error> {
         let mut asked = page(&args.cursor)?;
         let Some(name) = args.name else {
-            let rows = channels(ctx, asked)?;
+            let rows = channels(ctx, seat, asked)?;
             return Ok(Run::Done(json!({
                 "channels": rows.items.iter().map(channel).collect::<Vec<_>>(),
                 "next": next(&rows.next),
@@ -110,7 +114,7 @@ impl Tool for Channels {
         let wanted = name.to_lowercase();
         let mut kept = Vec::new();
         loop {
-            let rows = channels(ctx, asked)?;
+            let rows = channels(ctx, seat, asked)?;
             let matching = rows.items.iter().filter(|info| named(info, &wanted));
             kept.extend(matching.map(channel));
             let Some(after) = rows.next else { break };
@@ -160,7 +164,7 @@ impl Tool for Messages {
             viewer: vec![agent(seat)],
             page,
         };
-        match ask(ctx, asked)? {
+        match ask(ctx, seat, asked)? {
             Reply::Roots(rows) => Ok(Run::Done(messages(ctx, &rows))),
             other => Err(unexpected(chat::PROGRAM, "Roots", &other)),
         }
@@ -199,7 +203,7 @@ impl Tool for Thread {
             viewer: vec![agent(seat)],
             page: page(&args.cursor)?,
         };
-        match ask(ctx, asked)? {
+        match ask(ctx, seat, asked)? {
             Reply::Thread { root, replies } => Ok(Run::Done(json!({
                 "root": root.as_ref().map(|row| message(ctx, row)),
                 "replies": replies.items.iter().map(|row| message(ctx, row)).collect::<Vec<_>>(),
@@ -260,7 +264,7 @@ impl Tool for Search {
             channel_id: args.channel,
             page: page(&args.cursor)?,
         };
-        match ask(ctx, asked)? {
+        match ask(ctx, seat, asked)? {
             Reply::TextHits(rows) => Ok(Run::Done(json!({
                 "hits": rows.items.iter().map(|row| hit(ctx, row, &terms, args.around)).collect::<Vec<_>>(),
                 "next": next(&rows.next),
@@ -316,8 +320,8 @@ fn record<T: serde::de::DeserializeOwned>(seat: &Seat) -> Option<T> {
         .and_then(|shown| serde_json::from_value(shown.clone()).ok())
 }
 
-fn standing(ctx: &ExecCtx, message_id: String) -> Result<Option<MsgRow>, Error> {
-    match ask(ctx, Query::MessageById { message_id })? {
+fn standing(ctx: &ExecCtx, seat: &Seat, message_id: String) -> Result<Option<MsgRow>, Error> {
+    match ask(ctx, seat, Query::MessageById { message_id })? {
         Reply::Message(row) => Ok(row.filter(|row| !row.deleted)),
         other => Err(unexpected(chat::PROGRAM, "MessageById", &other)),
     }
@@ -404,7 +408,7 @@ impl Tool for Post {
             text: args.text,
         };
         let own = message_id(seat.thread, seat.call);
-        let Some(row) = standing(ctx, own.clone())? else {
+        let Some(row) = standing(ctx, seat, own.clone())? else {
             read_since(ctx, seat.thread, &posted)?;
             return Ok(Run::Write(vec![post(own, &posted)]));
         };
@@ -427,7 +431,7 @@ impl Tool for Post {
         let own = message_id(seat.thread, seat.call);
         let mut writes = Vec::new();
         for id in [moved_id(&own), own] {
-            if let Some(row) = standing(ctx, id)? {
+            if let Some(row) = standing(ctx, seat, id)? {
                 writes.push(delete(&row));
             }
         }
@@ -482,7 +486,14 @@ impl Tool for React {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: ReactArgs) -> Result<Run, Error> {
-        let _ = crate::unanswered::reacted(ctx, seat.agent, &args.channel, args.seq);
+        if let Err(refused) = crate::unanswered::reacted(ctx, seat.agent, &args.channel, args.seq) {
+            let why = crate::calls::refusal(&refused);
+            let (seq, channel) = (args.seq, &args.channel);
+            let text = format!(
+                "reacting to message {seq} in {channel} let go of nothing said there, as reading it failed: {why}"
+            );
+            crate::calls::notice(ctx, seat.thread, text)?;
+        }
         match record::<ReactArgs>(seat) {
             Some(shown) if shown == args => Ok(Run::Done(json!({ "ok": true }))),
             Some(shown) => Ok(Run::Write(vec![

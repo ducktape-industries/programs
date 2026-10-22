@@ -21,6 +21,7 @@ mod program;
 mod promises;
 mod providers;
 mod queries;
+mod reading;
 mod relined;
 mod replies;
 mod resume;

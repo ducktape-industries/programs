@@ -68,7 +68,7 @@ pub(crate) fn reacted(
             limit: Some(0),
         },
     };
-    let rows = match ctx.query(chat::PROGRAM, &asked)? {
+    let rows = match crate::reading::chat_for(ctx, agent, &asked)? {
         chat::Reply::Messages(rows) => rows,
         other => return Err(unexpected_reply(chat::PROGRAM, "MessagesAround", &other)),
     };

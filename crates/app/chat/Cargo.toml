@@ -17,6 +17,8 @@ describe = []
 
 [dependencies]
 ownership = { path = "../../system/ownership" }
+# `programs::Query::Program`: chat reads its own params, the proxies `Query::As` trusts
+programs = { path = "../../system/programs" }
 abi = { workspace = true }
 design = { path = "../../sdk/design" }
 # where a bare link typed in prose ends (`ducklink::bare_end`)

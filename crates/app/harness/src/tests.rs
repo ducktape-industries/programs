@@ -67,6 +67,7 @@ const ELSEWHERE: &str = "acme-harness";
 
 thread_local! {
     static SEATED: std::cell::RefCell<String> = std::cell::RefCell::new(PROGRAM.to_owned());
+    static UNLISTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 fn harness() -> String {
@@ -231,6 +232,22 @@ pub(crate) fn files_params() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn chat_params() -> Vec<u8> {
+    let proxies: Vec<String> = vec![harness()];
+    abi::encode(&proxies)
+}
+
+fn unlist_harness_from_chat() {
+    UNLISTED.with(|unlisted| unlisted.set(true));
+}
+
+fn listed_chat_params() -> Vec<u8> {
+    match UNLISTED.with(|unlisted| unlisted.get()) {
+        true => abi::encode(&Vec::<String>::new()),
+        false => chat_params(),
+    }
+}
+
 struct Roster;
 
 impl ::program::Program for Roster {
@@ -258,6 +275,16 @@ impl ::program::Program for Roster {
                     }),
                 })
             }
+            programs::Query::Program(program) if program == chat::PROGRAM => {
+                Ok(programs::Reply::Program {
+                    height: ctx.env().height,
+                    entry: Some(programs::Entry {
+                        program,
+                        code: ::program::BlobId::Sha256([0; 32]),
+                        params: listed_chat_params(),
+                    }),
+                })
+            }
             _ => Err(::program::Error::new(
                 ::program::code::UNKNOWN_PROGRAM,
                 programs::PROGRAM,
@@ -276,6 +303,7 @@ fn world_as(id: &str) -> World {
 
 fn world_founded(id: &str, roles: ::program::Roles) -> World {
     SEATED.with(|seated| *seated.borrow_mut() = id.to_owned());
+    UNLISTED.with(|unlisted| unlisted.set(false));
     let mut chain = MockChain::founded(roles);
     chain.seat::<identity::Identity>(identity::PROGRAM);
     chain.seat::<Valset>("valset");
@@ -611,13 +639,16 @@ fn a_chat_that_answers_no_clients_still_wakes_the_agent_naming_none() {
     let host = chain.host(PROGRAM);
     let chat_id = ::program::ProgramId::from(chat::PROGRAM);
     let current = host.borrow_mut().siblings.remove(&chat_id).unwrap();
-    let older: ::program::Sibling =
-        Box::new(
-            move |env, request| match abi::decode::<chat::Query>(request) {
-                Ok(chat::Query::Clients { .. }) => current(env, &[u8::MAX]),
-                _ => current(env, request),
-            },
-        );
+    let older: ::program::Sibling = Box::new(move |env, request| {
+        let inner = match abi::decode::<chat::Query>(request) {
+            Ok(chat::Query::As { query, .. }) => abi::decode::<chat::Query>(&query),
+            asked => asked,
+        };
+        match inner {
+            Ok(chat::Query::Clients { .. }) => current(env, &[u8::MAX]),
+            _ => current(env, request),
+        }
+    });
     host.borrow_mut().siblings.insert(chat_id, older);
     let op = chat::Op::PostMessage {
         channel_id: "general".into(),

@@ -25,6 +25,7 @@ mod origin;
 mod owned;
 mod properties;
 mod reactions;
+mod readers;
 mod rooms;
 mod tags;
 

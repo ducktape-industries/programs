@@ -244,7 +244,7 @@ async fn take_back(ctx: &Ctx, thread: &ThreadRow, row: &CallRow) -> Result<Taken
     })
 }
 
-fn notice(ctx: &ExecCtx, id: u64, text: String) -> Result<(), Error> {
+pub(crate) fn notice(ctx: &ExecCtx, id: u64, text: String) -> Result<(), Error> {
     let mut thread = thread(ctx, id)?;
     append(ctx, &mut thread, Body::Notice { text });
     THREADS.put(ctx, &id, &thread);

@@ -36,6 +36,30 @@ seat in, in the order asked, so a reader that lists its rooms learns its seats i
 room's owner posts there seated or not, so whether someone may post is `ChannelRow::admits` with
 what `Seated` says.
 
+## Who reads
+
+A direct room (`dm-<a>-<b>`) reads only for its two peers:
+`MessageById`, `ThreadAttention`, `Roots`, `MessagesAround`, `Thread`, `Members`, `Reactors`,
+`Clients`, `Drafts` and `Repliers` naming such a room are refused `unauthorized` for anyone else,
+and `TextSearch` and `TagSearch` leave out every room their reader can't read (naming one is
+refused). Every other room reads for anyone, a members-only one included: its post policy says
+who posts, not who reads. Chat judges the query's origin, never a field the caller
+fills: a signed key reads as the account the identity role says it acts as (a key on no account
+reads no direct room), a program as its own account, and the kernel every room. `viewer`
+only marks `reacted_by_me`.
+
+`Query::As { reader, query }` asks one chat query, as its borsh bytes, for `reader`. Chat honours
+it only from a program its params list: a borsh `Vec` of program ids, set with chat's Set by
+whoever holds the name. From any other program
+it reads as that program's own account, and from a signed key as that key's account. An `As`
+inside an `As` is refused `invalid_input`. Harness asks every chat read it makes for an agent so,
+its `network_query` and tool files' queries to chat included, so an agent's own `As` reaches chat
+inside harness's and is refused.
+
+Channel rows (`Channels`, `Channel`, `Names`, `Seated`) and each account's own lists (`Listening`,
+`Notices`, `Watching`, `Chosen`, `ChosenBy`, `Followed`, `PostedIn`, `Unread`, `Busy`, `Holders`)
+still answer anyone.
+
 ## Channel meta
 
 A channel's meta is a map of text keys to text values. Whoever may rename the channel sets a key

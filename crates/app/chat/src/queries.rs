@@ -5,6 +5,7 @@ use ::program::{Error, QueryCtx, invalid};
 use std::collections::BTreeSet;
 use store::{KeyCodec, PageRequest, PageResponse};
 
+use crate::reader::Reader;
 use crate::state::{
     ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, MESSAGE_IDS, REACTIONS, REPLIES,
     ROOTS, Stored, message, messages, newest_first, stored, stored_between,
@@ -142,24 +143,28 @@ pub(crate) fn around(
 
 pub(crate) fn text_search(
     ctx: &QueryCtx,
+    reader: &Reader,
     text: &str,
     channel_id: Option<String>,
     page: &PageRequest,
 ) -> Result<PageResponse<MsgRow>, Error> {
     let terms = terms(text)?;
     let scope = PageRequest::scope_of(&(&terms, &channel_id));
-    paged(ctx, scope, channel_id, page, |row| holds_every(&terms, row))
+    paged(ctx, reader, scope, channel_id, page, |row| {
+        holds_every(&terms, row)
+    })
 }
 
 pub(crate) fn tagged(
     ctx: &QueryCtx,
+    reader: &Reader,
     tag: &str,
     channel_id: Option<String>,
     page: &PageRequest,
 ) -> Result<PageResponse<MsgRow>, Error> {
     let label = tag_label(tag);
     let scope = PageRequest::scope_of(&(&label, &channel_id));
-    paged(ctx, scope, channel_id, page, |row| {
+    paged(ctx, reader, scope, channel_id, page, |row| {
         tags(&row.blocks).contains(&label)
     })
 }
@@ -182,6 +187,7 @@ fn holds_every(terms: &[String], row: &Stored) -> bool {
 // in the listing `scope` names.
 fn paged(
     ctx: &QueryCtx,
+    reader: &Reader,
     scope: Vec<u8>,
     channel_id: Option<String>,
     page: &PageRequest,
@@ -198,6 +204,7 @@ fn paged(
     let want = usize::try_from(listing.limit()).unwrap_or(usize::MAX);
     let rows = newest(
         ctx,
+        reader,
         channel_id,
         after.as_ref(),
         want.saturating_add(1),
@@ -215,6 +222,7 @@ fn place(row: &Stored) -> Place {
 
 fn newest(
     ctx: &QueryCtx,
+    reader: &Reader,
     channel_id: Option<String>,
     after: Option<&Place>,
     want: usize,
@@ -230,6 +238,9 @@ fn newest(
     };
     let mut found = Vec::new();
     for (channel_id, head) in heads {
+        if !reader.may_read(ctx, &channel_id)? {
+            continue;
+        }
         let from = match after {
             Some((_, seq, at)) if *at == channel_id => newest_first(*seq).saturating_sub(1),
             _ => head,

@@ -442,6 +442,18 @@ pub(crate) fn seated() -> Query {
     }
 }
 
+pub(crate) fn as_reader() -> Query {
+    let asked = Query::Roots {
+        channel_id: room(),
+        viewer: me(),
+        page: PageRequest::default(),
+    };
+    Query::As {
+        reader: Principal::Account(21),
+        query: abi::encode(&asked),
+    }
+}
+
 pub(crate) fn repliers() -> Query {
     Query::Repliers {
         channel_id: room(),

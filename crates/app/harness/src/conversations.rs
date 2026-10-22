@@ -256,7 +256,7 @@ fn located(ctx: &QueryCtx, agent: &Agent, place: &Place) -> Result<(), Error> {
         viewer: vec![Principal::Account(agent.number)],
         page: PageRequest::default(),
     };
-    let opened = match ctx.query(chat::PROGRAM, &asked)? {
+    let opened = match crate::reading::chat_for(ctx, agent.number, &asked)? {
         chat::Reply::Thread { root, .. } => root,
         other => return Err(unexpected_reply(chat::PROGRAM, "Thread", &other)),
     };

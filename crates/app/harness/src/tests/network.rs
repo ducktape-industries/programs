@@ -778,3 +778,68 @@ fn a_variant_the_program_lacks_or_a_mixed_ask_is_refused_with_what_there_is() {
         assert!(text.starts_with(code::INVALID_INPUT), "{text}");
     }
 }
+
+fn a_dm_with_the_agent(world: &World) -> String {
+    let open = chat::Op::CreateDmChannel {
+        counterpart: world.agent,
+        name: "bo and scout".into(),
+    };
+    world
+        .chain
+        .submit(signed(BO), chat::PROGRAM, &open)
+        .unwrap();
+    let room = chat::dm_channel_id(world.bo, world.agent);
+    let post = chat::Op::PostMessage {
+        channel_id: room.clone(),
+        message_id: "dm-1".into(),
+        blocks: chat::parse_message("only for the two of us"),
+        thread: None,
+    };
+    world
+        .chain
+        .submit(signed(BO), chat::PROGRAM, &post)
+        .unwrap();
+    room
+}
+
+#[test]
+fn an_agent_reads_its_direct_room_through_its_tools() {
+    let world = schemed();
+    let room = a_dm_with_the_agent(&world);
+    let roots = json!({ "roots": { "channel_id": room, "viewer": [], "page": {} } });
+    let calls = [
+        ("m_dm", "chat_messages", json!({ "channel": room })),
+        (
+            "q_dm",
+            "network_query",
+            json!({ "program": "chat", "query": roots }),
+        ),
+    ];
+    let thread = called(&world, &calls);
+    let read = json_result(&world.chain, thread, "m_dm");
+    assert_eq!(read["messages"][0]["text"], "only for the two of us");
+    let queried = json_result(&world.chain, thread, "q_dm");
+    let first = &queried["reply"]["roots"]["items"][0];
+    assert_eq!(first["text"], "only for the two of us");
+}
+
+#[test]
+fn an_agents_own_as_reaches_chat_inside_harnesss_and_is_refused() {
+    let world = schemed();
+    let room = a_dm_with_the_agent(&world);
+    let roots = chat::Query::Roots {
+        channel_id: room,
+        viewer: vec![],
+        page: PageRequest::default(),
+    };
+    let reader = json!({ "account": world.bo });
+    let asked = json!({ "as": { "reader": reader, "query": chat::hex(&abi::encode(&roots)) } });
+    let calls = [(
+        "q_as",
+        "network_query",
+        json!({ "program": "chat", "query": asked }),
+    )];
+    let thread = called(&world, &calls);
+    let refused = refusal(&world.chain, thread, "q_as");
+    assert!(refused.contains("an As inside an As"), "{refused}");
+}

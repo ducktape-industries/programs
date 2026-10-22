@@ -226,3 +226,86 @@ fn a_reaction_on_its_message_answers_it() {
     let second = renewed(chain, &Op::NewThread { agent: world.agent });
     assert_eq!(posts(chain, second), [format!("{CARRIED}{general}")]);
 }
+
+fn direct(world: &World, key: &[u8], from: AccountNumber, to: AccountNumber, text: &str) -> String {
+    let open = chat::Op::CreateDmChannel {
+        counterpart: to,
+        name: "direct".into(),
+    };
+    world
+        .chain
+        .submit(signed(key), chat::PROGRAM, &open)
+        .unwrap();
+    let room = chat::dm_channel_id(from, to);
+    world.post(key, &room, "d1", text);
+    room
+}
+
+fn reacts(chain: &MockChain, room: &str) {
+    let react = json!({ "channel": room, "seq": 1, "emoji": "👀" });
+    model_says(
+        chain,
+        json!([tool_use("toolu_r", "chat_react", react)]),
+        "tool_use",
+    );
+}
+
+#[test]
+fn a_reaction_in_its_direct_room_answers_what_was_said_there() {
+    let world = world();
+    let chain = &world.chain;
+    let first = world.opened("m1", "answer me in general", Some(WINDOW));
+    let room = direct(&world, BO, world.bo, world.agent, "only for the two of us");
+    chain.at(3, 0);
+    ends(chain, "Reading on.");
+    chain.at(4, 0);
+    reacts(chain, &room);
+    chain.at(5, 0);
+    relay_back(chain, "toolu_r");
+    let (reacted, failed) = result_of(chain, first, "toolu_r");
+    assert!(!failed, "{reacted}");
+    chain.at(6, 0);
+    ends(chain, "Seen.");
+    let heard = posts(chain, first);
+    assert!(
+        heard
+            .iter()
+            .any(|text| text.ends_with("only for the two of us")),
+        "{heard:?}"
+    );
+    let general = heard
+        .into_iter()
+        .find(|text| text.ends_with("answer me in general"))
+        .unwrap();
+    let second = renewed(chain, &Op::NewThread { agent: world.agent });
+    assert_eq!(posts(chain, second), [format!("{CARRIED}{general}")]);
+}
+
+#[test]
+fn a_reaction_harness_cannot_read_for_the_agent_leaves_a_notice() {
+    let world = world();
+    let chain = &world.chain;
+    let first = world.opened("m1", "hello", Some(WINDOW));
+    let room = direct(&world, BO, world.bo, world.agent, "only for the two of us");
+    unlist_harness_from_chat();
+    chain.at(3, 0);
+    reacts(chain, &room);
+    chain.at(4, 0);
+    relay_back(chain, "toolu_r");
+    let (reacted, failed) = result_of(chain, first, "toolu_r");
+    assert!(!failed, "{reacted}");
+    let noticed: Vec<String> = frames(chain, first)
+        .into_iter()
+        .chain(held(chain, first))
+        .filter_map(|body| match body {
+            Body::Notice { text } => Some(text),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        noticed
+            .iter()
+            .any(|text| text.contains(&room) && text.contains("as reading it failed")),
+        "{noticed:?}"
+    );
+}

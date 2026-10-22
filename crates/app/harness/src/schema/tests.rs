@@ -62,6 +62,7 @@ pub(crate) fn listed(chain: &MockChain, codes: &[(&str, Vec<u8>)]) {
             code: chain.put_blob(programs::CODE_KIND, code.clone()).unwrap(),
             params: match *program {
                 files::PROGRAM => crate::tests::files_params(),
+                chat::PROGRAM => crate::tests::chat_params(),
                 _ => Vec::new(),
             },
         })

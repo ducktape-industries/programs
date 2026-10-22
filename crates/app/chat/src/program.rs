@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
+use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, invalid};
 
 use crate::listen::{
     choose_for_many, chosen, chosen_by, followed, listen, listened, notices_cut, set_notices,
@@ -17,6 +17,7 @@ use crate::queries::{
     around, attention, by_id, channel, channels, drafts, names, reactors, roots, seen_by, tagged,
     text_search, thread,
 };
+use crate::reader::Reader;
 use crate::state::MEMBERS;
 use crate::{Op, Query, Reply};
 
@@ -182,142 +183,181 @@ impl Program for Chat {
     }
 
     fn query(ctx: &QueryCtx, query: Query) -> Result<Reply, Error> {
-        let (reply, viewer) = match query {
-            Query::Channels { page } => (Reply::Channels(channels(ctx, &page)?), vec![]),
-            Query::Channel { channel_id } => (Reply::Channel(channel(ctx, &channel_id)?), vec![]),
-            Query::MessageById { message_id } => (Reply::Message(by_id(ctx, &message_id)?), vec![]),
-            Query::ThreadAttention { channel_id, author } => (
-                Reply::Attention(attention(ctx, &channel_id, author)?),
-                vec![],
-            ),
-            Query::Roots {
-                channel_id,
-                viewer,
-                page,
-            } => (Reply::Roots(roots(ctx, channel_id, &page)?), viewer),
-            Query::MessagesAround {
-                channel_id,
-                seq,
-                viewer,
-                page,
-            } => (
-                Reply::Messages(around(ctx, channel_id, seq, &page)?),
-                viewer,
-            ),
-            Query::Thread {
-                channel_id,
-                root_seq,
-                viewer,
-                page,
-            } => (thread(ctx, channel_id, root_seq, &page)?, viewer),
-            Query::Members { channel_id, page } => {
-                let members = MEMBERS.range_of(ctx, &channel_id, &page)?;
-                (Reply::Members(members.map(|(_, member)| member)), vec![])
+        match query {
+            Query::As { reader, query } => {
+                let asked = abi::decode::<Query>(&query)
+                    .map_err(|_| invalid("As carries the borsh bytes of one chat query"))?;
+                answer(ctx, &Reader::naming(ctx, reader), asked)
             }
-            Query::TagSearch {
-                tag,
-                viewer,
-                channel_id,
-                page,
-            } => (
-                Reply::TagHits(tagged(ctx, &tag, channel_id, &page)?),
-                viewer,
-            ),
-            Query::Accounts { page } => {
-                (Reply::Accounts(crate::origin::accounts(ctx, page)?), vec![])
-            }
-            Query::Reactors { channel_id, seqs } => {
-                (Reply::Reactors(reactors(ctx, channel_id, &seqs)?), vec![])
-            }
-            Query::Clients { channel_id, seqs } => (
-                Reply::Clients(crate::queries::clients(ctx, &channel_id, &seqs)?),
-                vec![],
-            ),
-            Query::Listening { account, page } => {
-                (Reply::Listening(listened(ctx, account, &page)?), vec![])
-            }
-            Query::Notices { account, page } => {
-                (Reply::Notices(notices_cut(ctx, account, &page)?), vec![])
-            }
-            Query::Followed {
-                channel_id,
-                account,
-                roots,
-            } => (
-                Reply::Followed(followed(ctx, channel_id, account, &roots)?),
-                vec![],
-            ),
-            Query::Watching { account, page } => {
-                (Reply::Watching(watched(ctx, account, &page)?), vec![])
-            }
-            Query::Chosen {
-                account,
-                channel_id,
-            } => (chosen(ctx, account, &channel_id)?, vec![]),
-            Query::Drafts { channel_id } => (Reply::Drafts(drafts(ctx, &channel_id)?), vec![]),
-            Query::Names { ids } => (Reply::Names(names(ctx, &ids)?), vec![]),
-            Query::PostedIn { account, page } => (
-                Reply::PostedIn(crate::order::posted_in(ctx, account, &page)?),
-                vec![],
-            ),
-            Query::ChosenBy {
-                channel_id,
-                accounts,
-            } => (chosen_by(ctx, &channel_id, &accounts)?, vec![]),
-            Query::Unread { account, rooms } => (
-                Reply::Unread(crate::notice::unread(ctx, account, &rooms)?),
-                vec![],
-            ),
-            Query::TextSearch {
-                text,
-                viewer,
-                channel_id,
-                page,
-            } => (
-                Reply::TextHits(text_search(ctx, &text, channel_id, &page)?),
-                viewer,
-            ),
-            Query::Busy {
-                channel_id,
-                thread,
-                for_account,
-            } => {
-                let me = crate::Principal::Account(for_account);
-                let holder = crate::leases::busy(ctx, &channel_id, thread, &me)?;
-                (Reply::Busy(holder), vec![])
-            }
-            Query::Holders {
-                channel_id,
-                thread,
-                page,
-            } => {
-                let holders = crate::leases::holders(ctx, &channel_id, thread, &page)?;
-                (Reply::Holders(holders), vec![])
-            }
-            Query::Seated {
-                principal,
-                channel_ids,
-            } => {
-                let seated = channel_ids
-                    .into_iter()
-                    .filter(|id| MEMBERS.has(ctx, &(id.clone(), principal.clone())))
-                    .collect();
-                (Reply::Seated(seated), vec![])
-            }
-            Query::Repliers { channel_id, roots } => (
-                Reply::Repliers(crate::queries::repliers(ctx, &channel_id, roots)?),
-                vec![],
-            ),
-            Query::Peer { channel_id } => {
-                (Reply::Peer(crate::linked::peer(ctx, &channel_id)?), vec![])
-            }
-            Query::Foreigners { page } => (
-                Reply::Foreigners(crate::linked::foreigners(ctx, &page)?),
-                vec![],
-            ),
-        };
-        seen_by(ctx, reply, viewer)
+            query => answer(ctx, &Reader::of(ctx), query),
+        }
     }
+}
+
+fn answer(ctx: &QueryCtx, reader: &Reader, query: Query) -> Result<Reply, Error> {
+    let (reply, viewer) = match query {
+        Query::Channels { page } => (Reply::Channels(channels(ctx, &page)?), vec![]),
+        Query::Channel { channel_id } => (Reply::Channel(channel(ctx, &channel_id)?), vec![]),
+        Query::MessageById { message_id } => {
+            let row = by_id(ctx, &message_id)?;
+            if let Some(row) = &row {
+                reader.room(ctx, &row.channel_id)?;
+            }
+            (Reply::Message(row), vec![])
+        }
+        Query::ThreadAttention { channel_id, author } => {
+            reader.room(ctx, &channel_id)?;
+            let attended = attention(ctx, &channel_id, author)?;
+            (Reply::Attention(attended), vec![])
+        }
+        Query::Roots {
+            channel_id,
+            viewer,
+            page,
+        } => {
+            reader.room(ctx, &channel_id)?;
+            (Reply::Roots(roots(ctx, channel_id, &page)?), viewer)
+        }
+        Query::MessagesAround {
+            channel_id,
+            seq,
+            viewer,
+            page,
+        } => {
+            reader.room(ctx, &channel_id)?;
+            let rows = around(ctx, channel_id, seq, &page)?;
+            (Reply::Messages(rows), viewer)
+        }
+        Query::Thread {
+            channel_id,
+            root_seq,
+            viewer,
+            page,
+        } => {
+            reader.room(ctx, &channel_id)?;
+            (thread(ctx, channel_id, root_seq, &page)?, viewer)
+        }
+        Query::Members { channel_id, page } => {
+            reader.room(ctx, &channel_id)?;
+            let members = MEMBERS.range_of(ctx, &channel_id, &page)?;
+            (Reply::Members(members.map(|(_, member)| member)), vec![])
+        }
+        Query::TagSearch {
+            tag,
+            viewer,
+            channel_id,
+            page,
+        } => {
+            if let Some(channel_id) = &channel_id {
+                reader.room(ctx, channel_id)?;
+            }
+            let hits = tagged(ctx, reader, &tag, channel_id, &page)?;
+            (Reply::TagHits(hits), viewer)
+        }
+        Query::Accounts { page } => (Reply::Accounts(crate::origin::accounts(ctx, page)?), vec![]),
+        Query::Reactors { channel_id, seqs } => {
+            reader.room(ctx, &channel_id)?;
+            (Reply::Reactors(reactors(ctx, channel_id, &seqs)?), vec![])
+        }
+        Query::Clients { channel_id, seqs } => {
+            reader.room(ctx, &channel_id)?;
+            let clients = crate::queries::clients(ctx, &channel_id, &seqs)?;
+            (Reply::Clients(clients), vec![])
+        }
+        Query::Listening { account, page } => {
+            (Reply::Listening(listened(ctx, account, &page)?), vec![])
+        }
+        Query::Notices { account, page } => {
+            (Reply::Notices(notices_cut(ctx, account, &page)?), vec![])
+        }
+        Query::Followed {
+            channel_id,
+            account,
+            roots,
+        } => (
+            Reply::Followed(followed(ctx, channel_id, account, &roots)?),
+            vec![],
+        ),
+        Query::Watching { account, page } => {
+            (Reply::Watching(watched(ctx, account, &page)?), vec![])
+        }
+        Query::Chosen {
+            account,
+            channel_id,
+        } => (chosen(ctx, account, &channel_id)?, vec![]),
+        Query::Drafts { channel_id } => {
+            reader.room(ctx, &channel_id)?;
+            (Reply::Drafts(drafts(ctx, &channel_id)?), vec![])
+        }
+        Query::Names { ids } => (Reply::Names(names(ctx, &ids)?), vec![]),
+        Query::PostedIn { account, page } => (
+            Reply::PostedIn(crate::order::posted_in(ctx, account, &page)?),
+            vec![],
+        ),
+        Query::ChosenBy {
+            channel_id,
+            accounts,
+        } => (chosen_by(ctx, &channel_id, &accounts)?, vec![]),
+        Query::Unread { account, rooms } => (
+            Reply::Unread(crate::notice::unread(ctx, account, &rooms)?),
+            vec![],
+        ),
+        Query::TextSearch {
+            text,
+            viewer,
+            channel_id,
+            page,
+        } => {
+            if let Some(channel_id) = &channel_id {
+                reader.room(ctx, channel_id)?;
+            }
+            let hits = text_search(ctx, reader, &text, channel_id, &page)?;
+            (Reply::TextHits(hits), viewer)
+        }
+        Query::Busy {
+            channel_id,
+            thread,
+            for_account,
+        } => {
+            let me = crate::Principal::Account(for_account);
+            let holder = crate::leases::busy(ctx, &channel_id, thread, &me)?;
+            (Reply::Busy(holder), vec![])
+        }
+        Query::Holders {
+            channel_id,
+            thread,
+            page,
+        } => {
+            let holders = crate::leases::holders(ctx, &channel_id, thread, &page)?;
+            (Reply::Holders(holders), vec![])
+        }
+        Query::Seated {
+            principal,
+            channel_ids,
+        } => {
+            let seated = channel_ids
+                .into_iter()
+                .filter(|id| MEMBERS.has(ctx, &(id.clone(), principal.clone())))
+                .collect();
+            (Reply::Seated(seated), vec![])
+        }
+        Query::Repliers { channel_id, roots } => {
+            reader.room(ctx, &channel_id)?;
+            let replied = crate::queries::repliers(ctx, &channel_id, roots)?;
+            (Reply::Repliers(replied), vec![])
+        }
+        Query::Peer { channel_id } => (Reply::Peer(crate::linked::peer(ctx, &channel_id)?), vec![]),
+        Query::Foreigners { page } => (
+            Reply::Foreigners(crate::linked::foreigners(ctx, &page)?),
+            vec![],
+        ),
+        Query::As { .. } => {
+            return Err(invalid(
+                "an As inside an As is refused: a proxy names one reader",
+            ));
+        }
+    };
+    seen_by(ctx, reply, viewer)
 }
 
 #[cfg(feature = "program")]

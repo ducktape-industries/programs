@@ -109,11 +109,11 @@ impl Tool for Query {
         discover::query_input()
     }
 
-    fn run(ctx: &ExecCtx, _: &Seat, args: QueryArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, seat: &Seat, args: QueryArgs) -> Result<Run, Error> {
         let interface = schema_of(ctx, &args.program)?;
         let query = spoken(&args.query);
         let asked = interface.encode_query(&query).map_err(refused)?;
-        let answer = ctx.query_raw(args.program, asked)?;
+        let answer = crate::reading::raw_for(ctx, seat.agent, args.program, asked)?;
         Ok(Run::Done(discover::replied(&interface, &answer)))
     }
 }

@@ -795,9 +795,9 @@ fn walk(ctx: &ExecCtx, mut walk: Walk) -> Result<Run, Error> {
                 let payload = interface
                     .encode_query(&body.unwrap_or_default())
                     .map_err(|fault| invalid(format!("{label}: {fault}")))?;
-                let answer = ctx
-                    .query_raw(step.program.clone(), payload)
-                    .map_err(|error| labelled(&label, error))?;
+                let answer =
+                    crate::reading::raw_for(ctx, walk.agent, step.program.clone(), payload)
+                        .map_err(|error| labelled(&label, error))?;
                 let reply = interface.decode_reply(&answer).map_err(|fault| {
                     let why = format!("{label}: the reply does not read: {fault}");
                     Error::new(code::CORRUPT, why)

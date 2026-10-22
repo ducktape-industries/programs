@@ -40,6 +40,7 @@ mod order;
 mod origin;
 mod program;
 mod queries;
+mod reader;
 mod rules;
 mod state;
 #[cfg(test)]
@@ -515,6 +516,8 @@ pub enum Query {
     #[reads(state::FOREIGNERS)]
     #[tool_query(description = "Every user of another network chat holds as an author, a member, a reactor or a mention, with the name crosspond last heard for them and their network's name (null while crosspond has none), a page at a time.", example = examples::foreigners)]
     Foreigners { page: PageRequest },
+    #[tool_query(description = "One chat query, given as its borsh bytes, asked for reader. From a program chat's params list as a proxy (a borsh Vec of program ids), a direct room reads as if reader asked; from any other program it reads as that program's own account, and from a signed key as that key's account. It answers what the query inside answers. An As inside an As is refused.", example = examples::as_reader)]
+    As { reader: Principal, query: Vec<u8> } = 32,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]

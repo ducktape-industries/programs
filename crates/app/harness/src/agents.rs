@@ -490,7 +490,7 @@ fn designation(
             let asked = chat::Query::MessageById {
                 message_id: change.source.object.id.clone(),
             };
-            match ctx.query(chat::PROGRAM, &asked)? {
+            match crate::reading::chat_for(ctx, change.recipient, &asked)? {
                 chat::Reply::Message(row) => row,
                 other => return Err(unexpected_reply(chat::PROGRAM, "MessageById", &other)),
             }
@@ -514,7 +514,7 @@ fn designation(
             room: None,
         });
     };
-    said_in(ctx, row, actor, heard)
+    said_in(ctx, row, change.recipient, actor, heard)
 }
 
 fn reacted_on(ctx: &QueryCtx, change: &Change) -> Result<Option<(chat::MsgRow, String)>, Error> {
@@ -527,7 +527,7 @@ fn reacted_on(ctx: &QueryCtx, change: &Change) -> Result<Option<(chat::MsgRow, S
         return Ok(None);
     };
     let asked = chat::Query::MessageById { message_id };
-    match ctx.query(chat::PROGRAM, &asked)? {
+    match crate::reading::chat_for(ctx, change.recipient, &asked)? {
         chat::Reply::Message(row) => Ok(row.map(|row| (row, emoji))),
         other => Err(unexpected_reply(chat::PROGRAM, "MessageById", &other)),
     }
@@ -559,6 +559,7 @@ fn reacted(ctx: &QueryCtx, row: chat::MsgRow, actor: &Principal, emoji: &str) ->
 fn said_in(
     ctx: &QueryCtx,
     row: chat::MsgRow,
+    reader: AccountNumber,
     actor: &Principal,
     heard: Heard,
 ) -> Result<Designation, Error> {
@@ -567,7 +568,7 @@ fn said_in(
         channel_id: row.channel_id.clone(),
         seqs: vec![row.seq],
     };
-    let client = match ctx.query(chat::PROGRAM, &asked) {
+    let client = match crate::reading::chat_for(ctx, reader, &asked) {
         Ok(chat::Reply::Clients(clients)) => clients.into_iter().find_map(|(_, client)| client),
         Ok(other) => return Err(unexpected_reply(chat::PROGRAM, "Clients", &other)),
         Err(_) => None,
@@ -681,7 +682,8 @@ pub(crate) fn own_posts(ctx: &ExecCtx, agent: AccountNumber, writer: u64, posts:
         let asked = chat::Query::MessageById {
             message_id: message_id.clone(),
         };
-        let Ok(chat::Reply::Message(Some(row))) = ctx.query(chat::PROGRAM, &asked) else {
+        let Ok(chat::Reply::Message(Some(row))) = crate::reading::chat_for(ctx, agent, &asked)
+        else {
             continue;
         };
         let _ = crate::unanswered::answered(ctx, agent, &row.channel_id, row.thread);
@@ -711,7 +713,7 @@ fn own_post(
         from,
         room,
         ..
-    } = said_in(ctx, row, &Principal::Account(agent), Heard::Own)?;
+    } = said_in(ctx, row, agent, &Principal::Account(agent), Heard::Own)?;
     PLACES.put(ctx, &(agent, reached), &thread.id);
     if let Some(room) = &room {
         crate::room_rules::tell(ctx, &mut thread, room)?;
@@ -863,7 +865,7 @@ fn posted(ctx: &QueryCtx, change: &Change) -> Result<Option<chat::MsgRow>, Error
     let asked = chat::Query::MessageById {
         message_id: change.source.object.id.clone(),
     };
-    match ctx.query(chat::PROGRAM, &asked)? {
+    match crate::reading::chat_for(ctx, change.recipient, &asked)? {
         chat::Reply::Message(row) => Ok(row),
         other => Err(unexpected_reply(chat::PROGRAM, "MessageById", &other)),
     }

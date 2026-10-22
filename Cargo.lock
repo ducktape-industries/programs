@@ -728,6 +728,7 @@ dependencies = [
  "ducklink",
  "ownership",
  "program",
+ "programs",
  "proptest",
  "scheduler",
  "serde",
