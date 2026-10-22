@@ -115,3 +115,7 @@ pub(crate) fn runs() -> Query {
         page: PageRequest::default(),
     }
 }
+
+pub(crate) fn time_limit() -> Query {
+    Query::TimeLimit { check: CHECK }
+}

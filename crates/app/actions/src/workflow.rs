@@ -1,6 +1,6 @@
 //! A workflow file, `.forge/workflows/<name>.toml`: the events that run it (`on.push` branches,
 //! `on.change` "opened"/"updated", `on.dispatch`; `on.trigger`, `on.supersede`), its jobs, each one
-//! check (`needs`, `image`, `cpu`, `memory`, `scratch`, `runners`), and `notify.channel`.
+//! check (`needs`, `image`, `cpu`, `memory`, `scratch`, `runners`, `timeout-minutes`), and `notify.channel`.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
@@ -61,6 +61,7 @@ struct JobFile {
     needs: Vec<String>,
     // the accounts whose claim and report count for this job; any runner's when it names none
     runners: Option<Vec<u64>>,
+    timeout_minutes: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -89,6 +90,7 @@ pub(crate) struct Planned {
     pub(crate) asks: Asks,
     pub(crate) needs: Vec<String>,
     pub(crate) runners: Vec<u64>,
+    pub(crate) limit: Option<u64>,
 }
 
 const CHANGE_EVENTS: [&str; 2] = ["opened", "updated"];
@@ -127,6 +129,12 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
                 job.id
             ));
         }
+        if job.timeout_minutes == Some(0) {
+            return Err(format!(
+                "job {:?}: timeout-minutes is at least 1; leave it out for no limit",
+                job.id
+            ));
+        }
         let asks = Asks {
             cpu: job.cpu,
             memory: job.memory,
@@ -149,6 +157,7 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
             asks,
             needs: job.needs,
             runners: job.runners.unwrap_or_default(),
+            limit: job.timeout_minutes,
         });
     }
     for planned in &jobs {

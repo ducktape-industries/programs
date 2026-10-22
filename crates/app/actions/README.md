@@ -26,6 +26,11 @@ A job's `cpu`, `memory` and `scratch` keys are kept as written and answered by `
 for every attempt of its check. actions reads none of them: what they mean is the runner's
 (actions-pods reads `cpu` and `memory` as Kubernetes quantities).
 
+A job's `timeout-minutes` is how many minutes its check may run, at least 1 (a workflow stating
+0 is an errored run). It is kept and answered by `Query::TimeLimit` for every attempt of the check.
+A job that leaves it out has no limit: actions sets no default and no cap of its own. Ending a
+check that runs past it is the runner's: actions-pods reports it failed.
+
 ## What it tells chat
 
 A check of a push or dispatch run that ends failed or errored, in a workflow whose file names

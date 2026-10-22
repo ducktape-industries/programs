@@ -38,3 +38,14 @@ A check's `Asks` (actions `Query::Asks`) become its pod's requests: `cpu` and `m
 Kubernetes quantities (`"16"`, `"500m"`, `"40Gi"`), `scratch` as memory-backed paths, and cargo
 runs as many jobs as the CPUs asked. A `cpu` or `memory` that is no Kubernetes quantity errs the
 check, naming the field and what it read, and makes no pod.
+
+## A check past its time limit
+
+A check whose job states `timeout-minutes` (actions `Query::TimeLimit`) is timed by block time from
+its claim. Each time a wait on its pod ends and the pod still runs, a check that has run that long
+has the last lines of its `/out/log` read (the tail Kubernetes' own `FallbackToLogsOnError`
+keeps: the last 80 lines, at most 2048 bytes), its `/out` kept as for any end, and its pod
+deleted, and it is reported failed, its summary saying how long it ran, the limit, and those lines.
+So it ends at most one egress wait (`DEFAULT_WAIT`) past its limit. A pod taken up after an update
+of this program that recorded no claim time is timed from when it is taken up. A job that states no
+limit runs until its pod ends.

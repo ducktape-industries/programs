@@ -39,6 +39,7 @@ const STRAYED: u64 = 12;
 const QUEUE_HEAD: u64 = 14;
 const QUEUE_PREVIEW: &str = "2222222222222222222222222222222222222222";
 const QUEUED_CHANGE: u64 = 7;
+const LIMITED: u64 = 16;
 
 const CLAIMED: Item<Vec<u64>> = Item::new("claimed");
 const REPORTS: Item<Vec<Report>> = Item::new("reports");
@@ -122,6 +123,9 @@ impl Program for Stand {
             actions::Query::Asks { check } => Ok(actions::Reply::Asks(asks_of(check))),
             actions::Query::Needs { check } => Ok(actions::Reply::Needs(needs_of(check))),
             actions::Query::Outputs { check } => Ok(actions::Reply::Outputs(outputs_of(check))),
+            actions::Query::TimeLimit { check } => {
+                Ok(actions::Reply::TimeLimit((check == LIMITED).then_some(2)))
+            }
             _ => Err(invalid("the stand-in answers checks")),
         }
     }
@@ -1425,4 +1429,48 @@ fn a_pod_whose_out_cannot_be_listed_says_why_its_check_kept_no_log() {
         "pod duckpond-7 ended: exit code 0 (Completed); /out was not listed: find exited 1: {unreached}"
     );
     assert_eq!(node.reports(), [(1, State::Failed, line, None)]);
+}
+
+#[test]
+fn a_check_past_its_time_limit_ends_failed_naming_the_limit_and_the_last_lines_of_its_log() {
+    let mut node = node();
+    node.offer(LIMITED).unwrap();
+    node.after(2_000);
+    node.after(0);
+    node.answer(500, 201, pod("duckpond-7"));
+    for every in [64, 32] {
+        let wait = node.pending();
+        let target = format!("/v1/pods/duckpond-7/wait?every={every}");
+        assert_eq!(
+            aimed(&wait),
+            sent("GET", &target),
+            "under its limit it waits"
+        );
+        for _ in 0..=DEFAULT_WAIT {
+            node.after(1_000);
+        }
+        let read = node.answer(1_000, 200, run_status("running", Value::Null));
+        assert_eq!(read, sent("GET", "/v1/pods/duckpond-7"));
+    }
+    let tail = node.pending();
+    assert_eq!(aimed(&tail), sent("POST", "/v1/pods/duckpond-7/exec"));
+    let command = ["sh", "-c", "tail -n 80 /out/log | tail -c 2048"];
+    let asked = json!({"command": command, "container": "out"});
+    assert_eq!(
+        node.body(&tail),
+        asked,
+        "Kubernetes' FallbackToLogsOnError tail"
+    );
+    let lines = "$ make check\nwaiting on a fifo with no writer\n";
+    let read = json!({"exit_code": 0, "stdout": lines, "stderr": ""});
+    node.after(1_000);
+    node.reply(&tail, 200, read);
+    copied_and_deleted(&mut node);
+    let why = "ran 132 s, past the job's time limit (timeout-minutes = 2); the log ends:\n$ make check\nwaiting on a fifo with no writer";
+    let log = format!("/home/actions-pods/checks/programs/{COMMIT}/gates/gates-1/log");
+    assert_eq!(
+        node.reports(),
+        [(LIMITED, State::Failed, why.to_owned(), Some(log))]
+    );
+    assert!(node.held().is_empty(), "its pod is let go");
 }

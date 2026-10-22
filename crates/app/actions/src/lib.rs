@@ -15,7 +15,9 @@ pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{ASKS, BY_COMMIT, BY_EVENT, CHECKS, MET, NEEDS, OUTPUTS, QUEUED, RUNNERS, RUNS};
+use crate::state::{
+    ASKS, BY_COMMIT, BY_EVENT, CHECKS, MET, NEEDS, OUTPUTS, QUEUED, RUNNERS, RUNS, TIME_LIMITS,
+};
 
 pub const PROGRAM: &str = "actions";
 // Where a repository keeps its workflows, one TOML file each.
@@ -256,6 +258,10 @@ pub enum Query {
         event: Event,
         page: PageRequest,
     },
+    #[ask(Reply::TimeLimit(Option<u64>))]
+    #[reads(TIME_LIMITS)]
+    #[tool_query(description = "How many minutes a check's job may run, as its workflow's timeout-minutes states it, for every attempt; null for a job that states none, as actions sets no limit of its own. Ending a check that runs past it is its runner's (actions-pods reports it failed).", example = crate::examples::time_limit)]
+    TimeLimit { check: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -269,6 +275,7 @@ pub enum Reply {
     Needs(Vec<Need>),
     Outputs(Option<OutputsRow>),
     Runs(PageResponse<RunRow>),
+    TimeLimit(Option<u64>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {

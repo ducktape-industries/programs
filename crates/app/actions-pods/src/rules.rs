@@ -25,6 +25,7 @@ pub(crate) const FULL: Set<u64> = Set::new("full/");
 pub(crate) const CONCURRENT: Item<u64> = Item::new("concurrent");
 pub(crate) const ADOPTING: Map<u64, Adopting> = Map::new("a/");
 pub(crate) const SWEEP_AT: Item<u64> = Item::new("sweep-at");
+pub(crate) const STARTED: Map<u64, u64> = Map::new("started/");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct Adopting {
@@ -150,6 +151,7 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
         retry_waiting_next_block(&ctx).await;
         return Ok(());
     }
+    STARTED.put(&ctx, &check, &ctx.env().time);
     if supersede_earlier_attempts(&ctx, &row).await {
         retry_waiting_next_block(&ctx).await;
     }
@@ -350,6 +352,7 @@ async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) -> boo
         delete(ctx, &held.pod).await;
         PODS.remove(ctx, &check);
         ADOPTING.remove(ctx, &check);
+        STARTED.remove(ctx, &check);
         return true;
     }
     let newest = checks_of_commit(ctx, &found)
@@ -428,6 +431,7 @@ async fn retire_superseded_check(ctx: &Ctx, check: &CheckRow, held: &PodRow, by:
     delete(ctx, &held.pod).await;
     PODS.remove(ctx, &check.id);
     ADOPTING.remove(ctx, &check.id);
+    STARTED.remove(ctx, &check.id);
     if check.state == State::Running {
         let why = format!("superseded by check {} (attempt {})", by.id, by.attempt);
         let superseded = Ending {
@@ -452,6 +456,7 @@ async fn finish_pod_and_retry_waiting(
 ) {
     delete(ctx, pod).await;
     PODS.remove(ctx, &check);
+    STARTED.remove(ctx, &check);
     RUNS.put(ctx, &check, &kept);
     report(ctx, check, ending).await;
     room_changed(ctx).await;
@@ -683,6 +688,18 @@ async fn wait_for_pod_and_copy_outputs(
     pod: &str,
     kept: &mut RunRow,
 ) -> Result<Ending, String> {
+    let limit = time_limit(ctx, check.id)?;
+    let started = match STARTED
+        .get(ctx, &check.id)
+        .map_err(|refused| refused.message)?
+    {
+        Some(started) => started,
+        None => {
+            let now = ctx.env().time;
+            STARTED.put(ctx, &check.id, &now);
+            now
+        }
+    };
     let mut opened = (ctx.env().height, ctx.env().time);
     let ended = loop {
         let every = alive_every(kept.block_ms)?;
@@ -706,6 +723,10 @@ async fn wait_for_pod_and_copy_outputs(
         }
         if let Some(ended) = read_pod_ending(ctx, pod).await? {
             break ended;
+        }
+        let ran = ctx.env().time.saturating_sub(started);
+        if let Some(minutes) = limit.filter(|minutes| ran >= minutes.saturating_mul(60_000)) {
+            return Ok(past_its_limit(ctx, check, pod, minutes, ran).await);
         }
         let (height, time) = (ctx.env().height, ctx.env().time);
         if let Some(blocks) = height.checked_sub(opened.0).filter(|blocks| *blocks > 0) {
@@ -738,6 +759,51 @@ pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
         ));
     }
     Ok(lasts / 2 / 1000)
+}
+
+fn time_limit(ctx: &QueryCtx, check: u64) -> Result<Option<u64>, String> {
+    let asked = actions::Query::TimeLimit { check };
+    match ctx.query::<actions::Query, actions::Reply>(actions::PROGRAM, &asked) {
+        Ok(actions::Reply::TimeLimit(limit)) => Ok(limit),
+        Ok(other) => Err(unexpected_reply(actions::PROGRAM, "TimeLimit", &other).message),
+        Err(refused) => Err(refused.message),
+    }
+}
+
+async fn past_its_limit(ctx: &Ctx, check: &CheckRow, pod: &str, minutes: u64, ran: u64) -> Ending {
+    let tail = match log_tail(ctx, pod).await {
+        Ok(tail) => format!("the log ends:\n{tail}"),
+        Err(why) => format!("the log's last lines were not read: {why}"),
+    };
+    let mut summary = format!(
+        "ran {} s, past the job's time limit (timeout-minutes = {minutes})",
+        ran / 1000
+    );
+    let (log, missed) = kept_out(ctx, check, pod).await;
+    if let Some(missed) = missed {
+        summary.push_str(&format!("; {missed}"));
+    }
+    summary.push_str(&format!("; {tail}"));
+    Ending {
+        state: State::Failed,
+        summary,
+        log,
+    }
+}
+
+async fn log_tail(ctx: &Ctx, pod: &str) -> Result<String, String> {
+    let tail = format!("tail -n {FALLBACK_TO_LOGS_LINES} {LOG} | tail -c {FALLBACK_TO_LOGS_BYTES}");
+    let asked = json!({"command": ["sh", "-c", tail], "container": "out"});
+    let read = post(ctx, format!("/v1/pods/{pod}/exec"), &asked).await?;
+    if read["exit_code"].as_i64() != Some(0) {
+        let stderr = read["stderr"].as_str().unwrap_or_default().trim();
+        return Err(format!("tail exited {}: {stderr}", read["exit_code"]));
+    }
+    Ok(read["stdout"]
+        .as_str()
+        .unwrap_or_default()
+        .trim_end()
+        .to_owned())
 }
 
 async fn read_pod_ending(ctx: &Ctx, pod: &str) -> Result<Option<Value>, String> {
@@ -842,6 +908,8 @@ fn quoted(text: &str) -> String {
 const OUTPUT_KIND: &str = "output";
 // A check's log, which the report links.
 const LOG: &str = "/out/log";
+const FALLBACK_TO_LOGS_LINES: u32 = 80;
+const FALLBACK_TO_LOGS_BYTES: u32 = 2048;
 
 async fn kept_out(ctx: &Ctx, check: &CheckRow, pod: &str) -> (Option<String>, Option<String>) {
     let workflow = check.workflow.trim_end_matches(".toml");

@@ -42,3 +42,4 @@ pub const OUTPUTS: Map<u64, OutputsRow> = Map::new("outputs/");
 // index was kept are not in it.
 pub const BY_EVENT: Set<(String, Vec<u8>, u64)> = Set::new("e/");
 pub const KEEP_STARTED: Set<u64> = Set::new("keep/");
+pub const TIME_LIMITS: Map<u64, u64> = Map::new("time_limits/");

@@ -91,6 +91,24 @@ image = "toolchain"
 steps = ["make lint"]
 "#;
 
+const TIMED: &str = r#"
+[on]
+push = ["main"]
+
+[[jobs]]
+id = "gates"
+runs-on = ["pods"]
+image = "toolchain"
+timeout-minutes = 30
+steps = ["make check"]
+
+[[jobs]]
+id = "lint"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make lint"]
+"#;
+
 const CLAUDE: &str = r#"
 [on]
 change = ["opened"]
@@ -605,6 +623,44 @@ fn a_job_that_states_what_its_runner_asks_keeps_it_as_written_for_every_attempt(
     let other = world.commit(&[root], &[("sixteen.toml", lots.as_str())]);
     world.push(Some(root), other, "main");
     assert_eq!(world.run(2).error, None, "actions reads no quantity");
+}
+
+#[test]
+fn a_job_that_states_its_time_limit_keeps_it_for_every_attempt_and_actions_sets_none() {
+    let mut world = world();
+    let root = world.commit(&[], &[("timed.toml", TIMED)]);
+    world.push(None, root, "main");
+    let limit = |world: &World, check: u64| {
+        let Reply::TimeLimit(limit) = world
+            .chain
+            .query(PROGRAM, &Query::TimeLimit { check })
+            .unwrap()
+        else {
+            panic!("time_limit answers TimeLimit");
+        };
+        limit
+    };
+    assert_eq!(limit(&world, 1), Some(30));
+    assert_eq!(
+        limit(&world, 2),
+        None,
+        "lint states none and actions sets none"
+    );
+    world.act(&Op::Claim { check: 1 }).unwrap();
+    world.act(&Op::Rerun { check: 1 }).unwrap();
+    assert_eq!(world.check(3).attempt, 2);
+    assert_eq!(limit(&world, 3), Some(30), "a rerun keeps the limit");
+}
+
+#[test]
+fn a_time_limit_of_no_minutes_is_an_errored_run() {
+    let mut world = world();
+    let text = TIMED.replace("timeout-minutes = 30", "timeout-minutes = 0");
+    let root = world.commit(&[], &[("timed.toml", text.as_str())]);
+    world.push(None, root, "main");
+    assert!(world.checks(root).is_empty());
+    let why = "job \"gates\": timeout-minutes is at least 1; leave it out for no limit";
+    assert_eq!(world.run(1).error.as_deref(), Some(why));
 }
 
 #[test]

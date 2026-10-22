@@ -10,7 +10,7 @@ use store::Item;
 
 use crate::state::{
     ASKS, BY_COMMIT, BY_EVENT, BY_RUN, CHECKS, KEEP_STARTED, LAST_CHECK, LAST_RUN, LINES, MET,
-    NAMED, NEEDS, OFFERING, OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES,
+    NAMED, NEEDS, OFFERING, OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES, TIME_LIMITS,
 };
 use crate::workflow::{self, Planned};
 use crate::{
@@ -445,6 +445,7 @@ fn queue(ctx: &ExecCtx, run: &RunRow, planned: Planned, attempt: u32) -> Result<
         asks,
         needs,
         runners,
+        limit,
     } = planned;
     let id = next(ctx, &LAST_CHECK)?;
     let waits = !needs.is_empty();
@@ -471,6 +472,9 @@ fn queue(ctx: &ExecCtx, run: &RunRow, planned: Planned, attempt: u32) -> Result<
     }
     if !runners.is_empty() {
         NAMED.put(ctx, &id, &runners);
+    }
+    if let Some(minutes) = limit {
+        TIME_LIMITS.put(ctx, &id, &minutes);
     }
     BY_COMMIT.insert(ctx, &(check.repo.clone(), check.commit.clone(), id));
     BY_RUN.insert(ctx, &(run.id, id));
@@ -972,6 +976,7 @@ fn queue_again(ctx: &ExecCtx, run: &RunRow, check: &CheckRow) -> Result<(), Erro
         asks: ASKS.get(ctx, &check.id)?.unwrap_or_default(),
         needs: NEEDS.get(ctx, &check.id)?.unwrap_or_default(),
         runners: NAMED.get(ctx, &check.id)?.unwrap_or_default(),
+        limit: TIME_LIMITS.get(ctx, &check.id)?,
     };
     queue(ctx, run, planned, attempt)
 }
@@ -1035,6 +1040,10 @@ pub(crate) fn check(ctx: &QueryCtx, id: u64) -> Result<Option<CheckRow>, Error> 
 
 pub(crate) fn asks(ctx: &QueryCtx, id: u64) -> Result<Option<Asks>, Error> {
     ASKS.get(ctx, &id)
+}
+
+pub(crate) fn time_limit(ctx: &QueryCtx, id: u64) -> Result<Option<u64>, Error> {
+    TIME_LIMITS.get(ctx, &id)
 }
 
 pub(crate) fn checks(
