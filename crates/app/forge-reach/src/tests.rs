@@ -1114,6 +1114,113 @@ fn a_review_of_the_patch_names_a_full_commit_and_its_context() {
     }
 }
 
+fn told(world: &World) -> Vec<chat::Notice> {
+    let roots = chat::Query::Roots {
+        channel_id: format!("forge:{REPO}:1"),
+        viewer: Vec::new(),
+        page: PageRequest::first(32),
+    };
+    let chat::Reply::Roots(page) = world.chain.query("chat", &roots).unwrap() else {
+        panic!("Roots answers Roots");
+    };
+    page.items
+        .iter()
+        .filter_map(|row| row.notice())
+        .filter(|notice| notice.kind == "check")
+        .cloned()
+        .collect()
+}
+
+fn asked_of(world: &World) -> Vec<(Vec<u64>, String, String)> {
+    told(world)
+        .into_iter()
+        .map(|notice| (notice.concerns, notice.group, notice.detail))
+        .collect()
+}
+
+#[test]
+fn a_review_wanted_again_at_the_queue_front_tells_its_reviewer_once_in_the_changes_room() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    dev_moves(&mut world, base, X_REWRITTEN);
+    world.require();
+    let merge = world.preview();
+    assert!(told(&world).is_empty(), "the lane has not passed there yet");
+    world.report(merge, LANE_REACH, None).unwrap();
+    let review = Rerun {
+        repo: REPO.into(),
+        n: 1,
+        commit: merge.to_hex(),
+        context: REVIEW.into(),
+    };
+    assert_eq!(world.wanted(REVIEWER_ACCOUNT), [review]);
+    let context = review_context();
+    let detail = format!(
+        "{context} wanted again on Preview {merge}: its result on {feature} no longer carries"
+    );
+    let asked = (vec![REVIEWER_ACCOUNT], format!("{context} {merge}"), detail);
+    assert_eq!(asked_of(&world), std::slice::from_ref(&asked));
+    let notice = &told(&world)[0];
+    assert_eq!(notice.status, chat::message::Status::Running);
+    assert_eq!(notice.subject, format!("{REPO} #1: Feature"));
+    world.report(merge, LANE_REACH, None).unwrap();
+    assert_eq!(asked_of(&world), [asked], "told once per Preview");
+}
+
+#[test]
+fn each_preview_that_wants_a_result_again_tells_its_reporter_once() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    world.report(feature, LANE_REACH, None).unwrap();
+    let moved = dev_moves(&mut world, base, LOCK_MOVED);
+    world.require();
+    let first = world.preview();
+    world.unrequire();
+    dev_moves(
+        &mut world,
+        moved,
+        &[
+            ("Cargo.lock", "lock 3\n"),
+            ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\n8\n"),
+            ("b/y.rs", "y 1\n"),
+        ],
+    );
+    world.require();
+    let second = world.preview();
+    let lane = lane_context();
+    let groups: Vec<(Vec<u64>, String)> = told(&world)
+        .into_iter()
+        .map(|notice| (notice.concerns, notice.group))
+        .collect();
+    assert_eq!(
+        groups,
+        [
+            (vec![LANE_ACCOUNT], format!("{lane} {second}")),
+            (vec![LANE_ACCOUNT], format!("{lane} {first}")),
+        ]
+    );
+}
+
+#[test]
+fn a_notice_chat_refuses_leaves_the_result_wanted() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    world.report(feature, LANE_REACH, None).unwrap();
+    dev_moves(&mut world, base, LOCK_MOVED);
+    world.require();
+    let archive = chat::Op::SetChannelArchived {
+        channel_id: format!("forge:{REPO}:1"),
+        archived: true,
+    };
+    world.chain.submit(Origin::Root, "chat", &archive).unwrap();
+    let merge = world.preview();
+    assert_eq!(world.wanted(LANE_ACCOUNT), [rerun_of(1, merge)]);
+    assert!(told(&world).is_empty());
+}
+
 #[test]
 fn a_merge_leaves_a_change_with_a_required_context_unpassed_as_it_was() {
     let mut world = world();

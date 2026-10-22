@@ -2,7 +2,7 @@
 //! query, each handed to its rule.
 use ::program::schema::Return;
 use ::program::tools::{Described, Tools};
-use ::program::{Error, ExecCtx, Program, QueryCtx, Reply as Wanted};
+use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
 
 use crate::rules::{Patched, Reported, report, report_patch, reports, verdict, wanted, watched};
 use crate::{Op, PROGRAM, Query, Reply};
@@ -25,6 +25,10 @@ impl Program for ForgeReach {
             deliver: crate::watching(),
         };
         ctx.emit(forge::PROGRAM, &watch, Wanted::None);
+        Ok(())
+    }
+
+    fn reply(_ctx: &ExecCtx, _id: &MessageId, _outcome: &Outcome) -> Result<(), Error> {
         Ok(())
     }
 

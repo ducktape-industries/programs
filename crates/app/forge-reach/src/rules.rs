@@ -343,14 +343,14 @@ fn want_again(
     judged: &[Judged],
 ) -> Result<(), Error> {
     let stale = judged.iter().any(Judged::gone_stale);
-    let required = match stale {
-        true => required_of_change(ctx, repo, n)?,
+    let wants = match stale {
+        true => wants_of(ctx, repo, n)?,
         false => None,
     };
     for result in judged {
-        let again = required
-            .as_deref()
-            .is_some_and(|contexts| asked_again(result, judged, contexts));
+        let asking = wants
+            .as_ref()
+            .filter(|(_, contexts)| asked_again(result, judged, contexts));
         let row = (
             result.reporter,
             repo.to_owned(),
@@ -363,12 +363,16 @@ fn want_again(
             result.reporter,
             result.context.clone(),
         );
-        match again {
-            true => {
+        match asking {
+            Some((change, _)) => {
+                let first = !WANTING.has(ctx, &index);
                 WANTED.put(ctx, &row, &n);
                 WANTING.insert(ctx, &index);
+                if first {
+                    ask(ctx, change, &index, result);
+                }
             }
-            false => {
+            None => {
                 if WANTING.has(ctx, &index) {
                     WANTED.remove(ctx, &row);
                     WANTING.remove(ctx, &index);
@@ -429,21 +433,54 @@ fn preview_the_rest(ctx: &ExecCtx, repo: &str, merged: u64) -> Result<(), Error>
     Ok(())
 }
 
-fn required_of_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Vec<String>>, Error> {
-    let Some(into) = target_of(ctx, repo, n)? else {
+type Wants = (forge::Change, Vec<String>);
+
+fn wants_of(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Wants>, Error> {
+    let Some(change) = change_of(ctx, repo, n)? else {
         return Ok(None);
     };
-    required_by_us(ctx, repo, &into)
+    let required = required_by_us(ctx, repo, &change.into)?;
+    Ok(required.map(|contexts| (change, contexts)))
+}
+
+fn ask(ctx: &ExecCtx, change: &forge::Change, index: &Reporting, result: &Judged) {
+    let (repo, merge, _, _) = index;
+    let digest = ctx.sha256(abi::encode(index));
+    let id: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    let context = result.status_context();
+    let notice = chat::Notice {
+        kind: "check".into(),
+        group: format!("{context} {merge}"),
+        subject: format!("{repo} #{}: {}", change.n, change.title),
+        link: verdict_link(ctx, repo, change.n),
+        status: chat::message::Status::Running,
+        detail: format!(
+            "{context} wanted again on Preview {merge}: its result on {} no longer carries",
+            result.gated
+        ),
+        concerns: vec![result.reporter],
+    };
+    let post = chat::Op::Notify {
+        channel_id: change.channel.clone(),
+        message_id: format!("{PROGRAM}:{id}"),
+        thread: None,
+        notice,
+    };
+    ctx.emit(chat::PROGRAM, &post, Wanted::Wanted);
 }
 
 fn target_of(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Vec<u8>>, Error> {
+    Ok(change_of(ctx, repo, n)?.map(|change| change.into))
+}
+
+fn change_of(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<forge::Change>, Error> {
     let asked = forge::Query::Change {
         repo: repo.to_owned(),
         n,
         page: PageRequest::first(1),
     };
     match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
-        Ok(forge::Reply::Change { change, .. }) => Ok(Some(change.into)),
+        Ok(forge::Reply::Change { change, .. }) => Ok(Some(change)),
         Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
         Err(refused) if refused.code == code::NOT_FOUND => Ok(None),
         Err(refused) => Err(refused),
