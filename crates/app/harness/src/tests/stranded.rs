@@ -50,7 +50,7 @@ fn state(chain: &MockChain, thread: u64, call: &str) -> CallState {
 }
 
 fn results(chain: &MockChain, thread: u64, call: &str) -> usize {
-    let of_call = |body: &Body| matches!(body, Body::Result { call: done, .. } if done == call);
+    let of_call = |body: &Body| matches!(body, Body::Result { call: done, .. } | Body::Arrived { call: done, .. } if done == call);
     let bodies = frames(chain, thread).into_iter().chain(held(chain, thread));
     bodies.filter(of_call).count()
 }
@@ -98,6 +98,13 @@ fn a_whole_network_call_an_update_cut_off_fails_past_egress_deadline_and_the_mod
     assert_eq!(state(chain, thread, "n1"), CallState::Writing);
     let request = pods_request(chain);
     chain.cancel_parked(PROGRAM);
+    chain.at(5, 0);
+    assert!(sent(chain).contains("Accepted as call n1"));
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Listing." }]),
+        "end_turn",
+    );
     let deadline = request.made + egress::DEFAULT_WAIT;
     chain.at(deadline + 1, 0);
     assert_eq!(
@@ -105,7 +112,7 @@ fn a_whole_network_call_an_update_cut_off_fails_past_egress_deadline_and_the_mod
         CallState::Writing,
         "egress answers by its deadline"
     );
-    assert_eq!(thread_row(chain, thread).asking, Asking::Running);
+    assert_eq!(results(chain, thread, "n1"), 0);
     chain.at(deadline + 2, 0);
     let (text, failed) = result_of(chain, thread, "n1");
     assert!(failed, "{text}");
@@ -169,9 +176,15 @@ fn an_exec_an_update_cut_off_fails_once_a_resume_comes_and_is_not_run_again() {
     turn(chain, 3, "x1", "run", input);
     assert_eq!(state(chain, thread, "x1"), CallState::Writing);
     let request = pods_request(chain);
+    chain.at(5, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Deploying." }]),
+        "end_turn",
+    );
     updated(chain, 6);
     chain.cancel_parked(PROGRAM);
-    assert_eq!(thread_row(chain, thread).asking, Asking::Running);
+    assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
 
     chain
         .submit(signed(ADA), PROGRAM, &Op::Resume { thread })
@@ -426,4 +439,38 @@ fn new_code_ends_the_turn_a_closed_conversation_lost_to_an_older_switch() {
     let held = |wake: &Wake| matches!(wake, Wake::Turn | Wake::Flight);
     assert!(!wakes.iter().any(held), "{wakes:?}");
     assert_eq!(partial(chain, stuck), None);
+}
+
+#[test]
+fn an_acked_exec_an_update_cut_off_arrives_failed_as_new_input_and_is_not_run_again() {
+    let world = tooled();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "deploy it", Some(WINDOW));
+    let input = json!({ "command": ["make", "deploy"] });
+    turn(chain, 3, "x1", "run", input);
+    let request = pods_request(chain);
+    chain.at(5, 0);
+    let messages = sent(chain);
+    assert!(messages.contains("Accepted as call x1"), "{messages}");
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Deploying." }]),
+        "end_turn",
+    );
+    assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
+
+    updated(chain, 6);
+    chain.cancel_parked(PROGRAM);
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Resume { thread })
+        .unwrap();
+    let why = format!(
+        "harness was updated while this call awaited the answer to what it sent at block {}",
+        request.made
+    );
+    let messages = sent(chain);
+    assert!(messages.contains("Result of tool call x1"), "{messages}");
+    assert!(messages.contains(&why), "{messages}");
+    assert!(messages.contains(AGAIN), "{messages}");
+    assert_eq!(pods_request(chain).id, request.id, "nothing is sent again");
 }

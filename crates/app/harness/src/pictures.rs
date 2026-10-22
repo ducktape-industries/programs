@@ -213,6 +213,13 @@ pub(crate) fn called(ctx: &ExecCtx, thread: u64, call: &str, seq: u64) -> Result
     Ok(())
 }
 
+pub(crate) fn taken(ctx: &ExecCtx, thread: u64, call: &str) -> Result<Vec<Picture>, Error> {
+    let key = (thread, call.to_owned());
+    let pictures = CALL_PICTURES.get(ctx, &key)?.unwrap_or_default();
+    CALL_PICTURES.remove(ctx, &key);
+    Ok(pictures)
+}
+
 pub(crate) fn dropped(ctx: &ExecCtx, thread: u64, call: &str) {
     CALL_PICTURES.remove(ctx, &(thread, call.to_owned()));
 }

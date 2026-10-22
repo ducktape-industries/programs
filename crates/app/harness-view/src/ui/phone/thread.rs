@@ -549,7 +549,11 @@ fn facts(entry: &Entry) -> (String, Vec<(String, String)>) {
                 facts.push(("Configuration".to_owned(), snapshot_words(config)));
                 facts.push(("Tokens".to_owned(), usage_words(usage)));
             }
-            if let Body::Result { call, .. } | Body::Refused { call, .. } = &frame.body {
+            if let Body::Result { call, .. }
+            | Body::Refused { call, .. }
+            | Body::Receipt { call, .. }
+            | Body::Arrived { call, .. } = &frame.body
+            {
                 facts.push(("Call".to_owned(), call.clone()));
             }
             (frame_meta(frame), facts)

@@ -319,6 +319,8 @@ fn entry_row(
             let (tool, what, failed) = match &frame.body {
                 Body::Result { tool, failed, .. } => (tool.clone(), "result", *failed),
                 Body::Refused { tool, .. } => (tool.clone(), "refused", true),
+                Body::Receipt { tool, .. } => (tool.clone(), "accepted", false),
+                Body::Arrived { tool, failed, .. } => (tool.clone(), "result", *failed),
                 _ => return div().into_any_element(),
             };
             let meta = meta(frame.seq, frame_meta(frame), cx);
@@ -587,8 +589,11 @@ fn call_box(
             foreground,
             background,
         ));
-    let result = shown.frames.iter().find(|frame| match &frame.body {
-        Body::Result { call, .. } | Body::Refused { call, .. } => call == id,
+    let result = shown.frames.iter().rev().find(|frame| match &frame.body {
+        Body::Result { call, .. }
+        | Body::Refused { call, .. }
+        | Body::Receipt { call, .. }
+        | Body::Arrived { call, .. } => call == id,
         _ => false,
     });
     let opened_body = open.then(|| {
@@ -647,6 +652,8 @@ fn result_part(
     let (text, failed, refused) = match &frame.body {
         Body::Result { text, failed, .. } => (text.clone(), *failed, false),
         Body::Refused { problem, .. } => (problem.clone(), true, true),
+        Body::Arrived { text, failed, .. } => (text.clone(), *failed, false),
+        Body::Receipt { .. } => (frame.body.text(), false, false),
         _ => (String::new(), false, false),
     };
     let withheld = shown

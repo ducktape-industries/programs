@@ -169,6 +169,22 @@ fn blocks(body: &Body, looks: &[Look], foreign: bool) -> Vec<Value> {
             "is_error": failed,
             "content": result_content(text, looks),
         })],
+        Body::Receipt { call, .. } => vec![json!({
+            "type": "tool_result",
+            "tool_use_id": call,
+            "content": Body::receipt(call),
+        })],
+        Body::Arrived {
+            call,
+            tool,
+            text,
+            failed,
+        } => {
+            let text = Body::arrived(call, tool, text, *failed);
+            let mut blocks = vec![json!({ "type": "text", "text": text })];
+            blocks.extend(looks.iter().flat_map(seen));
+            blocks
+        }
         Body::Notice { .. } | Body::Compaction { .. } => Vec::new(),
     }
 }

@@ -3,7 +3,9 @@
 use ::program::{Error, QueryCtx};
 
 use crate::agents::thread;
-use crate::state::{ARMED, BOOKED, BOOKINGS, FLEET_RUNS, FLIGHTS, RETRIES, SETTLING, STREAMING};
+use crate::state::{
+    ARMED, BOOKED, BOOKINGS, FLEET_RUNS, FLIGHTS, RECEIPTED, RETRIES, SETTLING, STREAMING,
+};
 use crate::{Asking, Wake};
 
 pub(crate) fn wakes(ctx: &QueryCtx, id: u64) -> Result<Vec<Wake>, Error> {
@@ -15,10 +17,12 @@ pub(crate) fn wakes(ctx: &QueryCtx, id: u64) -> Result<Vec<Wake>, Error> {
     if row.asking != Asking::Idle {
         wakes.push(Wake::Turn);
     }
-    if row.open_calls > 0 {
-        wakes.push(Wake::Calls {
-            open: row.open_calls,
-        });
+    let acked = RECEIPTED.scan(ctx, RECEIPTED.prefix_of(&id))?.len();
+    let open = row
+        .open_calls
+        .saturating_add(u32::try_from(acked).unwrap_or(u32::MAX));
+    if open > 0 {
+        wakes.push(Wake::Calls { open });
     }
     if FLIGHTS.get(ctx, &id)?.is_some() {
         wakes.push(Wake::Flight);

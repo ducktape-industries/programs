@@ -56,7 +56,10 @@ pub(crate) fn entries(frames: &[Frame]) -> Vec<Entry<'_>> {
                     }
                 }
             }
-            Body::Result { call, .. } | Body::Refused { call, .. } => {
+            Body::Result { call, .. }
+            | Body::Refused { call, .. }
+            | Body::Receipt { call, .. }
+            | Body::Arrived { call, .. } => {
                 match made_in.get(call.as_str()).map(|at| &mut entries[*at]) {
                     Some(Entry::Worked(work)) => {
                         work.results.insert(call.as_str(), frame);

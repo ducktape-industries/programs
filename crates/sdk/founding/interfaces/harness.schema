@@ -469,8 +469,45 @@
               6,
               "Light",
               "Body__Light"
+            ],
+            [
+              7,
+              "Receipt",
+              "Body__Receipt"
+            ],
+            [
+              8,
+              "Arrived",
+              "Body__Arrived"
             ]
           ]
+        }
+      }
+    ],
+    [
+      "Body__Arrived",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "call",
+                "String"
+              ],
+              [
+                "tool",
+                "String"
+              ],
+              [
+                "text",
+                "String"
+              ],
+              [
+                "failed",
+                "bool"
+              ]
+            ]
+          }
         }
       }
     ],
@@ -539,6 +576,25 @@
               ],
               [
                 "text",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Body__Receipt",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "call",
+                "String"
+              ],
+              [
+                "tool",
                 "String"
               ]
             ]

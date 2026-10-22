@@ -91,6 +91,7 @@ pub const MESSAGE_WAITS: Set<(AccountNumber, (String, u64))> = Set::new("wait-me
 // each tool call whose write awaits its answer, and each stream a watch listens to, by thread:
 // what tells a later run that the frame awaiting it is gone
 pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/");
+pub const RECEIPTED: Set<(u64, String)> = Set::new("receipted/");
 pub const STREAMING: Map<(u64, u64), Flight> = Map::new("streaming/");
 // the harness code that runs, and the block harness first ran it at (`resume::switched`)
 pub const RUNNING: Item<(BlobId, u64)> = Item::new("running");

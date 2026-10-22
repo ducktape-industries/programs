@@ -266,19 +266,22 @@ fn an_image_answer_is_kept_in_the_agents_home_and_shown_to_the_model_in_its_resu
         panic!("Stat answers Stat")
     };
     assert!(entry.is_some(), "files holds {path}");
+    chain.at(6, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Looking." }]),
+        "end_turn",
+    );
     let messages = sent_messages(chain);
     let content = messages.last().unwrap()["content"].as_array().unwrap();
-    let result = content
-        .iter()
-        .find(|block| block["tool_use_id"] == "i1")
-        .unwrap_or_else(|| panic!("no result for i1: {content:?}"));
-    let shown = result["content"].as_array().unwrap();
-    let images: Vec<&Value> = shown
+    let heading = content[0]["text"].as_str().unwrap_or_default();
+    assert!(heading.starts_with("Result of tool call i1"), "{content:?}");
+    let images: Vec<&Value> = content
         .iter()
         .filter(|block| block["type"] == "image")
         .collect();
     let [image] = images[..] else {
-        panic!("one image in the result: {shown:?}");
+        panic!("one image in the result: {content:?}");
     };
     let data = image["source"]["data"].as_str().unwrap();
     let decoded = base64::engine::general_purpose::STANDARD

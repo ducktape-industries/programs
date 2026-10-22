@@ -33,6 +33,7 @@ mod pictures;
 mod promises;
 mod reactions;
 mod reads;
+mod receipts;
 mod resume;
 mod routes;
 mod rules;
@@ -579,6 +580,12 @@ fn result_of(chain: &MockChain, thread: u64, call: &str) -> (String, bool) {
         .chain(held(chain, thread))
         .find_map(|body| match body {
             Body::Result {
+                call: done,
+                text,
+                failed,
+                ..
+            }
+            | Body::Arrived {
                 call: done,
                 text,
                 failed,

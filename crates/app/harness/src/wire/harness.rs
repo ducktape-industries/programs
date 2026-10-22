@@ -133,6 +133,24 @@ fn user_blocks(body: &Body, looks: &[Look]) -> Vec<UserBlock> {
                 content,
             }]
         }
+        Body::Receipt { call, .. } => vec![UserBlock::Result {
+            call: call.clone(),
+            failed: false,
+            content: vec![Shown::Text {
+                text: Body::receipt(call),
+            }],
+        }],
+        Body::Arrived {
+            call,
+            tool,
+            text,
+            failed,
+        } => {
+            let text = Body::arrived(call, tool, text, *failed);
+            let mut blocks = vec![UserBlock::Text { text }];
+            blocks.extend(shows().map(user_block));
+            blocks
+        }
         Body::Turn { .. } | Body::Notice { .. } | Body::Compaction { .. } => Vec::new(),
     }
 }

@@ -414,6 +414,16 @@ pub enum Body {
         author: Principal,
         text: String,
     },
+    Receipt {
+        call: String,
+        tool: String,
+    },
+    Arrived {
+        call: String,
+        tool: String,
+        text: String,
+        failed: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -425,9 +435,12 @@ pub enum Role {
 impl Body {
     pub fn role(&self) -> Option<Role> {
         match self {
-            Body::Post { .. } | Body::Light { .. } | Body::Refused { .. } | Body::Result { .. } => {
-                Some(Role::User)
-            }
+            Body::Post { .. }
+            | Body::Light { .. }
+            | Body::Refused { .. }
+            | Body::Result { .. }
+            | Body::Receipt { .. }
+            | Body::Arrived { .. } => Some(Role::User),
             Body::Turn { .. } => Some(Role::Assistant),
             Body::Notice { .. } | Body::Compaction { .. } => None,
         }
@@ -445,8 +458,10 @@ impl Body {
             Body::Post { text, .. }
             | Body::Light { text, .. }
             | Body::Result { text, .. }
+            | Body::Arrived { text, .. }
             | Body::Notice { text } => text.clone(),
             Body::Refused { problem, .. } => problem.clone(),
+            Body::Receipt { call, .. } => Body::receipt(call),
             Body::Turn { said, .. } => said
                 .iter()
                 .filter_map(Said::text)
@@ -454,6 +469,20 @@ impl Body {
                 .join("\n"),
             Body::Compaction { wire, block } => wire::summary_words(*wire, block),
         }
+    }
+
+    pub fn receipt(call: &str) -> String {
+        format!(
+            "Accepted as call {call}. It runs on its own: its result arrives later as a message of its own headed \"Result of tool call {call}\". Go on with other work, or end your turn to wait for it."
+        )
+    }
+
+    pub fn arrived(call: &str, tool: &str, text: &str, failed: bool) -> String {
+        let verdict = match failed {
+            true => " (failed)",
+            false => "",
+        };
+        format!("Result of tool call {call} ({tool}){verdict}:\n{text}")
     }
 }
 
@@ -542,6 +571,8 @@ impl Tally {
             | Body::Light { .. }
             | Body::Refused { .. }
             | Body::Result { .. }
+            | Body::Receipt { .. }
+            | Body::Arrived { .. }
             | Body::Notice { .. } => {}
         }
     }

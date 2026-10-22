@@ -7,9 +7,9 @@ use abi::role::egress::{self, RELAY};
 use serde_json::Value;
 
 use crate::agents::{running, thread};
-use crate::state::{AWAITED, CALLS, LIVE, Live, SHOWN, THREADS};
+use crate::state::{AWAITED, CALLS, FRAMES, LIVE, Live, RECEIPTED, SHOWN, THREADS};
 use crate::tools::{self, Resolved, Run, Seat, Show, Undo, Write};
-use crate::turns::{append, request, serves, settle};
+use crate::turns::{append, request, say_with, serves, settle};
 use crate::watches;
 use crate::{Asking, Body, CallRow, CallState, Op, Said, ThreadRow};
 
@@ -287,6 +287,77 @@ fn release(ctx: &ExecCtx, id: u64) -> Result<Settled, Error> {
         settle(ctx, &mut thread)?;
     }
     THREADS.put(ctx, &id, &thread);
+    Ok(Settled { carry_on })
+}
+
+pub(crate) fn receipt(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
+    let turn = (thread.base..=thread.frames).rev().find_map(|seq| {
+        let frame = FRAMES.get(ctx, &(thread.id, seq)).ok().flatten()?;
+        match frame.body {
+            Body::Turn { said, .. } => Some(said),
+            _ => None,
+        }
+    });
+    for said in turn.unwrap_or_default() {
+        let Said::ToolUse { id: call, name, .. } = said else {
+            continue;
+        };
+        let key = (thread.id, call.clone());
+        let open = CALLS
+            .get(ctx, &key)?
+            .is_some_and(|row| matches!(row.state, CallState::Relaying | CallState::Writing));
+        let acked = !open || RECEIPTED.has(ctx, &key);
+        if acked {
+            continue;
+        }
+        RECEIPTED.insert(ctx, &key);
+        thread.open_calls = thread.open_calls.saturating_sub(1);
+        append(ctx, thread, Body::Receipt { call, tool: name });
+    }
+    Ok(())
+}
+
+pub(crate) fn unrelayed(ctx: &ExecCtx, id: u64, since: Option<u64>) -> Result<Vec<String>, Error> {
+    let height = ctx.env().height;
+    let mut cut = Vec::new();
+    for (_, call) in RECEIPTED.scan(ctx, RECEIPTED.prefix_of(&id))? {
+        let key = (id, call.clone());
+        let relaying = CALLS
+            .get(ctx, &key)?
+            .filter(|row| row.state == CallState::Relaying);
+        let Some(row) = relaying else {
+            continue;
+        };
+        let switched = since.is_some_and(|since| row.made < since);
+        let lapsed = height > row.made.saturating_add(egress::DEFAULT_WAIT);
+        let lost = switched || lapsed;
+        if lost {
+            CALLS.put(
+                ctx,
+                &key,
+                &CallRow {
+                    made: height,
+                    ..row
+                },
+            );
+            cut.push(call);
+        }
+    }
+    Ok(cut)
+}
+
+fn arrived(
+    ctx: &ExecCtx,
+    key: &(u64, String),
+    mut owner: ThreadRow,
+    result: Body,
+) -> Result<Settled, Error> {
+    RECEIPTED.remove(ctx, key);
+    SHOWN.remove(ctx, key);
+    let pictures = crate::pictures::taken(ctx, key.0, &key.1)?;
+    say_with(ctx, &mut owner, result, pictures);
+    let carry_on = owner.asking == Asking::Idle && owner.due();
+    THREADS.put(ctx, &key.0, &owner);
     Ok(Settled { carry_on })
 }
 
@@ -734,11 +805,21 @@ fn finish(
     let Some(mut row) = CALLS.get(ctx, &key)? else {
         return Ok(Settled::default());
     };
-    let result = Body::Result {
-        call: row.id.clone(),
-        tool: row.tool.clone(),
-        text,
-        failed,
+    let receipted = RECEIPTED.has(ctx, &key);
+    let (call_id, tool) = (row.id.clone(), row.tool.clone());
+    let result = match receipted {
+        true => Body::Arrived {
+            call: call_id,
+            tool,
+            text,
+            failed,
+        },
+        false => Body::Result {
+            call: call_id,
+            tool,
+            text,
+            failed,
+        },
     };
     row.state = CallState::Done {
         height: ctx.env().height,
@@ -750,6 +831,9 @@ fn finish(
     let answered = tools::posts(&row.tool) && !failed;
     if answered {
         crate::runs::answered(ctx, owner.agent, id)?;
+    }
+    if receipted {
+        return arrived(ctx, &key, owner, result);
     }
     match owner.asking {
         Asking::Asked { .. } => {

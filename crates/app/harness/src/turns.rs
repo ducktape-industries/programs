@@ -384,7 +384,18 @@ fn withheld(seq: u64, body: Body) -> Body {
         },
         Body::Post { author, .. } => Body::Post { author, text: note },
         Body::Light { author, .. } => Body::Light { author, text: note },
-        Body::Turn { .. } | Body::Notice { .. } | Body::Compaction { .. } => body,
+        Body::Arrived {
+            call, tool, failed, ..
+        } => Body::Arrived {
+            call,
+            tool,
+            text: note,
+            failed,
+        },
+        Body::Turn { .. }
+        | Body::Notice { .. }
+        | Body::Compaction { .. }
+        | Body::Receipt { .. } => body,
     }
 }
 
@@ -848,7 +859,10 @@ fn plan_without_largest(
 
 fn named(frame: &Frame) -> String {
     match &frame.body {
-        Body::Result { call, tool, .. } | Body::Refused { call, tool, .. } => {
+        Body::Result { call, tool, .. }
+        | Body::Refused { call, tool, .. }
+        | Body::Receipt { call, tool }
+        | Body::Arrived { call, tool, .. } => {
             format!("the result of {tool} call {call}")
         }
         Body::Post { .. }
@@ -1033,6 +1047,7 @@ pub(crate) async fn conclude(
     let Turned { calls, again } = turned(ctx, id, upto, config, answered, partial)?;
     if thread(ctx, id)?.open_calls > 0 {
         resume::watch(ctx, id, None, Some(config)).await;
+        resume::receipts_due(ctx, id).await;
     }
     let runs = calls
         .into_iter()

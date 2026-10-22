@@ -288,10 +288,13 @@ fn answered(frames: &[Frame]) -> usize {
     let results: Vec<&str> = frames[at + 1..]
         .iter()
         .filter_map(|frame| match &frame.body {
-            Body::Result { call, .. } | Body::Refused { call, .. } => Some(call.as_str()),
+            Body::Result { call, .. } | Body::Refused { call, .. } | Body::Receipt { call, .. } => {
+                Some(call.as_str())
+            }
             Body::Post { .. }
             | Body::Light { .. }
             | Body::Turn { .. }
+            | Body::Arrived { .. }
             | Body::Notice { .. }
             | Body::Compaction { .. } => None,
         })
@@ -329,6 +332,8 @@ fn copied(ctx: &ExecCtx, from: &ThreadRow, row: &mut ThreadRow) -> Result<(), Er
         | Body::Light { .. }
         | Body::Refused { .. }
         | Body::Result { .. }
+        | Body::Receipt { .. }
+        | Body::Arrived { .. }
         | Body::Notice { .. }
         | Body::Compaction { .. } => None,
     });

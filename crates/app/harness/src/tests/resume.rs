@@ -162,12 +162,21 @@ fn a_swap_mid_reply_records_what_streamed_whole_and_its_call_runs_once() {
     assert_eq!(turns(chain, thread), 1, "what streamed whole is the turn");
     assert_eq!(calls(chain, thread).len(), 1, "its call is placed once");
     assert_eq!(thread_row(chain, thread).asking, Asking::Running);
+    chain.at(deadline + 3, 0);
+    let messages = sent_messages(chain);
+    let sent = serde_json::to_string(&messages).unwrap();
+    assert!(sent.contains("Accepted as call toolu_1"), "{sent}");
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Reading." }]),
+        "end_turn",
+    );
     let relays = deadline + 1 + egress::DEFAULT_WAIT;
     chain.at(relays + 2, 0);
     relay_back(chain, "toolu_1");
     let results = frames(chain, thread)
         .into_iter()
-        .filter(|body| matches!(body, Body::Result { call, .. } if call == "toolu_1"))
+        .filter(|body| matches!(body, Body::Arrived { call, .. } if call == "toolu_1"))
         .count();
     assert_eq!(results, 1);
     let (_, head) = open_request(chain);
