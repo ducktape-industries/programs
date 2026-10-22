@@ -331,12 +331,9 @@ fn the_details_choose_what_the_readers_agents_hear() {
 
 #[test]
 fn export_details_screens() {
-    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("CHAT_SCREEN_EXPORT", "chat/fixtures") else {
         return;
-    }
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     let mut manifest = Vec::new();
     for (touch, (width, height)) in [(false, (1000, 900)), (true, (390, 1400))] {
         let mut cx = TestAppContext::new();

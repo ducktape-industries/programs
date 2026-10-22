@@ -311,7 +311,7 @@ fn a_markdown_file_screen_draws_its_document() {
 // `FILES_SCREEN_EXPORT=<dir>` writes the guide's screen as the phone draws it.
 #[test]
 fn export_markdown_phone_screen() {
-    let Some(dir) = std::env::var_os("FILES_SCREEN_EXPORT") else {
+    let Some(dir) = ::view::testing::screens("FILES_SCREEN_EXPORT", "files-screens") else {
         return;
     };
     let net = with_guide();
@@ -321,4 +321,11 @@ fn export_markdown_phone_screen() {
     tap(&mut cx, "files/entry/guide.md");
     let out = std::path::Path::new(&dir).join("phone.json");
     std::fs::write(out, serde_json::to_vec(&cx.whole_frame()).unwrap()).unwrap();
+    let (width, height) = cx.viewport();
+    let listed = serde_json::json!([{ "name": "phone", "width": width as u32, "height": height as u32, "theme": "light" }]);
+    std::fs::write(
+        dir.join("phone-manifest.json"),
+        serde_json::to_vec_pretty(&listed).unwrap(),
+    )
+    .unwrap();
 }

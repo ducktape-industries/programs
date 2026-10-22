@@ -1114,6 +1114,9 @@ impl TestAppContext {
     pub fn simulate_theme(&mut self, dark: bool) {
         self.run(vec![Event::Theme { dark }]);
     }
+    pub fn viewport(&self) -> (f32, f32) {
+        self.viewport.unwrap_or(VIEWPORT)
+    }
     /// The pane is `width` by `height`: what `Window::viewport_size` reads
     /// from the next frame on, sent ahead of the draw as the host sends it
     /// (a resize, a restore into another window). Before a view is opened,

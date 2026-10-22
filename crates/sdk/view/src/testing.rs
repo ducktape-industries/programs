@@ -454,7 +454,9 @@ mod fake_host;
 mod focus;
 mod notifier;
 mod relay;
+mod screens;
 pub use context::{TestAppContext, TickReport, VIEWPORT};
+pub use screens::screens;
 
 /// What a test host answers an `op.submit` it took: [`Submitted::Applied`]
 /// with `output`, under a frame identity no test reads.

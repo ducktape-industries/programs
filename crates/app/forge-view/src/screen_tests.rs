@@ -10,12 +10,9 @@ use view::testing::TestAppContext;
 
 #[test]
 fn export_forge_screens() {
-    if std::env::var_os("FORGE_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("FORGE_SCREEN_EXPORT", "forge-screens") else {
         return;
-    }
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/forge-screens");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     let mut manifest = Vec::new();
     for (index, state) in SCREENS.iter().enumerate() {
         for dark in [false, true] {

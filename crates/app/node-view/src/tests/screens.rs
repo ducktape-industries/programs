@@ -243,11 +243,9 @@ fn in_app_frame(mut frame: view::wire::Frame) -> view::wire::Frame {
 
 #[test]
 fn export_node_screens() {
-    if std::env::var_os("NODE_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("NODE_SCREEN_EXPORT", "node-screens") else {
         return;
-    }
-    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/node-screens");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     let screens = SCREENS
         .iter()
         .enumerate()

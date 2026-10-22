@@ -1574,17 +1574,21 @@ fn a_page_link_another_network_sends_stays_a_link_on_the_phone_and_ours_draws_th
 // `CHAT_SCREEN_EXPORT=1` writes the same room as the phone draws it.
 #[test]
 fn export_markdown_phone_screens() {
-    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("CHAT_SCREEN_EXPORT", "chat/fixtures") else {
         return;
-    }
+    };
     let (mut cx, view) = in_general();
     rows_are(&mut cx, &view, vec![parsed_row(1, 7, TYPED_TABLE)]);
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
-    std::fs::create_dir_all(&out).unwrap();
     std::fs::write(
         out.join("markdown-phone.json"),
         serde_json::to_vec(&cx.whole_frame()).unwrap(),
+    )
+    .unwrap();
+    let (width, height) = cx.viewport();
+    let listed = serde_json::json!([{ "name": "markdown-phone", "width": width as u32, "height": height as u32, "theme": "light" }]);
+    std::fs::write(
+        out.join("markdown-phone-manifest.json"),
+        serde_json::to_vec_pretty(&listed).unwrap(),
     )
     .unwrap();
 }

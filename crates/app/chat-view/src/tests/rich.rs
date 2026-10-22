@@ -439,9 +439,9 @@ fn a_page_link_another_network_sends_stays_a_link_and_ours_draws_the_page() {
 // a fenced block for the app's node-less renderer, as the desktop draws it.
 #[test]
 fn export_markdown_screens() {
-    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("CHAT_SCREEN_EXPORT", "chat/fixtures") else {
         return;
-    }
+    };
     let (mut cx, view) = opened();
     cx.update(&view, |chat, _, cx| {
         let room = chat.room.as_mut().unwrap();
@@ -449,12 +449,16 @@ fn export_markdown_screens() {
         cx.notify();
     });
     cx.run_until_parked();
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
-    std::fs::create_dir_all(&out).unwrap();
     std::fs::write(
         out.join("markdown-desktop.json"),
         serde_json::to_vec(&cx.whole_frame()).unwrap(),
+    )
+    .unwrap();
+    let (width, height) = cx.viewport();
+    let listed = serde_json::json!([{ "name": "markdown-desktop", "width": width as u32, "height": height as u32, "theme": "light" }]);
+    std::fs::write(
+        out.join("markdown-desktop-manifest.json"),
+        serde_json::to_vec_pretty(&listed).unwrap(),
     )
     .unwrap();
 }

@@ -906,12 +906,9 @@ fn ago_counts_from_the_chains_newest_block() {
 // light and dark, listed in `board-manifest.json`.
 #[test]
 fn export_board_widget_screens() {
-    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("CHAT_SCREEN_EXPORT", "chat/fixtures") else {
         return;
-    }
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     let mut manifest = Vec::new();
     for dark in [false, true] {
         let theme = if dark { "dark" } else { "light" };
@@ -1042,12 +1039,9 @@ fn room_fills_queries_and_templates() {
 // pane and the phone's details page, listed in `pane-manifest.json`.
 #[test]
 fn export_job_pane_screens() {
-    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("CHAT_SCREEN_EXPORT", "chat/fixtures") else {
         return;
-    }
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     let mut manifest = Vec::new();
     for (touch, (width, height)) in [(false, (1280, 800)), (true, (390, 1400))] {
         let held = held(&[(JOB, JOBBED), (NOTES, SUMMARY)]);

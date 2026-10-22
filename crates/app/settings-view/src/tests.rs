@@ -411,12 +411,9 @@ fn a_refusal_retries_and_a_snapshot_restores() {
 }
 #[test]
 fn export_settings_screens() {
-    if std::env::var_os("SETTINGS_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("SETTINGS_SCREEN_EXPORT", "settings/fixtures") else {
         return;
-    }
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/settings/fixtures");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     let mut manifest = Vec::new();
     for (i, state) in [
         "loading",

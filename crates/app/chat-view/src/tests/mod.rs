@@ -630,16 +630,20 @@ fn a_block_re_reads_only_the_tables_it_wrote_to() {
 
 #[test]
 fn export_chat_screens() {
-    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("CHAT_SCREEN_EXPORT", "chat/fixtures") else {
         return;
-    }
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     let (cx, _view) = opened();
     std::fs::write(
         out.join("room-light.json"),
         serde_json::to_vec(&cx.whole_frame()).unwrap(),
+    )
+    .unwrap();
+    let (width, height) = cx.viewport();
+    let listed = serde_json::json!([{ "name": "room-light", "width": width as u32, "height": height as u32, "theme": "light" }]);
+    std::fs::write(
+        out.join("room-light-manifest.json"),
+        serde_json::to_vec_pretty(&listed).unwrap(),
     )
     .unwrap();
 }

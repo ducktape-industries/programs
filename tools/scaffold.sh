@@ -374,16 +374,17 @@ fn a_refused_re_read_says_why() {
 fn the_ready_screen_shows_the_count() {
     let cx = ready();
     assert!(cx.has_text("Count: 5"), "{:?}", cx.texts());
-    if std::env::var_os("${upper}_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("${upper}_SCREEN_EXPORT", "$program-screens") else {
         return;
-    }
-    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/$program-screens");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     std::fs::write(
         out.join("01-ready-light.json"),
-        serde_json::to_vec(cx.root()).unwrap(),
+        serde_json::to_vec(&cx.whole_frame()).unwrap(),
     )
     .unwrap();
+    let (width, height) = cx.viewport();
+    let listed = serde_json::json!([{ "name": "01-ready-light", "width": width as u32, "height": height as u32, "theme": "light" }]);
+    std::fs::write(out.join("manifest.json"), serde_json::to_vec_pretty(&listed).unwrap()).unwrap();
 }
 EOF
     grep -q 'Count' "crates/app/$program/src/lib.rs" || echo "note: $program has no Query::Count; the screen's count() in $dir/src/lib.rs asks it, so step 1 comes before step 2"

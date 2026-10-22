@@ -780,9 +780,14 @@ microphone, remote or artifact piece from a view that does not declare `web`,
 panics with
 `methods::refusal::UNDECLARED_CAPABILITY`, the code the app refuses them
 with. A node method may name any program, in a test as in the app.
-Screen export: a test gated on `*_SCREEN_EXPORT=1` (`FORGE_SCREEN_EXPORT`,
+Screen export: a test that writes each screen's whole frame (its tree and
+the styles it names, `TestAppContext::whole_frame`) as JSON, with a
+manifest beside them (`*manifest.json`: each frame's `name`, `width`,
+`height` and `theme`; `cx.viewport()` is the pane's size). It asks
+`testing::screens(var, folder)` where to write: `$SHOTS/<folder>` in a
+build.sh `shot` run, which then draws every listed frame to a PNG with the
+app's renderer; else the view's own `*_SCREEN_EXPORT` (`FORGE_SCREEN_EXPORT`,
 `crates/app/forge-view/src/screen_tests.rs`; `CHAT_SCREEN_EXPORT`,
-`crates/app/chat-view/src/tests/mod.rs`) writes each screen's whole frame (its
-tree and the styles it names, `TestAppContext::whole_frame`) as JSON under
-`target/`; the app renders those with `dev/screens/chat-screens.sh
-FIXTURES_DIR OUTPUT_DIR` (`ducktape-app --render-tree`, debug builds).
+`crates/app/chat-view/src/tests/mod.rs`), an absolute path or `target/<folder>`;
+else the test does nothing. The app draws a frame with `dev/screens/png.sh`
+(headless) or `dev/screens/chat-screens.sh FIXTURES_DIR OUTPUT_DIR`.

@@ -1526,7 +1526,7 @@ fn a_text_file_not_named_markdown_is_not_drawn_as_one() {
 // it, for the app's node-less renderer.
 #[test]
 fn export_markdown_screen() {
-    let Some(dir) = std::env::var_os("FILES_SCREEN_EXPORT") else {
+    let Some(dir) = ::view::testing::screens("FILES_SCREEN_EXPORT", "files-screens") else {
         return;
     };
     let net = with_guide();
@@ -1538,6 +1538,13 @@ fn export_markdown_screen() {
     cx.run_until_parked();
     let out = std::path::Path::new(&dir).join("desktop.json");
     std::fs::write(out, serde_json::to_vec(&cx.whole_frame()).unwrap()).unwrap();
+    let (width, height) = cx.viewport();
+    let listed = serde_json::json!([{ "name": "desktop", "width": width as u32, "height": height as u32, "theme": "light" }]);
+    std::fs::write(
+        dir.join("desktop-manifest.json"),
+        serde_json::to_vec_pretty(&listed).unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]

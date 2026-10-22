@@ -2339,12 +2339,9 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
 /// (`ducktape-app --render-tree <json>`), light and dark, and a manifest of their sizes.
 #[test]
 fn export_harness_screens() {
-    if std::env::var_os("HARNESS_SCREEN_EXPORT").is_none() {
+    let Some(out) = ::view::testing::screens("HARNESS_SCREEN_EXPORT", "harness-screens") else {
         return;
-    }
-    let out =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/harness-screens");
-    std::fs::create_dir_all(&out).unwrap();
+    };
     let mut manifest = Vec::new();
     for (screen, mut cx, (width, height)) in screens() {
         for dark in [false, true] {
