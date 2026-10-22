@@ -260,9 +260,10 @@ impl Judged {
         passed && !self.differs.is_empty()
     }
 
-    fn passes(&self, context: &str) -> bool {
+    fn passes_or_is_asked(&self, context: &str) -> bool {
         let named = self.status_context() == context;
-        named && self.state == CheckState::Passed
+        let settled = self.state == CheckState::Passed || self.gone_stale();
+        named && settled
     }
 }
 
@@ -392,7 +393,7 @@ fn asked_again(result: &Judged, judged: &[Judged], required: &[String]) -> bool 
     required
         .iter()
         .filter(|other| **other != context)
-        .all(|other| judged.iter().any(|each| each.passes(other)))
+        .all(|other| judged.iter().any(|each| each.passes_or_is_asked(other)))
 }
 
 fn preview_the_rest(ctx: &ExecCtx, repo: &str, merged: u64) -> Result<(), Error> {

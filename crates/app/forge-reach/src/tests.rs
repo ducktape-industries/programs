@@ -793,14 +793,12 @@ fn a_branch_that_does_not_require_forge_reach_wants_nothing_again() {
     assert!(world.wanted(LANE_ACCOUNT).is_empty());
 }
 
-#[test]
-fn a_review_gone_stale_beside_the_lane_wants_no_lane_again() {
-    let mut world = world();
-    let (base, feature) = opened(&mut world);
-    reviewed(&world, feature);
+fn both_gone_stale(world: &mut World) -> Oid {
+    let (base, feature) = opened(world);
+    reviewed(world, feature);
     world.report(feature, LANE_REACH, None).unwrap();
     dev_moves(
-        &mut world,
+        world,
         base,
         &[
             ("Cargo.lock", "lock 1\n"),
@@ -809,8 +807,44 @@ fn a_review_gone_stale_beside_the_lane_wants_no_lane_again() {
         ],
     );
     world.require();
-    world.preview();
+    world.preview()
+}
+
+fn review_of(n: u64, commit: Oid) -> Rerun {
+    Rerun {
+        repo: REPO.into(),
+        n,
+        commit: commit.to_hex(),
+        context: REVIEW.into(),
+    }
+}
+
+#[test]
+fn a_review_and_a_lane_gone_stale_together_are_each_wanted_and_told_once() {
+    let mut world = world();
+    let merge = both_gone_stale(&mut world);
+    assert_eq!(world.wanted(LANE_ACCOUNT), [rerun_of(1, merge)]);
+    assert_eq!(world.wanted(REVIEWER_ACCOUNT), [review_of(1, merge)]);
+    let mut concerns: Vec<Vec<u64>> = told(&world)
+        .into_iter()
+        .map(|notice| notice.concerns)
+        .collect();
+    concerns.sort();
+    assert_eq!(concerns, [vec![LANE_ACCOUNT], vec![REVIEWER_ACCOUNT]]);
+    world.report(merge, LANE_REACH, None).unwrap();
     assert!(world.wanted(LANE_ACCOUNT).is_empty());
+    assert_eq!(world.wanted(REVIEWER_ACCOUNT), [review_of(1, merge)]);
+    assert_eq!(told(&world).len(), 2, "each is told once per Preview");
+}
+
+#[test]
+fn a_lane_that_fails_on_the_preview_ends_the_ask_for_a_review_gone_stale_beside_it() {
+    let mut world = world();
+    let merge = both_gone_stale(&mut world);
+    let failed = world.say(LANE, merge, CONTEXT, CheckState::Failed, LANE_REACH);
+    failed.unwrap();
+    assert!(world.wanted(LANE_ACCOUNT).is_empty());
+    assert!(world.wanted(REVIEWER_ACCOUNT).is_empty());
 }
 
 #[test]

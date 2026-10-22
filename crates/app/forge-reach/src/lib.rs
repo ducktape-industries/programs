@@ -117,7 +117,7 @@ pub enum Query {
     Verdict { repo: String, n: u64 },
     #[ask(Reply::Wanted(PageResponse<Rerun>))]
     #[reads(WANTED)]
-    #[tool_query(description = "The Previews that ask reporter's result again: a result that passed went Pending on the change's latest Preview because a path it read differs there, the branch requires it of forge-reach, and every other context the branch requires passed there. Each names the repository, change, Preview commit and context; reporting that commit in that context ends it. When forge-reach first asks, it tells the reporter by a notice in the change's room that concerns the reporter alone.", example = crate::examples::wanted)]
+    #[tool_query(description = "The Previews that ask reporter's result again: a result that passed went Pending on the change's latest Preview because a path it read differs there, the branch requires it of forge-reach, and every other context the branch requires passed there or is itself asked again there, so results that went stale together are each asked and a failed or missing one stops the asks. Each names the repository, change, Preview commit and context; reporting that commit in that context ends it. When forge-reach first asks, it tells the reporter by a notice in the change's room that concerns the reporter alone.", example = crate::examples::wanted)]
     Wanted {
         reporter: AccountNumber,
         page: PageRequest,
