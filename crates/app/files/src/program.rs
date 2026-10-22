@@ -25,6 +25,14 @@ impl Program for Files {
         if let Op::HoldHead { after } = op {
             return crate::hold::hold_head(ctx, after);
         }
+        if let Op::Migrate {
+            height,
+            first,
+            last,
+        } = op
+        {
+            return crate::watchers::migrate(ctx, height, first, last);
+        }
         let writer = ctx.sender()?;
         match op {
             Op::Commit {
@@ -42,6 +50,7 @@ impl Program for Files {
             }
             Op::Vacate { paths } => crate::guards::vacate(ctx, paths),
             Op::HoldHead { .. } => Ok(()),
+            Op::Migrate { .. } => Ok(()),
         }
     }
 

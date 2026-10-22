@@ -76,6 +76,12 @@ pub enum Op {
     Vacate { paths: Vec<String> },
     #[tool_op(description = "Hold one folder of the head on its lines: the first folder after `after` in path order (the root and the snapshot when null), its tree and each file object in it, put again with the same bytes, then book the next call a block later. A one-time step for objects put before files held them on lines; open to anyone, and a second chain changes nothing. Returns the folder it held, or null once none is left.", returns = Option<String>, example = examples::hold_head)]
     HoldHead { after: Option<String> },
+    #[tool_op(description = "Rewrite the program ids files stores by the programs role's Renames at height: each renamed watcher hears of commits under its new id (a watch set there already is kept), over the watchers first..=last (each a program id; null: from the first, or to the last). Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.", example = examples::migrate)]
+    Migrate {
+        height: u64,
+        first: Option<::program::ProgramId>,
+        last: Option<::program::ProgramId>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -363,6 +369,23 @@ pub fn describe(op: &Op) -> describe::Description {
                 Value::List(paths.iter().map(Value::text).collect()),
             )],
         ),
+        Op::Migrate {
+            height,
+            first,
+            last,
+        } => {
+            let bound = |bound: &Option<::program::ProgramId>, open: &str| {
+                Value::text(bound.clone().unwrap_or_else(|| open.to_owned()))
+            };
+            (
+                "Migrate".to_owned(),
+                vec![
+                    field("height", Value::text(height.to_string())),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
 }
@@ -415,7 +438,8 @@ fn op_variants_only_append() {
             "Unguard",
             "AdoptOwners",
             "Vacate",
-            "HoldHead"
+            "HoldHead",
+            "Migrate"
         ]
     );
 }

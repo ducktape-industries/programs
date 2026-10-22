@@ -7,7 +7,7 @@ use borsh::schema::Definition;
 use super::{ada, ask, head, host, text};
 use crate::*;
 
-const LIVE_OPS: [(&str, i64); 9] = [
+const LIVE_OPS: [(&str, i64); 10] = [
     ("Commit", 1),
     ("Pin", 2),
     ("Unpin", 3),
@@ -17,6 +17,7 @@ const LIVE_OPS: [(&str, i64); 9] = [
     ("AdoptOwners", 7),
     ("Vacate", 8),
     ("HoldHead", 9),
+    ("Migrate", 10),
 ];
 
 const LIVE_CHANGES: [(&str, i64); 6] = [

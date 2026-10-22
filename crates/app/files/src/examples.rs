@@ -168,3 +168,11 @@ pub(crate) fn owner() -> Query {
 pub(crate) fn hold_head() -> Op {
     Op::HoldHead { after: None }
 }
+
+pub(crate) fn migrate() -> Op {
+    Op::Migrate {
+        height: 300_000,
+        first: Some("harness".into()),
+        last: None,
+    }
+}
