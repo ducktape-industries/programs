@@ -2,7 +2,7 @@
 //! them: what an agent edits rather than build one from the schema.
 use abi::role::ownership::{Guard, Write};
 
-use crate::{Adopted, Op, PageRequest, Party, Query, Rule, Scope, Writers};
+use crate::{Adopted, Op, PageRequest, Party, Query, Rows, Rule, Scope, Writers};
 
 const POLICY: u64 = 3;
 
@@ -96,6 +96,16 @@ pub(crate) fn moved() -> Op {
     Op::Moved {
         from_key: key(),
         to_key: b"f/notes-old.md".to_vec(),
+    }
+}
+
+pub(crate) fn migrate() -> Op {
+    Op::Migrate {
+        height: 300_000,
+        rows: Rows::Records {
+            first: Some((files(), key())),
+            last: None,
+        },
     }
 }
 

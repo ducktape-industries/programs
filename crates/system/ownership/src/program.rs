@@ -40,6 +40,7 @@ impl Program for Ownership {
             Op::SetDefault { scope, policy } => set_default(ctx, scope, policy),
             Op::Adopt { items } => rules::adopt(ctx, items),
             Op::Moved { from_key, to_key } => rules::moved(ctx, from_key, to_key),
+            Op::Migrate { height, rows } => rules::migrate(ctx, height, rows),
         }
     }
 

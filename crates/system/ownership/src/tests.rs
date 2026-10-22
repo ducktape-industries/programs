@@ -714,3 +714,269 @@ fn a_record_left_on_its_owners_open_policy_moves_to_todays_rule_and_no_other_rec
     send(&chain, &Adopting::Adopt(items)).unwrap();
     assert_eq!(keys.map(|key| adopted(&chain, key).0), settled);
 }
+
+fn renamed(chain: &mut MockChain, renames: &[(&str, &str)]) {
+    chain.seat::<::program::Renamer>("programs");
+    let renames: Vec<(ProgramId, ProgramId)> = renames
+        .iter()
+        .map(|(from, to)| ((*from).to_owned(), (*to).to_owned()))
+        .collect();
+    chain.submit(by("ada"), "programs", &renames).unwrap();
+}
+
+fn migrate(chain: &MockChain, rows: Rows) {
+    act(chain, "bob", &Op::Migrate { height: 1, rows }).unwrap();
+}
+
+fn record_of(chain: &MockChain, program: &str, key: &str) -> Option<Record> {
+    let query = Query::Record {
+        program: program.into(),
+        key: key.as_bytes().to_vec(),
+    };
+    let Reply::Record(record) = ask(chain, query) else {
+        panic!("Record answers a record")
+    };
+    record
+}
+
+fn defaults_of(chain: &MockChain, owner: Party) -> Vec<(Scope, PolicyId)> {
+    let page = PageRequest::default();
+    let Reply::Defaults(defaults) = ask(chain, Query::Defaults { owner, page }) else {
+        panic!("Defaults answers defaults")
+    };
+    defaults
+        .items
+        .into_iter()
+        .map(|row| (row.scope, row.policy))
+        .collect()
+}
+
+fn built_ins(chain: &MockChain, owner: Party) -> (Option<PolicyId>, Option<PolicyId>) {
+    let Reply::OnlyMe(only) = ask(
+        chain,
+        Query::OnlyMe {
+            owner: owner.clone(),
+        },
+    ) else {
+        panic!("OnlyMe answers OnlyMe")
+    };
+    let Reply::Open(open) = ask(chain, Query::Open { owner }) else {
+        panic!("Open answers Open")
+    };
+    (only, open)
+}
+
+#[test]
+fn migrate_moves_a_renamed_programs_records_and_the_kernel_guards_them_at_its_new_id() {
+    let mut chain = chain();
+    for key in ["n/a", "n/b"] {
+        note(&chain, "ada", key, Some("hers")).unwrap();
+    }
+    let only = record(&chain, "n/a").unwrap().policy;
+    chain.seat::<Notes>("o/notes");
+    chain.register("o/notes", 104);
+    for key in ["n/a", "n/b"] {
+        let kept = (key.as_bytes().to_vec(), b"hers".to_vec());
+        chain
+            .host("o/notes")
+            .borrow_mut()
+            .state
+            .insert(kept.0, kept.1);
+    }
+    renamed(&mut chain, &[("notes", "o/notes")]);
+    let in_the_window = |value: Option<&str>| {
+        let writes: Writes = vec![("n/a".into(), value.map(str::to_owned))];
+        chain.submit(by("bob"), "o/notes", &writes).unwrap();
+    };
+    in_the_window(None);
+    in_the_window(Some("his"));
+    let his = record_of(&chain, "o/notes", "n/a").unwrap();
+    assert_eq!(his.owner, BOB, "the guard took his write as a fresh claim");
+    let at = |key: &str| Some(("notes".to_owned(), key.as_bytes().to_vec()));
+    let only_b = Rows::Records {
+        first: at("n/b"),
+        last: at("n/b"),
+    };
+    migrate(&chain, only_b);
+    let owner = record_of(&chain, "o/notes", "n/b").map(|kept| kept.owner);
+    assert_eq!(owner, Some(ADA));
+    assert!(record(&chain, "n/a").is_some(), "n/a is outside the range");
+    let every = || Rows::Records {
+        first: None,
+        last: None,
+    };
+    migrate(&chain, every());
+    let hers = Record {
+        owner: ADA,
+        policy: only,
+        kind: Some("test.note".into()),
+    };
+    assert_eq!(record(&chain, "n/a"), None);
+    assert_eq!(
+        record_of(&chain, "o/notes", "n/a"),
+        Some(hers),
+        "the record from before the rename wins over a claim made since"
+    );
+    let page = PageRequest::default();
+    let Reply::Linked(claimed) = ask(
+        &chain,
+        Query::Linked {
+            policy: his.policy,
+            page,
+        },
+    ) else {
+        panic!("Linked answers its items")
+    };
+    assert!(claimed.items.is_empty(), "the claim's link goes with it");
+    let page = PageRequest::default();
+    let Reply::Linked(linked) = ask(&chain, Query::Linked { policy: only, page }) else {
+        panic!("Linked answers its items")
+    };
+    let moved = ["n/a", "n/b"].map(|key| Linked {
+        program: "o/notes".into(),
+        key: key.as_bytes().to_vec(),
+    });
+    assert_eq!(linked.items, moved);
+    let before = chain.host(PROGRAM).borrow().state.clone();
+    migrate(&chain, every());
+    assert_eq!(
+        chain.host(PROGRAM).borrow().state,
+        before,
+        "a second run writes nothing"
+    );
+    let writes: Writes = vec![("n/a".into(), Some("his".into()))];
+    let refused = chain.submit(by("bob"), "o/notes", &writes).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED);
+}
+
+#[test]
+fn migrate_moves_a_renamed_programs_policies_and_built_ins_and_follows_it_where_it_is_listed() {
+    let mut chain = adopting();
+    let bot = || Party::Program("bot".into());
+    let o_bot = || Party::Program("o/bot".into());
+    let items = vec![
+        item("n/only", bot(), Rule::OwnerOnly),
+        item("n/open", bot(), Rule::Open),
+    ];
+    send(&chain, &Adopting::Adopt(items)).unwrap();
+    let team = made(&chain, "ada", "team", Writers::Listed(vec![bot(), BOB]));
+    let (Some(only), Some(open)) = built_ins(&chain, bot()) else {
+        panic!("adopting makes bot's built-ins")
+    };
+    renamed(&mut chain, &[("bot", "o/bot")]);
+    let only_one = Rows::Policies {
+        first: Some(only),
+        last: Some(only),
+    };
+    migrate(&chain, only_one);
+    assert_eq!(built_ins(&chain, o_bot()), (Some(only), None));
+    let every = || Rows::Policies {
+        first: None,
+        last: None,
+    };
+    migrate(&chain, every());
+    assert_eq!(built_ins(&chain, o_bot()), (Some(only), Some(open)));
+    assert_eq!(built_ins(&chain, bot()), (None, None));
+    let policies = |owner| {
+        let page = PageRequest::default();
+        let Reply::Policies(policies) = ask(&chain, Query::Policies { owner, page }) else {
+            panic!("Policies answers policies")
+        };
+        policies
+            .items
+            .into_iter()
+            .map(|policy| (policy.id, policy.owner))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(policies(o_bot()), [(only, o_bot()), (open, o_bot())]);
+    assert!(policies(bot()).is_empty());
+    let Reply::Policy(Some(listed)) = ask(&chain, Query::Policy { id: team }) else {
+        panic!("team is kept")
+    };
+    assert_eq!(listed.write, Writers::Listed(vec![o_bot(), BOB]));
+    let records = || Rows::Records {
+        first: None,
+        last: None,
+    };
+    migrate(&chain, records());
+    assert_eq!(adopted(&chain, "n/only").0.owner, o_bot());
+    let before = chain.host(PROGRAM).borrow().state.clone();
+    migrate(&chain, every());
+    migrate(&chain, records());
+    assert_eq!(
+        chain.host(PROGRAM).borrow().state,
+        before,
+        "a second run writes nothing"
+    );
+}
+
+#[test]
+fn migrate_moves_defaults_for_a_renamed_programs_scope_and_its_converted_lists() {
+    let mut chain = adopting();
+    let [moved, kept] = ["moved", "kept"].map(|name| made(&chain, "ada", name, Writers::Owner));
+    let [old, since] = ["old", "since"].map(|name| made(&chain, "bob", name, Writers::Owner));
+    let adopter = || Scope::Program("adopter".into());
+    let o_adopter = || Scope::Program("o/adopter".into());
+    default(&chain, "ada", adopter(), Some(moved));
+    default(&chain, "ada", Scope::Global, Some(kept));
+    default(&chain, "bob", adopter(), Some(old));
+    default(&chain, "bob", o_adopter(), Some(since));
+    let room = Rule::List {
+        at: "room".into(),
+        write: Writers::Listed(vec![BOB]),
+        by: ADA,
+    };
+    send(
+        &chain,
+        &Adopting::Adopt(vec![item("n/room", ADA, room.clone())]),
+    )
+    .unwrap();
+    let converted = adopted(&chain, "n/room").0.policy;
+    chain.seat::<Adopter>("o/adopter");
+    chain.register("o/adopter", 105);
+    renamed(&mut chain, &[("adopter", "o/adopter")]);
+    let hers = Some((ADA, adopter()));
+    let only_hers = Rows::Defaults {
+        first: hers.clone(),
+        last: hers,
+    };
+    migrate(&chain, only_hers);
+    assert_eq!(
+        defaults_of(&chain, ADA),
+        [(o_adopter(), moved), (Scope::Global, kept)]
+    );
+    assert_eq!(
+        defaults_of(&chain, BOB),
+        [(adopter(), old), (o_adopter(), since)]
+    );
+    let defaults = || Rows::Defaults {
+        first: None,
+        last: None,
+    };
+    migrate(&chain, defaults());
+    assert_eq!(
+        defaults_of(&chain, BOB),
+        [(o_adopter(), since)],
+        "a default set at the new id since is kept"
+    );
+    let lists = || Rows::Converted {
+        first: None,
+        last: None,
+    };
+    migrate(&chain, lists());
+    let again = Adopting::Adopt(vec![item("n/room-2", ADA, room)]);
+    chain.submit(by("ada"), "o/adopter", &again).unwrap();
+    let relisted = record_of(&chain, "o/adopter", "n/room-2").unwrap();
+    assert_eq!(
+        relisted.policy, converted,
+        "one policy per list, renamed or not"
+    );
+    let before = chain.host(PROGRAM).borrow().state.clone();
+    migrate(&chain, defaults());
+    migrate(&chain, lists());
+    assert_eq!(
+        chain.host(PROGRAM).borrow().state,
+        before,
+        "a second run writes nothing"
+    );
+}

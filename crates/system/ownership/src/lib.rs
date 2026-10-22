@@ -140,6 +140,28 @@ pub enum Op {
     Adopt { items: Vec<Adopted> },
     #[tool_op(description = "From a program, in its own message as its own account: move the record of one of its owned keys to a key that has none.", example = crate::examples::moved)]
     Moved { from_key: Vec<u8>, to_key: Vec<u8> },
+    #[tool_op(description = "Rewrite the program ids ownership stores by the programs role's Renames at height, over one table's rows from first to last (null: from the first, or to the last), a call each: Records (each [program, key]) moves a renamed program's records and their links to its new id, a record kept there already staying, and follows a renamed owner; Policies (each an id) follows a renamed owner, with its list of policies and its built-ins, and each renamed program a policy lists; Defaults (each [owner, scope]) moves a default for a renamed program's scope; Converted (each [program, list]) moves the policies a renamed program's lists were converted to. Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.", example = crate::examples::migrate)]
+    Migrate { height: u64, rows: Rows },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Rows {
+    Records {
+        first: Option<(ProgramId, Vec<u8>)>,
+        last: Option<(ProgramId, Vec<u8>)>,
+    },
+    Policies {
+        first: Option<PolicyId>,
+        last: Option<PolicyId>,
+    },
+    Defaults {
+        first: Option<(Party, Scope)>,
+        last: Option<(Party, Scope)>,
+    },
+    Converted {
+        first: Option<(ProgramId, String)>,
+        last: Option<(ProgramId, String)>,
+    },
 }
 
 #[derive(
@@ -241,11 +263,7 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("key", Value::bytes(key)), field("to", party(to))],
         ),
         Op::SetDefault { scope, policy: id } => {
-            let scope = match scope {
-                Scope::Kind(kind) => format!("kind {kind}"),
-                Scope::Program(program) => format!("program {program}"),
-                Scope::Global => "everything".into(),
-            };
+            let scope = scoped(scope);
             let chosen = match id {
                 Some(id) => Value::text(format!("#{id}")),
                 None => Value::text("cleared"),
@@ -266,8 +284,53 @@ pub fn describe(op: &Op) -> describe::Description {
                 field("to", Value::bytes(to_key)),
             ],
         ),
+        Op::Migrate { height, rows } => {
+            let (table, first, last) = match rows {
+                Rows::Records { first, last } => {
+                    let at = |(program, key): &(ProgramId, Vec<u8>)| {
+                        format!("{program} {}", design::preview(key))
+                    };
+                    ("records", first.as_ref().map(at), last.as_ref().map(at))
+                }
+                Rows::Policies { first, last } => {
+                    let at = |id: &PolicyId| format!("#{id}");
+                    ("policies", first.as_ref().map(at), last.as_ref().map(at))
+                }
+                Rows::Defaults { first, last } => {
+                    let at = |(owner, scope): &(Party, Scope)| format!("{owner} {}", scoped(scope));
+                    ("defaults", first.as_ref().map(at), last.as_ref().map(at))
+                }
+                Rows::Converted { first, last } => {
+                    let at = |(program, list): &(ProgramId, String)| format!("{program} {list}");
+                    (
+                        "converted lists",
+                        first.as_ref().map(at),
+                        last.as_ref().map(at),
+                    )
+                }
+            };
+            let bound = |bound: Option<String>, open: &str| {
+                Value::text(bound.unwrap_or_else(|| open.to_owned()))
+            };
+            (
+                format!("Migrate · {table}"),
+                vec![
+                    field("height", Value::text(height.to_string())),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
+}
+
+fn scoped(scope: &Scope) -> String {
+    match scope {
+        Scope::Kind(kind) => format!("kind {kind}"),
+        Scope::Program(program) => format!("program {program}"),
+        Scope::Global => "everything".into(),
+    }
 }
 
 fn party(party: &Party) -> describe::Value {
@@ -307,7 +370,8 @@ fn op_variants_only_append() {
             "Transfer",
             "SetDefault",
             "Adopt",
-            "Moved"
+            "Moved",
+            "Migrate"
         ]
     );
 }

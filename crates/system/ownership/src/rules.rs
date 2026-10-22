@@ -3,14 +3,14 @@
 
 use ::program::kernel::error_from;
 use ::program::{
-    AccountNumber, Error, ExecCtx, Principal, ProgramId, QueryCtx, already_exists, corrupt,
-    invalid, not_found, unauthorized, wrong_state,
+    AccountNumber, Error, ExecCtx, Principal, ProgramId, QueryCtx, Range, Renames, already_exists,
+    corrupt, invalid, not_found, unauthorized, wrong_state,
 };
 use abi::role::{self, identity, ownership::Guard};
 use store::{Item, Map, PageRequest, PageResponse, Set};
 
 use crate::{
-    Adopted, Linked, ONLY_ME, OPEN_POLICY, Party, Policy, PolicyId, Record, Rule, Scope,
+    Adopted, Linked, ONLY_ME, OPEN_POLICY, Party, Policy, PolicyId, Record, Rows, Rule, Scope,
     ScopeDefault, Writers,
 };
 
@@ -421,6 +421,149 @@ pub(crate) fn set_default(ctx: &ExecCtx, scope: Scope, id: Option<PolicyId>) -> 
         return Err(wrong_state(format!("#{id} is retired")));
     }
     DEFAULTS.put(ctx, &at, &id);
+    Ok(())
+}
+
+pub(crate) fn migrate(ctx: &ExecCtx, height: u64, rows: Rows) -> Result<(), Error> {
+    let renamed = ctx.renames(height)?;
+    match rows {
+        Rows::Records { first, last } => {
+            let at = |at: (ProgramId, Vec<u8>)| RECORDS.key(&at);
+            let range = within(RECORDS.prefix_of(&()), first.map(at), last.map(at));
+            records_renamed(ctx, &renamed, range)
+        }
+        Rows::Policies { first, last } => {
+            let at = |id: PolicyId| POLICIES.key(&id);
+            let range = within(POLICIES.prefix_of(&()), first.map(at), last.map(at));
+            policies_renamed(ctx, &renamed, range)
+        }
+        Rows::Defaults { first, last } => {
+            let at =
+                |(owner, scope): (Party, Scope)| DEFAULTS.key(&(key(&owner), abi::encode(&scope)));
+            let range = within(DEFAULTS.prefix_of(&()), first.map(at), last.map(at));
+            defaults_renamed(ctx, &renamed, range)
+        }
+        Rows::Converted { first, last } => {
+            let at = |at: (ProgramId, String)| CONVERTED.key(&at);
+            let range = within(CONVERTED.prefix_of(&()), first.map(at), last.map(at));
+            converted_renamed(ctx, &renamed, range)
+        }
+    }
+}
+
+fn within(mut range: Range, first: Option<Vec<u8>>, last: Option<Vec<u8>>) -> Range {
+    if let Some(first) = first {
+        range.start = first;
+    }
+    if let Some(last) = last {
+        range.end = Some([last, vec![0]].concat());
+    }
+    range
+}
+
+fn followed(renamed: &Renames, party: &Party) -> Party {
+    match party {
+        Party::Program(program) => Party::Program(renamed.id(program)),
+        Party::Account(_) | Party::Foreign(_) => party.clone(),
+    }
+}
+
+fn records_renamed(ctx: &ExecCtx, renamed: &Renames, range: Range) -> Result<(), Error> {
+    for ((program, item), record) in RECORDS.scan(ctx, range)? {
+        let owner = followed(renamed, &record.owner);
+        let to = renamed.id(&program);
+        let unmoved = to == program && owner == record.owner;
+        if unmoved {
+            continue;
+        }
+        let policy = record.policy;
+        let record = Record { owner, ..record };
+        if to == program {
+            RECORDS.put(ctx, &(program, item), &record);
+            continue;
+        }
+        LINKED.remove(ctx, &(policy, program.clone(), item.clone()));
+        RECORDS.remove(ctx, &(program, item.clone()));
+        let at = (to, item);
+        if let Some(claimed) = RECORDS.get(ctx, &at)? {
+            LINKED.remove(ctx, &(claimed.policy, at.0.clone(), at.1.clone()));
+        }
+        LINKED.insert(ctx, &(policy, at.0.clone(), at.1.clone()));
+        RECORDS.put(ctx, &at, &record);
+    }
+    Ok(())
+}
+
+fn policies_renamed(ctx: &ExecCtx, renamed: &Renames, range: Range) -> Result<(), Error> {
+    for (id, policy) in POLICIES.scan(ctx, range)? {
+        let owner = followed(renamed, &policy.owner);
+        let write = match &policy.write {
+            Writers::Listed(parties) => Writers::Listed(
+                parties
+                    .iter()
+                    .map(|party| followed(renamed, party))
+                    .collect(),
+            ),
+            Writers::Anyone | Writers::Owner => policy.write.clone(),
+        };
+        let unmoved = owner == policy.owner && write == policy.write;
+        if unmoved {
+            continue;
+        }
+        if owner != policy.owner {
+            let (from, to) = (key(&policy.owner), key(&owner));
+            OWNED.remove(ctx, &(from.clone(), id));
+            OWNED.insert(ctx, &(to.clone(), id));
+            for built_in in [OPEN, ONLY_ME_POLICIES] {
+                if built_in.get(ctx, &from)? == Some(id) {
+                    built_in.remove(ctx, &from);
+                    if !built_in.has(ctx, &to) {
+                        built_in.put(ctx, &to, &id);
+                    }
+                }
+            }
+        }
+        POLICIES.put(
+            ctx,
+            &id,
+            &Policy {
+                owner,
+                write,
+                ..policy
+            },
+        );
+    }
+    Ok(())
+}
+
+fn defaults_renamed(ctx: &ExecCtx, renamed: &Renames, range: Range) -> Result<(), Error> {
+    for ((owner, scope), id) in DEFAULTS.scan(ctx, range)? {
+        let Scope::Program(program) = abi::decode::<Scope>(&scope).map_err(error_from)? else {
+            continue;
+        };
+        let Some(to) = renamed.moved(&program) else {
+            continue;
+        };
+        DEFAULTS.remove(ctx, &(owner.clone(), scope));
+        let at = (owner, abi::encode(&Scope::Program(to.clone())));
+        if !DEFAULTS.has(ctx, &at) {
+            DEFAULTS.put(ctx, &at, &id);
+        }
+    }
+    Ok(())
+}
+
+fn converted_renamed(ctx: &ExecCtx, renamed: &Renames, range: Range) -> Result<(), Error> {
+    for ((program, list), id) in CONVERTED.scan(ctx, range)? {
+        let Some(to) = renamed.moved(&program) else {
+            continue;
+        };
+        CONVERTED.remove(ctx, &(program, list.clone()));
+        let row = (to.clone(), list);
+        if !CONVERTED.has(ctx, &row) {
+            CONVERTED.put(ctx, &row, &id);
+        }
+    }
     Ok(())
 }
 

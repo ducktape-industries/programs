@@ -8,6 +8,39 @@
       }
     ],
     [
+      "(Party, Scope)",
+      {
+        "tuple": {
+          "elements": [
+            "Party",
+            "Scope"
+          ]
+        }
+      }
+    ],
+    [
+      "(String, String)",
+      {
+        "tuple": {
+          "elements": [
+            "String",
+            "String"
+          ]
+        }
+      }
+    ],
+    [
+      "(String, Vec<u8>)",
+      {
+        "tuple": {
+          "elements": [
+            "String",
+            "Vec<u8>"
+          ]
+        }
+      }
+    ],
+    [
       "Adopted",
       {
         "struct": {
@@ -181,6 +214,11 @@
               9,
               "Moved",
               "Op__Moved"
+            ],
+            [
+              10,
+              "Migrate",
+              "Op__Migrate"
             ]
           ]
         }
@@ -250,6 +288,25 @@
           "fields": {
             "unnamed_fields": [
               "Guard"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Migrate",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "rows",
+                "Rows"
+              ]
             ]
           }
         }
@@ -370,6 +427,66 @@
               ]
             ]
           }
+        }
+      }
+    ],
+    [
+      "Option<(Party, Scope)>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "(Party, Scope)"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<(String, String)>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "(String, String)"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<(String, Vec<u8>)>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "(String, Vec<u8>)"
+            ]
+          ]
         }
       }
     ],
@@ -1142,6 +1259,112 @@
               [
                 "Create",
                 "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Rows",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Records",
+              "Rows__Records"
+            ],
+            [
+              1,
+              "Policies",
+              "Rows__Policies"
+            ],
+            [
+              2,
+              "Defaults",
+              "Rows__Defaults"
+            ],
+            [
+              3,
+              "Converted",
+              "Rows__Converted"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Rows__Converted",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "first",
+                "Option<(String, String)>"
+              ],
+              [
+                "last",
+                "Option<(String, String)>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Rows__Defaults",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "first",
+                "Option<(Party, Scope)>"
+              ],
+              [
+                "last",
+                "Option<(Party, Scope)>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Rows__Policies",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "first",
+                "Option<u64>"
+              ],
+              [
+                "last",
+                "Option<u64>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Rows__Records",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "first",
+                "Option<(String, Vec<u8>)>"
+              ],
+              [
+                "last",
+                "Option<(String, Vec<u8>)>"
               ]
             ]
           }
