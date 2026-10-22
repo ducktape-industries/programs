@@ -1003,6 +1003,74 @@ fn a_new_head_with_another_patch_resets_a_review_of_the_patch() {
 }
 
 #[test]
+fn a_new_head_that_edits_the_same_files_again_resets_a_review_of_the_patch() {
+    let mut world = world();
+    let (_, feature) = opened(&mut world);
+    patch_reviewed(&world, feature).unwrap();
+    let edited = world.commit(
+        &[feature],
+        &[
+            ("Cargo.lock", "lock 1\n"),
+            ("a/x.rs", "one\ntwo\n3\n4\n5\n6\n7\n8\n"),
+            ("b/y.rs", "y 1\n"),
+        ],
+    );
+    world.push(Some(feature), edited, "feature");
+    let merge = world.preview();
+    assert_eq!(
+        world.statuses(merge),
+        [(review_context(), CheckState::Pending, None)]
+    );
+    assert_eq!(world.verdict().unwrap().carried[0].differs, ["a/x.rs"]);
+}
+
+fn wide_commit(world: &mut World, parents: &[Oid], files: &[(String, String)]) -> Oid {
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(path, text)| (path.as_str(), text.as_str()))
+        .collect();
+    world.commit(parents, &files)
+}
+
+#[test]
+fn a_wide_patch_is_compared_with_one_tree_read_per_folder_on_each_side() {
+    let mut world = world();
+    let mut files: Vec<(String, String)> = vec![("Cargo.lock".into(), "lock 1\n".into())];
+    for folder in ["a", "b"] {
+        for i in 0..15 {
+            files.push((format!("{folder}/f{i}.rs"), "0\n".into()));
+        }
+    }
+    let base = wide_commit(&mut world, &[], &files);
+    let edited: Vec<(String, String)> = files
+        .iter()
+        .map(|(path, text)| match path.contains('/') {
+            true => (path.clone(), "1\n".to_owned()),
+            false => (path.clone(), text.clone()),
+        })
+        .collect();
+    let feature = wide_commit(&mut world, &[base], &edited);
+    world.push(None, base, "main");
+    world.push(None, feature, "feature");
+    world.open();
+    patch_reviewed(&world, feature).unwrap();
+    let mut moved = files.clone();
+    moved.push(("c.md".into(), "moved\n".into()));
+    let moved = wide_commit(&mut world, &[base], &moved);
+    world.push(Some(base), moved, "main");
+    rebased(&world, feature);
+    world.preview();
+    let before = crate::rules::TREE_READS.with(|reads| reads.get());
+    let verdict = world.verdict().unwrap();
+    let reads = crate::rules::TREE_READS.with(|reads| reads.get()) - before;
+    assert!(verdict.carried[0].differs.is_empty());
+    assert_eq!(
+        reads, 8,
+        "2 folders at each side of the 2 patches, for 30 files"
+    );
+}
+
+#[test]
 fn a_review_of_the_patch_carries_across_a_clean_rebase() {
     let mut world = world();
     let (base, feature) = opened(&mut world);

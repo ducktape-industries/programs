@@ -600,7 +600,8 @@ fn reported_earlier(
     Ok(earlier)
 }
 
-type Patch = BTreeMap<String, (FileStatus, Option<EntryKind>, Option<EntryKind>)>;
+type Entry = Option<(EntryKind, String)>;
+type Patch = BTreeMap<String, (FileStatus, Entry, Entry)>;
 
 fn patch_of(ctx: &QueryCtx, repo: &str, gated: &str, into: &str) -> Option<Patch> {
     let asked = forge::Query::Compare {
@@ -618,7 +619,7 @@ fn patch_of(ctx: &QueryCtx, repo: &str, gated: &str, into: &str) -> Option<Patch
 }
 
 fn changed(ctx: &QueryCtx, repo: &str, base: &str, head: &str) -> Option<Patch> {
-    let mut patch = Patch::new();
+    let mut stats = Vec::new();
     let mut after = None;
     loop {
         let asked = forge::Query::DiffStat {
@@ -633,12 +634,56 @@ fn changed(ctx: &QueryCtx, repo: &str, base: &str, head: &str) -> Option<Patch> 
         let forge::Reply::DiffStat { page, .. } = reply else {
             return None;
         };
-        for file in page.items {
-            patch.insert(file.path, (file.status, file.old_kind, file.new_kind));
-        }
+        stats.extend(page.items.into_iter().map(|file| (file.path, file.status)));
         match page.next {
             Some(next) => after = Some(next),
-            None => return Some(patch),
+            None => break,
+        }
+    }
+    let folders: BTreeSet<String> = stats
+        .iter()
+        .map(|(path, _)| split_path(path).0.to_owned())
+        .collect();
+    let mut was = BTreeMap::new();
+    let mut is = BTreeMap::new();
+    for folder in folders {
+        was.insert(folder.clone(), folder_at(ctx, repo, base, &folder).ok()?);
+        is.insert(folder.clone(), folder_at(ctx, repo, head, &folder).ok()?);
+    }
+    let mut patch = Patch::new();
+    for (path, status) in stats {
+        let (folder, name) = split_path(&path);
+        let old = was
+            .get(folder)
+            .and_then(|listed| listed.get(name.as_bytes()).cloned());
+        let new = is
+            .get(folder)
+            .and_then(|listed| listed.get(name.as_bytes()).cloned());
+        patch.insert(path, (status, old, new));
+    }
+    Some(patch)
+}
+
+fn split_path(path: &str) -> (&str, &str) {
+    path.rsplit_once('/').unwrap_or(("", path))
+}
+
+type Folder = BTreeMap<Vec<u8>, (EntryKind, String)>;
+
+fn folder_at(ctx: &QueryCtx, repo: &str, at: &str, path: &str) -> Result<Folder, Error> {
+    let mut folder = Folder::new();
+    let mut after = None;
+    loop {
+        let page = PageRequest { after, limit: None };
+        let Some((_, listed)) = tree_page(ctx, repo, at, path, page)? else {
+            return Ok(folder);
+        };
+        for entry in listed.items {
+            folder.insert(entry.name, (entry.kind, entry.oid));
+        }
+        match listed.next {
+            Some(next) => after = Some(next),
+            None => return Ok(folder),
         }
     }
 }
@@ -722,6 +767,11 @@ fn entry_at(
 
 type Listed = (String, PageResponse<forge::TreeInfo>);
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TREE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 fn tree_page(
     ctx: &QueryCtx,
     repo: &str,
@@ -729,6 +779,8 @@ fn tree_page(
     path: &str,
     page: PageRequest,
 ) -> Result<Option<Listed>, Error> {
+    #[cfg(test)]
+    TREE_READS.with(|reads| reads.set(reads.get() + 1));
     let asked = forge::Query::Tree {
         repo: repo.to_owned(),
         at: at.to_owned(),
