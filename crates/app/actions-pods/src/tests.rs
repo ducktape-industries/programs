@@ -1103,6 +1103,108 @@ fn a_run_an_update_cut_off_is_taken_up_by_a_sweep_and_reports_how_its_pod_ended(
     assert!(node.held().is_empty());
 }
 
+fn cut_off_by_an_update(node: &mut Node) -> RequestRow {
+    node.chain.seat::<Programs>(programs::PROGRAM);
+    listed(&node.chain, b"1");
+    let cut = waiting_on_its_pod(node);
+    listed(&node.chain, b"2");
+    node.chain.cancel_parked(PROGRAM);
+    cut
+}
+
+fn taken_up_with_no_sweep(node: &mut Node, cut: &RequestRow) -> RequestRow {
+    node.after(2_000);
+    node.after(0);
+    let again: Vec<RequestRow> = node
+        .open()
+        .into_iter()
+        .filter(|row| row.id != cut.id)
+        .collect();
+    let [again] = again
+        .try_into()
+        .expect("one Resume took the pod up, with no Sweep sent");
+    assert_eq!(
+        aimed(&again),
+        sent("GET", "/v1/pods/duckpond-7/wait?every=64")
+    );
+    again
+}
+
+fn passed_and_let_go(node: &Node) {
+    let line = "pod duckpond-7 ended: exit code 0 (Completed)";
+    let log = format!("/home/actions-pods/checks/programs/{COMMIT}/gates/gates-1/log");
+    assert_eq!(
+        node.reports(),
+        [(1, State::Passed, line.to_owned(), Some(log))]
+    );
+    assert!(node.held().is_empty());
+}
+
+#[test]
+fn a_run_an_update_cut_off_is_taken_up_by_its_pods_next_beat_with_no_sweep() {
+    let mut node = node();
+    let cut = cut_off_by_an_update(&mut node);
+    node.after(1_000);
+    let alive = Event {
+        id: cut.id,
+        seq: 0,
+        data: b"event: alive\ndata: {}".to_vec(),
+    };
+    node.node(&Egress::Events(vec![alive]));
+    let again = taken_up_with_no_sweep(&mut node, &cut);
+    node.ended(&cut, 1, json!(0));
+    node.ended(&again, 0, json!(0));
+    copied_and_deleted(&mut node);
+    passed_and_let_go(&node);
+}
+
+#[test]
+fn a_pod_that_ended_after_an_update_cut_off_its_run_is_taken_up_by_its_end() {
+    let mut node = node();
+    let cut = cut_off_by_an_update(&mut node);
+    node.ended(&cut, 0, json!(0));
+    let again = taken_up_with_no_sweep(&mut node, &cut);
+    node.ended(&again, 0, json!(0));
+    copied_and_deleted(&mut node);
+    passed_and_let_go(&node);
+}
+
+#[test]
+fn an_end_the_cut_off_wait_brings_after_the_check_finished_is_not_read_by_a_later_pod_of_that_name()
+{
+    let mut node = node();
+    let cut = cut_off_by_an_update(&mut node);
+    node.after(1_000);
+    let alive = Event {
+        id: cut.id,
+        seq: 0,
+        data: b"event: alive\ndata: {}".to_vec(),
+    };
+    node.node(&Egress::Events(vec![alive]));
+    let again = taken_up_with_no_sweep(&mut node, &cut);
+    node.ended(&again, 0, json!(0));
+    node.ended(&cut, 1, json!(0));
+    copied_and_deleted(&mut node);
+    passed_and_let_go(&node);
+    node.offer(2).unwrap();
+    node.after(2_000);
+    node.after(0);
+    node.answer(500, 201, pod("duckpond-7"));
+    let wait = node.pending();
+    assert_eq!(
+        aimed(&wait),
+        sent("GET", "/v1/pods/duckpond-7/wait?every=64")
+    );
+    for _ in 0..=DEFAULT_WAIT {
+        node.after(1_000);
+    }
+    assert_eq!(
+        aimed(&node.pending()),
+        sent("GET", "/v1/pods/duckpond-7"),
+        "the new pod is read, not finished by the end its name's earlier pod left"
+    );
+}
+
 #[test]
 fn a_rerun_deletes_the_earlier_attempts_pod_and_reports_it_superseded() {
     let mut node = node();

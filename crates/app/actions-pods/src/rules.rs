@@ -2,8 +2,8 @@
 //! check claimed, the pod's end heard as a stream, `/out` kept, the check reported and the pod
 //! deleted. No room, or a pod not made, leaves the check queued; `Sweep` settles and retries.
 use ::program::{
-    BlobId, Cause, Ctx, Error, ExecCtx, HashKind, Principal, ProgramId, QueryCtx, code, decoded,
-    invalid, unauthorized, unexpected_reply, wrong_state,
+    BlobId, Cause, Ctx, Error, HashKind, Principal, ProgramId, QueryCtx, code, decoded, invalid,
+    unauthorized, unexpected_reply, wrong_state,
 };
 use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Op as Egress, Request, http};
 use abi::role::programs as role;
@@ -350,9 +350,8 @@ async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) -> boo
     };
     if found.state != State::Running {
         delete(ctx, &held.pod).await;
-        PODS.remove(ctx, &check);
+        let_go(ctx, check, &held.pod);
         ADOPTING.remove(ctx, &check);
-        STARTED.remove(ctx, &check);
         return true;
     }
     let newest = checks_of_commit(ctx, &found)
@@ -364,6 +363,11 @@ async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) -> boo
         retire_superseded_check(ctx, &found, held, &newest).await;
         return true;
     }
+    take_up_if_cut_off(ctx, check, held, now).await;
+    false
+}
+
+async fn take_up_if_cut_off(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) {
     let cut_off = matches!((held.code, now), (Some(then), Some(now)) if then != now);
     let booked = ADOPTING
         .get(ctx, &check)
@@ -373,7 +377,6 @@ async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) -> boo
     if cut_off && !booked {
         adopt(ctx, check).await;
     }
-    false
 }
 
 async fn adopt(ctx: &Ctx, check: u64) {
@@ -429,9 +432,8 @@ async fn supersede_earlier_attempts(ctx: &Ctx, by: &CheckRow) -> bool {
 
 async fn retire_superseded_check(ctx: &Ctx, check: &CheckRow, held: &PodRow, by: &CheckRow) {
     delete(ctx, &held.pod).await;
-    PODS.remove(ctx, &check.id);
+    let_go(ctx, check.id, &held.pod);
     ADOPTING.remove(ctx, &check.id);
-    STARTED.remove(ctx, &check.id);
     if check.state == State::Running {
         let why = format!("superseded by check {} (attempt {})", by.id, by.attempt);
         let superseded = Ending {
@@ -455,11 +457,16 @@ async fn finish_pod_and_retry_waiting(
     ending: Ending,
 ) {
     delete(ctx, pod).await;
-    PODS.remove(ctx, &check);
-    STARTED.remove(ctx, &check);
+    let_go(ctx, check, pod);
     RUNS.put(ctx, &check, &kept);
     report(ctx, check, ending).await;
     room_changed(ctx).await;
+}
+
+fn let_go(ctx: &Ctx, check: u64, pod: &str) {
+    PODS.remove(ctx, &check);
+    STARTED.remove(ctx, &check);
+    ENDED.remove(ctx, &pod.to_owned());
 }
 
 async fn room_changed(ctx: &Ctx) {
@@ -1118,16 +1125,20 @@ async fn report(ctx: &Ctx, check: u64, ending: Ending) {
     let _ = ctx.call_raw(actions::PROGRAM, abi::encode(&report)).await;
 }
 
-pub(crate) fn heard(ctx: &ExecCtx, event: Event) -> Result<(), Error> {
+pub(crate) async fn heard(ctx: &Ctx, event: Event) -> Result<(), Error> {
     let egress = ctx.env().role(abi::role::EGRESS)?.clone();
     if ctx.env().sending_program()? != egress {
         return Err(unauthorized("a wait's events come from the egress role"));
     }
-    let Some(data) = ended_event_data(&event.data) else {
+    let pod = pod_named_by_wait(ctx, &egress, event.id)?;
+    let held = PODS.all(ctx)?.into_iter().find(|(_, held)| held.pod == pod);
+    let Some((check, held)) = held else {
         return Ok(());
     };
-    let pod = pod_named_by_wait(ctx, &egress, event.id)?;
-    ENDED.put(ctx, &pod, &data);
+    if let Some(data) = ended_event_data(&event.data) {
+        ENDED.put(ctx, &pod, &data);
+    }
+    take_up_if_cut_off(ctx, check, &held, code_at_current_height(ctx)).await;
     Ok(())
 }
 

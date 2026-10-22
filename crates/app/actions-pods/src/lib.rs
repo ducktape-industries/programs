@@ -30,11 +30,11 @@ pub enum Op {
     Offer(actions::Offer),
     #[tool_op(description = "This program's own scheduled run alone: run an offered check in a pod, claim it, wait for the pod to end, record its outputs, report it and delete the pod. A check past the quota or the concurrent limit, or whose pod the cluster did not make, waits; waiting checks take room oldest first.", example = crate::examples::run)]
     Run { check: u64 },
-    #[tool_op(description = "From the egress role only: an event of a pod's streamed wait; the ended event is kept for the run that waits on that pod.", example = crate::examples::heard)]
+    #[tool_op(description = "From the egress role only: an event of a pod's streamed wait; the ended event is kept for the run that waits on that pod, and an event that reaches code other than the one that waited on its pod (a Set of this program cut that run off) books the pod's Resume the block after.", example = crate::examples::heard)]
     Heard(Event),
     #[tool_op(description = "Settle every pod this runner holds against its check: a pod whose check no longer runs is deleted, one an update of this program cut off is taken up again, and waiting checks are tried again. Open to anyone.", example = crate::examples::sweep)]
     Sweep,
-    #[tool_op(description = "This program's own scheduled run alone, the block after a Sweep found a pod an update cut off: wait for that pod again and finish its check.", example = crate::examples::resume)]
+    #[tool_op(description = "This program's own scheduled run alone, the block after a Sweep, or an event of the pod's own wait, found a pod an update cut off: wait for that pod again and finish its check.", example = crate::examples::resume)]
     Resume { check: u64 },
     #[tool_op(description = "How many pods this runner holds at once (unset: 1), at least 1; a check offered past it waits until one of its pods ends. The validators' vote, or an account holding this program's name in the programs role (programs Owner).", example = crate::examples::set_concurrent)]
     SetConcurrent { most: u64 },

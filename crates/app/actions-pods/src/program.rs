@@ -44,7 +44,7 @@ impl Awaiting for ActionsPods {
         match op {
             Op::Offer(offer) => offered(ctx, offer.check).await,
             Op::Run { check } => run(ctx, check).await,
-            Op::Heard(event) => heard(&ctx, event),
+            Op::Heard(event) => heard(&ctx, event).await,
             Op::Sweep => sweep(ctx).await,
             Op::Resume { check } => resume(ctx, check).await,
             Op::SetConcurrent { most } => set_concurrent(ctx, most).await,
