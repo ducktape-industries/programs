@@ -1,5 +1,6 @@
 //! The budget row each model answer writes, read from the answer's own words for its account and
-//! its usage windows, with each service's pace and when each window runs out.
+//! its usage windows, with each service's pace and when each window runs out, kept only for the
+//! accounts a gate serves and the services a route names.
 use super::*;
 
 fn budget(chain: &MockChain) -> BudgetReport {
@@ -193,5 +194,118 @@ fn each_account_keeps_its_provider_and_the_login_its_gate_names_with_the_one_bef
     assert_eq!(
         written(&crate::state::BUDGET_FACTS.key(&(SERVICE.to_owned(), "a".to_owned()))),
         Some(Written::Budget)
+    );
+}
+
+fn accounts(chain: &MockChain) -> Vec<(String, usize, u64)> {
+    let report = budget(chain);
+    let each = report.accounts.into_iter();
+    let mut rows: Vec<_> = each
+        .map(|row| (row.account, row.windows.len(), row.time))
+        .collect();
+    rows.sort();
+    rows
+}
+
+fn row(account: &str, windows: usize, time: u64) -> (String, usize, u64) {
+    (account.to_owned(), windows, time)
+}
+
+#[test]
+fn a_gate_naming_its_pool_leaves_only_its_members_each_read_or_not_yet() {
+    let world = world();
+    let chain = &world.chain;
+    world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 60_000);
+    answered(chain, "a", "0.2", "1000");
+    chain.at(4, 100_000);
+    world.mention("m2", "again");
+    chain.at(5, 120_000);
+    answered(chain, "b", "0.5", "1000");
+    chain.at(6, 150_000);
+    world.mention("m3", "and again");
+    chain.at(7, 180_000);
+    answered_with(chain, "b", "0.6", "1000", &[("x-harness-pool", " b, c ")]);
+    let pooled = accounts(chain);
+    assert_eq!(
+        pooled,
+        [row("b", 1, 180_000), row("c", 0, 0)],
+        "a is no member"
+    );
+    let heard = facts(chain);
+    let c = fact_of(&heard, "c");
+    assert_eq!(
+        (c.service.as_str(), c.provider.as_deref(), c.identity),
+        (SERVICE, Some(PROVIDER), None)
+    );
+    let kept = heard.facts.iter().map(|fact| fact.account.as_str());
+    assert_eq!(kept.collect::<Vec<_>>(), ["b", "c"]);
+    chain.at(8, 200_000);
+    world.mention("m4", "once more");
+    chain.at(9, 210_000);
+    answered(chain, "c", "0.1", "1000");
+    let read = accounts(chain);
+    let now_read = [row("b", 1, 180_000), row("c", 1, 210_000)];
+    assert_eq!(read, now_read, "a member read at last");
+    chain.at(10, 220_000);
+    world.mention("m5", "and once more");
+    chain.at(11, 230_000);
+    answered(chain, "d", "0.1", "1000");
+    let unsaid = accounts(chain).into_iter().map(|(account, ..)| account);
+    let unsaid: Vec<String> = unsaid.collect();
+    assert_eq!(
+        unsaid,
+        ["b", "c", "d"],
+        "an answer naming no pool drops nothing"
+    );
+}
+
+#[test]
+fn a_service_no_route_names_any_longer_leaves_the_budget() {
+    let world = world();
+    let chain = &world.chain;
+    world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 60_000);
+    answered(chain, "a", "0.2", "1000");
+    let both = set_route(&[(SERVICE, Wire::Harness), ("spare", Wire::Harness)]);
+    chain.submit(signed(ADA), PROGRAM, &both).unwrap();
+    let still = facts(chain);
+    let counts = |report: &crate::BudgetFactsReport| {
+        let budget = &report.budget;
+        (
+            budget.accounts.len(),
+            report.facts.len(),
+            budget.services.len(),
+        )
+    };
+    assert_eq!(counts(&still), (1, 1, 1), "still routed");
+    let moved = set_route(&[("spare", Wire::Harness)]);
+    chain.submit(signed(ADA), PROGRAM, &moved).unwrap();
+    assert_eq!(counts(&facts(chain)), (0, 0, 0), "no route names it");
+}
+
+#[test]
+fn a_removed_route_takes_its_services_out_of_the_budget() {
+    let world = world();
+    let chain = &world.chain;
+    world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 60_000);
+    answered(chain, "a", "0.2", "1000");
+    assert_eq!(accounts(chain), [row("a", 1, 60_000)]);
+    let removed = Op::RemoveRoute {
+        provider: PROVIDER.into(),
+    };
+    chain.submit(signed(ADA), PROGRAM, &removed).unwrap();
+    let left = facts(chain);
+    assert!(
+        left.budget.accounts.is_empty(),
+        "{:?}",
+        left.budget.accounts
+    );
+    assert!(left.facts.is_empty(), "{:?}", left.facts);
+    assert!(
+        left.budget.services.is_empty(),
+        "{:?}",
+        left.budget.services
     );
 }

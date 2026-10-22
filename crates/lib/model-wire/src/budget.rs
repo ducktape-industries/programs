@@ -1,10 +1,11 @@
 //! The model budget in harness's own words, on every answer the adapter gives beside the provider's
 //! own headers: each window's share used (a fraction), its reset (seconds since the epoch) and
-//! status, the account's status and the provider's own id for it, and the login a gate names.
+//! status, the account's status and id, the login a gate names and the accounts it serves now.
 pub const WINDOW: &str = "x-harness-window-";
 pub const STATUS: &str = "x-harness-status";
 pub const ACCOUNT: &str = "x-harness-account";
 pub const IDENTITY: &str = "x-harness-identity";
+pub const POOL: &str = "x-harness-pool";
 const USED: &str = "-used";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,6 +22,7 @@ pub struct Budget {
     pub status: Option<String>,
     pub account: Option<String>,
     pub identity: Option<String>,
+    pub pool: Option<Vec<String>>,
 }
 
 pub(crate) fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
@@ -28,6 +30,14 @@ pub(crate) fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<
         .iter()
         .find(|(key, _)| key.eq_ignore_ascii_case(name));
     found.map(|(_, value)| value.trim())
+}
+
+fn members(text: &str) -> Vec<String> {
+    let named = text
+        .split(',')
+        .map(str::trim)
+        .filter(|label| !label.is_empty());
+    named.map(str::to_owned).collect()
 }
 
 impl Budget {
@@ -50,6 +60,8 @@ impl Budget {
         headers.extend(account.map(|account| (ACCOUNT.to_owned(), account.clone())));
         let identity = self.identity.iter();
         headers.extend(identity.map(|identity| (IDENTITY.to_owned(), identity.clone())));
+        let pool = self.pool.iter();
+        headers.extend(pool.map(|pool| (POOL.to_owned(), pool.join(", "))));
         headers
     }
 
@@ -81,6 +93,7 @@ impl Budget {
             status: header(headers, STATUS).map(str::to_owned),
             account: header(headers, ACCOUNT).map(str::to_owned),
             identity: header(headers, IDENTITY).map(str::to_owned),
+            pool: header(headers, POOL).map(members),
         }
     }
 }
@@ -115,4 +128,31 @@ pub fn percent(text: &str) -> Option<String> {
         "" => int,
         fraction => format!("{int}.{fraction}"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+        let each = list.iter();
+        each.map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn the_pool_names_each_account_a_gate_serves_and_no_word_reads_as_none() {
+        let served = Budget {
+            pool: Some(vec!["zk-dev-2".into(), "zk-dev-3".into()]),
+            ..Budget::default()
+        };
+        let headers = served.headers();
+        assert_eq!(header(&headers, POOL), Some("zk-dev-2, zk-dev-3"));
+        assert_eq!(Budget::read(&headers), served);
+        let spaced = pairs(&[("X-Harness-Pool", " zk-dev-2 ,, zk-dev-3 ")]);
+        assert_eq!(Budget::read(&spaced).pool, served.pool);
+        let none_served = Budget::read(&pairs(&[(POOL, "")])).pool;
+        assert_eq!(none_served, Some(Vec::new()), "a gate that serves no one");
+        assert_eq!(Budget::read(&[]).pool, None, "a gate that names no pool");
+    }
 }

@@ -112,7 +112,7 @@ pub(crate) fn set_route(
         services: listed,
     };
     PROVIDER_ROUTES.put(ctx, &provider, &row);
-    Ok(())
+    crate::budget::routed_only(ctx)
 }
 
 pub(crate) fn remove_route(ctx: &ExecCtx, provider: String) -> Result<(), Error> {
@@ -120,5 +120,5 @@ pub(crate) fn remove_route(ctx: &ExecCtx, provider: String) -> Result<(), Error>
         return Err(not_found(format!("no route for provider {provider}")));
     }
     PROVIDER_ROUTES.remove(ctx, &provider);
-    Ok(())
+    crate::budget::routed_only(ctx)
 }

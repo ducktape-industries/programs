@@ -341,6 +341,7 @@ pub fn budget(headers: &[(String, String)]) -> Budget {
         status: header(headers, &format!("{UNIFIED}status")).map(str::to_owned),
         account: account.map(str::to_owned),
         identity: None,
+        pool: None,
     }
 }
 

@@ -7,7 +7,8 @@ use model_wire::budget as harness_words;
 
 use crate::resume::header;
 use crate::state::{
-    BUDGET_FACTS, BUDGETS, Budget, BudgetFacts, BudgetWindow, FLIGHTS, PACES, Pace, Seen,
+    BUDGET_FACTS, BUDGETS, Budget, BudgetFacts, BudgetWindow, FLIGHTS, PACES, PROVIDER_ROUTES,
+    Pace, Seen,
 };
 use crate::{
     AccountBudget, BudgetFact, BudgetFactsReport, BudgetReport, ServicePace, WHOLE_WINDOW as WHOLE,
@@ -160,6 +161,9 @@ pub(crate) fn learned(
 pub(crate) fn seen(ctx: &ExecCtx, service: &str, provider: &str, response: &http::Response) {
     let env = ctx.env();
     paced(ctx, service, env.time);
+    if let Some(pool) = harness_words::Budget::read(&response.headers).pool {
+        pooled(ctx, service, provider, &pool);
+    }
     let windows = windows(response, env.time);
     if windows.is_empty() {
         return;
@@ -197,6 +201,70 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, provider: &str, response: &http
         .flatten()
         .unwrap_or_default();
     BUDGET_FACTS.put(ctx, &key, &learned(held, provider, identity, env.time));
+}
+
+fn accounts_of(ctx: &ExecCtx, service: &str) -> Vec<String> {
+    let service = service.to_owned();
+    let budgets = BUDGETS.scan(ctx, BUDGETS.prefix_of(&service));
+    let facts = BUDGET_FACTS.scan(ctx, BUDGET_FACTS.prefix_of(&service));
+    let budgets = budgets.unwrap_or_default().into_iter();
+    let mut accounts: Vec<String> = budgets.map(|((_, account), _)| account).collect();
+    for ((_, account), _) in facts.unwrap_or_default() {
+        if !accounts.contains(&account) {
+            accounts.push(account);
+        }
+    }
+    accounts
+}
+
+fn pooled(ctx: &ExecCtx, service: &str, provider: &str, pool: &[String]) {
+    for account in accounts_of(ctx, service) {
+        if !pool.contains(&account) {
+            let key = (service.to_owned(), account);
+            BUDGETS.remove(ctx, &key);
+            BUDGET_FACTS.remove(ctx, &key);
+        }
+    }
+    for member in pool {
+        let key = (service.to_owned(), member.clone());
+        if BUDGETS.has(ctx, &key) {
+            continue;
+        }
+        let unread = Budget {
+            label: Some(member.clone()),
+            ..Budget::default()
+        };
+        BUDGETS.put(ctx, &key, &unread);
+        let facts = BudgetFacts {
+            provider: Some(provider.to_owned()),
+            ..BudgetFacts::default()
+        };
+        BUDGET_FACTS.put(ctx, &key, &facts);
+    }
+}
+
+pub(crate) fn routed_only(ctx: &ExecCtx) -> Result<(), Error> {
+    let routes = PROVIDER_ROUTES.all(ctx)?;
+    let routed = |service: &String| {
+        let mut rows = routes.iter();
+        rows.any(|(_, row)| row.services.iter().any(|named| named.service == *service))
+    };
+    for ((service, account), _) in BUDGETS.all(ctx)? {
+        if !routed(&service) {
+            BUDGETS.remove(ctx, &(service, account));
+        }
+    }
+    for ((service, account), _) in BUDGET_FACTS.all(ctx)? {
+        if !routed(&service) {
+            BUDGET_FACTS.remove(ctx, &(service, account));
+        }
+    }
+    for (service, _) in PACES.all(ctx)? {
+        if !routed(&service) {
+            PACES.remove(ctx, &service);
+        }
+    }
+    Ok(())
 }
 
 fn paced(ctx: &ExecCtx, service: &str, time: u64) {
