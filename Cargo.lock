@@ -2611,6 +2611,7 @@ dependencies = [
  "halo",
  "harness",
  "identity",
+ "model-routing",
  "ownership",
  "program",
  "programs",
@@ -4071,6 +4072,17 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys",
+]
+
+[[package]]
+name = "model-routing"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "borsh",
+ "describe",
+ "program",
+ "store",
 ]
 
 [[package]]

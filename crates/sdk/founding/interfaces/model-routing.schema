@@ -1,0 +1,827 @@
+{
+  "declaration": "Interface<Op, Query, Reply, Returns<Op>>",
+  "definitions": [
+    [
+      "()",
+      {
+        "primitive": 0
+      }
+    ],
+    [
+      "Choice",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Pinned",
+              "Choice__Pinned"
+            ],
+            [
+              1,
+              "Chosen",
+              "Choice__Chosen"
+            ],
+            [
+              2,
+              "Discover",
+              "Choice__Discover"
+            ],
+            [
+              3,
+              "Wait",
+              "Choice__Wait"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Choice__Chosen",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "GatewayAccount"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Choice__Discover",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "String"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Choice__Pinned",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "GatewayAccount"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Choice__Wait",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<u64>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "FullRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "service",
+                "String"
+              ],
+              [
+                "account",
+                "String"
+              ],
+              [
+                "until",
+                "Until"
+              ],
+              [
+                "since",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "GatewayAccount",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "service",
+                "String"
+              ],
+              [
+                "account",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Interface<Op, Query, Reply, Returns<Op>>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "op",
+                "Op"
+              ],
+              [
+                "query",
+                "Query"
+              ],
+              [
+                "reply",
+                "Reply"
+              ],
+              [
+                "returns",
+                "Returns<Op>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Pool",
+              "Op__Pool"
+            ],
+            [
+              1,
+              "Full",
+              "Op__Full"
+            ],
+            [
+              2,
+              "Available",
+              "Op__Available"
+            ],
+            [
+              3,
+              "Pin",
+              "Op__Pin"
+            ],
+            [
+              4,
+              "Forget",
+              "Op__Forget"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Op__Available",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "service",
+                "String"
+              ],
+              [
+                "account",
+                "String"
+              ],
+              [
+                "read_at",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Forget",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "conversation",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Full",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "service",
+                "String"
+              ],
+              [
+                "account",
+                "String"
+              ],
+              [
+                "until",
+                "Until"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Pin",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "conversation",
+                "u64"
+              ],
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "services",
+                "Vec<String>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Pool",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "service",
+                "String"
+              ],
+              [
+                "accounts",
+                "Vec<String>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Option<Vec<u8>>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Vec<u8>"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<u64>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "u64"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "PageRequest",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "after",
+                "Option<Vec<u8>>"
+              ],
+              [
+                "limit",
+                "Option<u64>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<FullRow>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<FullRow>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<PinRow>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<PinRow>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<PoolRow>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<PoolRow>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PinRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "conversation",
+                "u64"
+              ],
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "pinned",
+                "GatewayAccount"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PoolRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "service",
+                "String"
+              ],
+              [
+                "accounts",
+                "Vec<String>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Resolve",
+              "Query__Resolve"
+            ],
+            [
+              1,
+              "Pools",
+              "Query__Pools"
+            ],
+            [
+              2,
+              "Fulls",
+              "Query__Fulls"
+            ],
+            [
+              3,
+              "Pins",
+              "Query__Pins"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Query__Fulls",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "consumer",
+                "u64"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Pins",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "consumer",
+                "u64"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Pools",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "consumer",
+                "u64"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Resolve",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "consumer",
+                "u64"
+              ],
+              [
+                "conversation",
+                "u64"
+              ],
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "services",
+                "Vec<String>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Choice",
+              "Reply__Choice"
+            ],
+            [
+              1,
+              "Pools",
+              "Reply__Pools"
+            ],
+            [
+              2,
+              "Fulls",
+              "Reply__Fulls"
+            ],
+            [
+              3,
+              "Pins",
+              "Reply__Pins"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Reply__Choice",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Choice"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Fulls",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<FullRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Pins",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<PinRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Pools",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<PoolRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Returns<Op>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "Pin",
+                "Choice"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "String",
+      {
+        "sequence": {
+          "elements": "u8",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Until",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Reset",
+              "Until__Reset"
+            ],
+            [
+              1,
+              "Unknown",
+              "Until__Unknown"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Until__Reset",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "u64"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Until__Unknown",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Vec<FullRow>",
+      {
+        "sequence": {
+          "elements": "FullRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<PinRow>",
+      {
+        "sequence": {
+          "elements": "PinRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<PoolRow>",
+      {
+        "sequence": {
+          "elements": "PoolRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<String>",
+      {
+        "sequence": {
+          "elements": "String",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<u8>",
+      {
+        "sequence": {
+          "elements": "u8",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "u64",
+      {
+        "primitive": 8
+      }
+    ],
+    [
+      "u8",
+      {
+        "primitive": 1
+      }
+    ]
+  ]
+}

@@ -39,6 +39,7 @@ forge-review-chat = { path = "../../app/forge-review-chat" }
 halo = { path = "../../system/halo" }
 harness = { path = "../../app/harness" }
 identity = { path = "../../system/identity" }
+model-routing = { path = "../../app/model-routing" }
 ownership = { path = "../../system/ownership" }
 programs = { path = "../../system/programs" }
 scheduler = { path = "../../system/scheduler" }
