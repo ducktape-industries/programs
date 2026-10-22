@@ -128,6 +128,7 @@ fn open(
         last_time: 0,
     };
     COUNT.put(ctx, &id);
+    crate::kept::opened(ctx, agent, id)?;
     BY_AGENT.insert(ctx, &(agent.number, newest_first(id)));
     match opening {
         Opening::Fresh | Opening::Fork { .. } => CURRENT.put(ctx, &agent.number, &id),

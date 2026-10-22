@@ -495,14 +495,9 @@ fn a_conversation_held_for_its_reset_asks_again_once_a_turn_on_its_service_and_p
     chain.at(5, 0);
     limited_on(chain, SERVICE, ranging, "b");
     assert!(held_for_the_reset(chain, held), "a 429 shows no room");
-    configured_as(
-        chain,
-        "/home/Ada/agents/ranger.md",
-        "claude-other",
-        SERVICE,
-        PROVIDER,
-    );
-    mention_of(&world, ranger, "m3", "try another model");
+    mention_of(&world, ranger, "m3", "try again");
+    let reader = agent_on(&world, "Reader", "claude-other", SERVICE, PROVIDER);
+    mention_of(&world, reader, "m3b", "which model are you?");
     chain.at(6, 0);
     model_read_on(chain, SERVICE, "claude-other", PROVIDER);
     assert!(

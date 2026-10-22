@@ -537,9 +537,11 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
         return Ok(Some(since));
     }
     let since = ctx.env().height;
-    RUNNING.put(ctx, &(code, since));
+    crate::providers::forget_unreported(ctx)?;
+    let mut fronts = crate::kept::Fronts::default();
     let mut wakes = Vec::new();
     for (id, row) in THREADS.all(ctx)? {
+        crate::kept::switched(ctx, &mut fronts, &row)?;
         let before = FLIGHTS
             .get(ctx, &id)?
             .is_none_or(|flight| flight.made < since);
@@ -548,6 +550,7 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
             wakes.push(wake(id));
         }
     }
+    RUNNING.put(ctx, &(code, since));
     let next = since.saturating_add(1);
     all(wakes
         .iter()

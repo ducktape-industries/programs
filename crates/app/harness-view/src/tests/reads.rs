@@ -162,7 +162,7 @@ fn a_block_of_another_program_reads_the_setup_and_no_frames() {
     let frames = frames_asked(&cx).len();
     let setups = |cx: &TestAppContext| {
         let asked = cx.host().requests::<Query<harness::Harness>>();
-        let setup = harness::Query::Card { agent: SCOUT };
+        let setup = harness::Query::ThreadCard { thread: 7 };
         asked.iter().filter(|query| **query == setup).count()
     };
     let read = setups(&cx);

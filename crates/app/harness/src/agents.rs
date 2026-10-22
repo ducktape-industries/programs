@@ -130,7 +130,7 @@ pub(crate) fn configured_pinned(ctx: &QueryCtx, path: &str) -> Result<(Configure
     Ok((configured, pin))
 }
 
-fn routed(
+pub(crate) fn routed(
     ctx: &QueryCtx,
     snapshot: BlobId,
     config: Config,

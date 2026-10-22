@@ -312,6 +312,7 @@ struct Net {
     // configuration files by path where one is not its setup's configuration as `write` puts it
     files: Vec<(String, String)>,
     failing: Vec<harness::FinalError>,
+    kept: Vec<harness::ConversationModel>,
 }
 
 // The one node the fake egress lists.
@@ -462,8 +463,36 @@ impl Default for Net {
             runs: Vec::new(),
             files: Vec::new(),
             failing: Vec::new(),
+            kept: Vec::new(),
         }
     }
+}
+
+fn kept_card(net: &Net, thread: u64, mut setup: AgentSetup) -> AgentSetup {
+    let kept = net.kept.iter().find(|row| row.thread == thread);
+    let Some(harness::ConversationModel {
+        kept: Some(kept),
+        window: at,
+        ..
+    }) = kept.cloned()
+    else {
+        return setup;
+    };
+    if let Configured::Routed {
+        config,
+        provider,
+        window,
+        ..
+    } = &mut setup.configured
+    {
+        config.model = kept.model;
+        config.max_tokens = kept.max_tokens;
+        config.thinking = kept.thinking;
+        config.compact_at = kept.compact_at;
+        *provider = kept.provider;
+        *window = at;
+    }
+    setup
 }
 
 type Shared = Rc<RefCell<Net>>;
@@ -607,6 +636,30 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             harness::Query::Promises { .. } => harness::Reply::Promises(page(Vec::new())),
             harness::Query::Promise { .. } => harness::Reply::Promise(None),
             harness::Query::Asked { .. } => harness::Reply::Promises(page(Vec::new())),
+            harness::Query::ThreadCard { thread } => {
+                let row = net.threads.iter().find(|row| row.id == thread);
+                let setup =
+                    row.and_then(|row| net.setups.iter().find(|setup| setup.agent == row.agent));
+                let card = setup.cloned().map(card);
+                harness::Reply::Agent(card.map(|setup| kept_card(&net, thread, setup)))
+            }
+            harness::Query::ConversationModels { agent, .. } => {
+                let mut rows: Vec<harness::ConversationModel> = net
+                    .threads
+                    .iter()
+                    .filter(|row| row.agent == agent)
+                    .map(|row| {
+                        let kept = net.kept.iter().find(|kept| kept.thread == row.id);
+                        kept.cloned().unwrap_or(harness::ConversationModel {
+                            thread: row.id,
+                            kept: None,
+                            window: Window::Unasked,
+                        })
+                    })
+                    .collect();
+                rows.sort_by_key(|row| u64::MAX - row.thread);
+                harness::Reply::ConversationModels(page(rows))
+            }
             harness::Query::BudgetFacts => {
                 harness::Reply::BudgetFacts(harness::BudgetFactsReport {
                     budget: net.budget.clone(),
@@ -2397,4 +2450,40 @@ fn an_agent_with_no_list_answers_anyone_and_a_new_one_starts_open() {
         cx.host().requests::<Submit<access::Access>>(),
         [kept("/home/Eddy/agents/rover.md")]
     );
+}
+
+#[test]
+fn a_conversation_shows_the_model_it_keeps_and_not_its_agents_new_front() {
+    let mut net = Net::default();
+    if let Configured::Routed { config, window, .. } = &mut net.setups[0].configured {
+        config.model = "gpt-next".into();
+        *window = Window::Tokens(400_000);
+    }
+    net.kept.push(harness::ConversationModel {
+        thread: 7,
+        kept: Some(harness::ModelKept {
+            model: SONNET.into(),
+            max_tokens: 4096,
+            thinking: None,
+            compact_at: None,
+            provider: ANTHROPIC.into(),
+            service: None,
+        }),
+        window: Window::Tokens(200_000),
+    });
+    let (mut cx, _) = seated(net, EDDY);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("36%"),
+        "the row meters against the window it keeps: {:?}",
+        cx.texts()
+    );
+    cx.simulate_click("thread-7");
+    cx.run_until_parked();
+    let opened = format!(
+        "Scout · opened {} at block 8,960 · {SONNET}",
+        view::design::day(post(1, "").time)
+    );
+    assert!(cx.has_text(&opened), "{opened}: {:?}", cx.texts());
 }

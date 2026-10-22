@@ -7,7 +7,7 @@ use ::program::{
 };
 use abi::role::egress::{self, http};
 
-use crate::agents::{Agent, configured_pinned, manual, running, thread};
+use crate::agents::{Agent, manual, running, thread};
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
 use crate::listening::seed;
@@ -703,7 +703,7 @@ fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
 }
 
 fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<Step>, Error> {
-    let (configured, pin) = configured_pinned(ctx, &agent.path)?;
+    let (configured, pin) = crate::kept::configured_for(ctx, thread, &agent.path)?;
     let (snapshot, config, model) = match configured {
         Configured::Routed {
             snapshot,

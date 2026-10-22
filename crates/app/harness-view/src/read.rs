@@ -7,9 +7,9 @@ use std::rc::Rc;
 
 use egress::{RELAY, ServiceRow};
 use harness::{
-    AgentSetup, Asking, Awaited, BlobId, Body, CallRow, FinalError, Frame, Partial,
-    ProviderRouteRow, RunRow, SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow,
-    WithheldFrame,
+    AgentSetup, Asking, Awaited, BlobId, Body, CallRow, ConversationModel, FinalError, Frame,
+    Partial, ProviderRouteRow, RunRow, SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage,
+    WaitRow, WithheldFrame,
 };
 use identity::{Ownership, PageRequest};
 use policy_view::link;
@@ -72,8 +72,8 @@ pub(crate) async fn setup(host: &Host, agent: u64) -> Result<Option<AgentSetup>,
 
 // what a list or a conversation shows of an agent: its setup without its system prompt, which
 // only the agent's own screen reads (`setup`)
-async fn card(host: &Host, agent: u64) -> Result<Option<AgentSetup>, Error> {
-    host.query(harness::ask::Card { agent }).await
+async fn card(host: &Host, thread: u64) -> Result<Option<AgentSetup>, Error> {
+    host.query(harness::ask::ThreadCard { thread }).await
 }
 
 // Each chat room's name the session has read, by channel id: a read names the rooms it meets that
@@ -257,6 +257,7 @@ pub(crate) struct Detail {
     pub bound: Vec<u64>,
     pub tools: Vec<ToolInfo>,
     pub failing: HashMap<u64, FinalError>,
+    pub models: HashMap<u64, ConversationModel>,
 }
 
 pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detail, Error> {
@@ -314,6 +315,15 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         used.push((conversation.row, usage.unwrap_or_default()));
     }
     let tools = host.query(harness::ask::Tools).await?;
+    let models = host
+        .query_all(|after| harness::ask::ConversationModels {
+            agent,
+            page: page(after),
+        })
+        .await?
+        .into_iter()
+        .map(|row| (row.thread, row))
+        .collect();
     Ok(Detail {
         setup,
         ownership,
@@ -324,6 +334,7 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         bound,
         tools,
         failing,
+        models,
     })
 }
 
@@ -487,9 +498,9 @@ async fn opened_at(host: &Host, thread: u64) -> Result<Option<u64>, Error> {
 
 async fn served_setup(
     host: &Host,
-    agent: u64,
+    thread: u64,
 ) -> Result<(Option<AgentSetup>, Option<usize>), Error> {
-    let setup = card(host, agent).await?;
+    let setup = card(host, thread).await?;
     let service = setup
         .as_ref()
         .and_then(|setup| setup.configured.reached())
@@ -525,7 +536,7 @@ pub(crate) async fn transcript(
     let topic = topic(&host, id).await?;
     let tally = tally(&host, id).await?;
     let settling = host.query(harness::ask::Settling { thread: id }).await?;
-    let (setup, serving) = served_setup(&host, thread.agent).await?;
+    let (setup, serving) = served_setup(&host, id).await?;
     let waits = waits(&host, &thread).await?;
     let armed = armed(&host, id).await?;
     let failing = failing_of(&host, &thread).await?;
@@ -634,7 +645,6 @@ pub(crate) struct Delta {
 pub(crate) async fn delta(
     host: Host,
     id: u64,
-    agent: u64,
     next: u64,
     touched: Touched,
 ) -> Result<Delta, Error> {
@@ -676,7 +686,7 @@ pub(crate) async fn delta(
         false => None,
     };
     let setup = match touched.setup {
-        true => Some(served_setup(&host, agent).await?),
+        true => Some(served_setup(&host, id).await?),
         false => None,
     };
     let armed = match touched.armed {

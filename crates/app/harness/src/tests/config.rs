@@ -37,7 +37,6 @@ fn each_model_call_reads_the_configuration_at_the_head_and_its_turn_names_that_s
     assert_eq!(sent["system"][0]["text"], "Keep notes in /shared.");
 
     let french = Config {
-        max_tokens: 2048,
         system: "Answer in French.".into(),
         ..scout()
     };
@@ -58,10 +57,9 @@ fn each_model_call_reads_the_configuration_at_the_head_and_its_turn_names_that_s
     let (request, _) = open_request(chain);
     let sent = provider_body(chain, &request);
     assert_eq!(
-        sent["max_tokens"], 2048,
+        sent["system"][0]["text"], "Answer in French.",
         "the edit holds from the next call"
     );
-    assert_eq!(sent["system"][0]["text"], "Answer in French.");
     chain.at(4, 0);
     model_says(
         chain,

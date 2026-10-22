@@ -367,13 +367,14 @@ fn a_pinned_service_keeps_to_its_accounts_and_one_the_route_lists_not_gives_up()
     let chain = &world.chain;
     two_services(&world);
     configured(chain, &format!("service = \"{SERVICE}\"\n"));
-    let thread = world.mention("m1", "hello");
+    world.mention("m1", "hello");
     chain.at(6, 0);
     learned(chain, SERVICE);
     chain.at(7, 0);
     says(chain, SERVICE, None, "a", FINE);
     configured(chain, "service = \"elsewhere\"\n");
-    world.mention("m2", "and now?");
+    new_thread_retiring_the_current_one(&world);
+    let thread = world.mention("m2", "and now?");
     let told = notices(chain, thread);
     let why = format!(
         "the agent's configuration pins service elsewhere, which provider anthropic's route is not reached through ({SERVICE}, {TWO})"
@@ -619,4 +620,30 @@ fn a_search_one_account_answered_goes_as_plain_text_once_a_429_leaves_the_accoun
     let (next, pinned) = open(chain, SERVICE, model_wire::TURN);
     assert_eq!(pinned.as_deref(), Some("b"));
     minted_absent(&body(chain, &next).to_string());
+}
+
+#[test]
+fn an_open_conversation_keeps_the_service_its_front_pinned_when_it_started() {
+    let world = world();
+    let chain = &world.chain;
+    two_services(&world);
+    configured(chain, &format!("service = \"{SERVICE}\"\n"));
+    let thread = world.mention("m1", "hello");
+    chain.at(6, 0);
+    learned(chain, SERVICE);
+    chain.at(7, 0);
+    says(chain, SERVICE, None, "a", FINE);
+    configured(chain, &format!("service = \"{TWO}\"\n"));
+    world.mention("m2", "and now?");
+    chain.at(8, 0);
+    assert!(
+        none_open(chain, TWO, model_wire::TURN),
+        "its pin is the one it started with"
+    );
+    says(chain, SERVICE, Some("a"), "a", FINE);
+    new_thread_retiring_the_current_one(&world);
+    let fresh = world.mention("m3", "a new one");
+    assert_ne!(fresh, thread);
+    chain.at(9, 0);
+    says(chain, TWO, None, "b", FINE);
 }

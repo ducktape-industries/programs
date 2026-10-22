@@ -43,6 +43,15 @@ pub(crate) fn window(ctx: &QueryCtx, provider: &str, name: &str) -> Result<Windo
     Ok(PROVIDER_WINDOWS.get(ctx, &key)?.unwrap_or(Window::Unasked))
 }
 
+pub(crate) fn forget_unreported(ctx: &ExecCtx) -> Result<(), Error> {
+    for (key, window) in PROVIDER_WINDOWS.all(ctx)? {
+        if window == Window::Unreported {
+            PROVIDER_WINDOWS.remove(ctx, &key);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn learned(
     ctx: &ExecCtx,
     reach: &Reach,

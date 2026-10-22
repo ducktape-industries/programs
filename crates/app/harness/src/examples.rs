@@ -304,3 +304,14 @@ pub(crate) fn asked() -> Query {
         page: page(),
     }
 }
+
+pub(crate) fn thread_card() -> Query {
+    Query::ThreadCard { thread: 144 }
+}
+
+pub(crate) fn conversation_models() -> Query {
+    Query::ConversationModels {
+        agent: 21,
+        page: page(),
+    }
+}

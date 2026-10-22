@@ -618,6 +618,11 @@ fn threads(
         .and_then(|setup| setup.configured.compact_at());
     let rows = detail.threads.iter().map(|(thread, _)| {
         let id = thread.id;
+        let kept = detail.models.get(&id).and_then(|row| {
+            let kept = row.kept.as_ref()?;
+            Some((row.window.tokens(), kept.compact_at))
+        });
+        let (window, threshold) = kept.unwrap_or((window, threshold));
         let theme = *theme;
         let state = match thread.closed {
             true => closed_badge(format!("thread-{id}-state"), &theme, ladder),

@@ -1291,6 +1291,29 @@
       }
     ],
     [
+      "ConversationModel",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "thread",
+                "u64"
+              ],
+              [
+                "kept",
+                "Option<ModelKept>"
+              ],
+              [
+                "window",
+                "Window"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Ended",
       {
         "struct": {
@@ -1826,6 +1849,41 @@
               [
                 "seq",
                 "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "ModelKept",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "model",
+                "String"
+              ],
+              [
+                "max_tokens",
+                "u32"
+              ],
+              [
+                "thinking",
+                "Option<Thinking>"
+              ],
+              [
+                "compact_at",
+                "Option<u64>"
+              ],
+              [
+                "provider",
+                "String"
+              ],
+              [
+                "service",
+                "Option<String>"
               ]
             ]
           }
@@ -2521,6 +2579,26 @@
       }
     ],
     [
+      "Option<ModelKept>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "ModelKept"
+            ]
+          ]
+        }
+      }
+    ],
+    [
       "Option<Partial>",
       {
         "enum": {
@@ -3011,6 +3089,29 @@
               [
                 "items",
                 "Vec<Conversation>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<ConversationModel>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<ConversationModel>"
               ],
               [
                 "next",
@@ -3627,6 +3728,16 @@
               41,
               "Asked",
               "Query__Asked"
+            ],
+            [
+              42,
+              "ThreadCard",
+              "Query__ThreadCard"
+            ],
+            [
+              43,
+              "ConversationModels",
+              "Query__ConversationModels"
             ]
           ]
         }
@@ -3839,6 +3950,25 @@
         "struct": {
           "fields": {
             "named_fields": [
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__ConversationModels",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "agent",
+                "u64"
+              ],
               [
                 "page",
                 "PageRequest"
@@ -4125,6 +4255,21 @@
               [
                 "place",
                 "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__ThreadCard",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "thread",
+                "u64"
               ]
             ]
           }
@@ -4538,6 +4683,11 @@
               35,
               "Promise",
               "Reply__Promise"
+            ],
+            [
+              36,
+              "ConversationModels",
+              "Reply__ConversationModels"
             ]
           ]
         }
@@ -4646,6 +4796,18 @@
           "fields": {
             "unnamed_fields": [
               "PageResponse<AgentCard>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__ConversationModels",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<ConversationModel>"
             ]
           }
         }
@@ -6174,6 +6336,19 @@
       {
         "sequence": {
           "elements": "Conversation",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<ConversationModel>",
+      {
+        "sequence": {
+          "elements": "ConversationModel",
           "length_range": {
             "end": 4294967295,
             "start": 0

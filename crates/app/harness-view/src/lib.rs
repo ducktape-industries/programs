@@ -542,13 +542,13 @@ impl Agents {
         let Some(Some(shown)) = self.transcript.ready() else {
             return;
         };
-        let (thread, agent, next) = (shown.thread.id, shown.thread.agent, shown.next());
+        let (thread, next) = (shown.thread.id, shown.next());
         let mut touched = std::mem::take(&mut self.touched);
         touched.calls.retain(|call| shown.asked.contains(call));
         if !touched.any() {
             return;
         }
-        let read = read::delta(cx.host(), thread, agent, next, touched);
+        let read = read::delta(cx.host(), thread, next, touched);
         self.following = Some(cx.land(read, |view, delta, cx| {
             view.following = None;
             match delta {

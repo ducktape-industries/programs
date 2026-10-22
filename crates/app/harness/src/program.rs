@@ -108,6 +108,12 @@ impl Program for Harness {
             Query::Asked { agent, page } => {
                 Ok(Reply::Promises(crate::promises::asked(ctx, agent, &page)?))
             }
+            Query::ThreadCard { thread } => {
+                Ok(Reply::Agent(crate::kept::thread_card(ctx, thread)?))
+            }
+            Query::ConversationModels { agent, page } => Ok(Reply::ConversationModels(
+                crate::kept::models(ctx, agent, &page)?,
+            )),
         }
     }
 }

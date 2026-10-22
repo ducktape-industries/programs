@@ -117,6 +117,7 @@ pub const FLEET_RUNS: Set<(u64, u64)> = Set::new("fleet-run/");
 pub const UNANSWERED: Map<(AccountNumber, u64), Unanswered> = Map::new("unanswered/");
 pub const UNANSWERED_HELD: Set<(u64, AccountNumber, u64)> = Set::new("unanswered-held/");
 pub const UNANSWERED_UNHEARD: Set<(AccountNumber, u64)> = Set::new("unanswered-unheard/");
+pub const MODEL_KEPT: Map<u64, crate::ModelKept> = Map::new("model-kept/");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Unanswered {

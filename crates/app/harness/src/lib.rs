@@ -15,6 +15,7 @@ mod examples;
 mod failures;
 mod fleet_runs;
 mod gate;
+mod kept;
 mod listening;
 mod pictures;
 mod program;
@@ -632,6 +633,23 @@ pub struct Conversation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct ModelKept {
+    pub model: String,
+    pub max_tokens: u32,
+    pub thinking: Option<config::Thinking>,
+    pub compact_at: Option<u64>,
+    pub provider: String,
+    pub service: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct ConversationModel {
+    pub thread: u64,
+    pub kept: Option<ModelKept>,
+    pub window: Window,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct FinalError {
     pub thread: u64,
     pub text: String,
@@ -1165,6 +1183,16 @@ pub enum Query {
         agent: AccountNumber,
         page: PageRequest,
     },
+    #[ask(Reply::Agent(Option<AgentSetup>))]
+    #[tool_query(description = "Card, as one conversation runs it: its agent's setup without the system prompt, with the model, max_tokens, thinking, compact_at, provider and service the conversation keeps from when it started laid over the agent's front matter, and that model's route and window; null for no such conversation.", example = examples::thread_card)]
+    ThreadCard { thread: u64 },
+    #[ask(Reply::ConversationModels(PageResponse<ConversationModel>))]
+    #[reads(state::BY_AGENT, state::MODEL_KEPT, state::PROVIDER_WINDOWS)]
+    #[tool_query(description = "An agent's conversations, newest first, each with the model settings it keeps from when it started (model, max_tokens, thinking, compact_at, provider, service) and the window harness learned for that model; kept is null for one that keeps none yet, which runs on its agent's front matter.", example = examples::conversation_models)]
+    ConversationModels {
+        agent: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1202,6 +1230,7 @@ pub enum Reply {
     BudgetFacts(BudgetFactsReport),
     Promises(PageResponse<PromiseRow>),
     Promise(Option<PromiseRow>),
+    ConversationModels(PageResponse<ConversationModel>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1505,7 +1534,9 @@ fn query_variants_only_append() {
             "BudgetFacts",
             "Promises",
             "Promise",
-            "Asked"
+            "Asked",
+            "ThreadCard",
+            "ConversationModels"
         ]
     );
 }
