@@ -92,7 +92,8 @@ fn op_variants_only_append() {
             "AdoptOwners",
             "Archive",
             "Dispatch",
-            "ListInvolved",
+            "-",
+            "Migrate",
         ]
     );
 }

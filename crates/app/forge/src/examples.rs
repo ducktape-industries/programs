@@ -206,8 +206,12 @@ pub(crate) fn adopt() -> Op {
     }
 }
 
-pub(crate) fn list_involved() -> Op {
-    Op::ListInvolved { after: None }
+pub(crate) fn migrate() -> Op {
+    Op::Migrate {
+        height: 300_000,
+        first: Some("actions".into()),
+        last: None,
+    }
 }
 
 pub(crate) fn archive() -> Op {

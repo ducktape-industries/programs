@@ -209,8 +209,12 @@ pub enum Op {
         payload: Vec<u8>,
         at: Revision,
     },
-    #[tool_op(description = "Retired, and refused: its one walk listing the change rooms opened before rooms were listed for who takes part has run. It goes, its tag kept, with forge's next append.", returns = Option<Vec<u8>>, example = crate::examples::list_involved)]
-    ListInvolved { after: Option<Vec<u8>> },
+    #[tool_op(description = "Rewrite the program ids forge stores by the programs role's Renames at height: each renamed watcher hears forge's events under its new id (a watch set there already is kept), over the watchers first..=last (each a program id; null: from the first, or to the last). Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.", example = crate::examples::migrate)]
+    Migrate {
+        height: u64,
+        first: Option<::program::ProgramId>,
+        last: Option<::program::ProgramId>,
+    } = 27,
 }
 
 impl Op {
@@ -237,7 +241,7 @@ impl Op {
             | Op::Dequeue { repo, .. }
             | Op::Archive { repo, .. }
             | Op::Dispatch { repo, .. } => Some(repo),
-            Op::Watch { .. } | Op::AdoptOwners { .. } | Op::ListInvolved { .. } => None,
+            Op::Watch { .. } | Op::AdoptOwners { .. } | Op::Migrate { .. } => None,
         }
     }
 }

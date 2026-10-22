@@ -236,10 +236,21 @@ pub fn describe(op: &Op) -> Description {
                 fields: vec![field("kind", Value::text(kind))],
             };
         }
-        Op::ListInvolved { .. } => {
+        Op::Migrate {
+            height,
+            first,
+            last,
+        } => {
+            let bound = |bound: &Option<::program::ProgramId>, open: &str| {
+                Value::text(bound.clone().unwrap_or_else(|| open.to_owned()))
+            };
             return Description {
-                title: "List change rooms for who takes part in them".into(),
-                fields: Vec::new(),
+                title: "Migrate".into(),
+                fields: vec![
+                    field("height", Value::text(height.to_string())),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
             };
         }
         Op::ReviewSubmit { repo, n, review } => (

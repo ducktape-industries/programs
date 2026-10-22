@@ -416,3 +416,40 @@ fn a_dispatch_at_a_ref_that_is_no_branch_is_refused() {
         "a refused dispatch tells no one"
     );
 }
+
+#[test]
+fn migrate_moves_a_renamed_watcher_and_it_hears_the_next_push_under_its_new_id() {
+    let mut sandbox = watched();
+    sandbox.chain.seat::<Watcher>("o/watcher");
+    sandbox.chain.register("o/watcher", 904);
+    sandbox.chain.seat::<program::Renamer>("programs");
+    let renames = vec![(WATCHER.to_owned(), "o/watcher".to_owned())];
+    let anyone = Origin::Signed(STRANGER.to_vec());
+    sandbox.chain.submit(anyone, "programs", &renames).unwrap();
+    let migrate = |first: Option<&str>, last: Option<&str>| Op::Migrate {
+        height: 1,
+        first: first.map(str::to_owned),
+        last: last.map(str::to_owned),
+    };
+    let watching = |sandbox: &MemorySandbox| -> Vec<String> {
+        let all = forge::tables::WATCHERS.all(&sandbox.reads(1)).unwrap();
+        all.into_iter().map(|(program, _)| program).collect()
+    };
+    act(&sandbox, STRANGER, &migrate(Some("a"), Some("a"))).unwrap();
+    assert_eq!(watching(&sandbox), [WATCHER], "outside the range");
+    act(&sandbox, STRANGER, &migrate(None, None)).unwrap();
+    assert_eq!(watching(&sandbox), ["o/watcher"]);
+    let state = |sandbox: &MemorySandbox| sandbox.chain.host(forge::PROGRAM).borrow().state.clone();
+    let before = state(&sandbox);
+    act(&sandbox, STRANGER, &migrate(None, None)).unwrap();
+    assert_eq!(state(&sandbox), before, "a second run writes nothing");
+    let mut source = MemoryObjects::new(Hash::Sha1);
+    let root = file_commit(&mut source, &[], 1, &[("a", b"1\n")]);
+    let zero = Hash::Sha1.zero();
+    let pack = pack_of(&source, &all_ids(&source));
+    let made = [(zero, root, "refs/heads/main")];
+    push(&sandbox, OWNER, "project", &made, &pack).unwrap();
+    let renamed: Vec<Watched> = sandbox.chain.query("o/watcher", &()).unwrap();
+    assert_eq!(renamed, [moved("refs/heads/main", None, Some(root))]);
+    assert!(heard(&sandbox).is_empty(), "the old id hears nothing");
+}

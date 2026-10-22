@@ -1,7 +1,7 @@
 //! Watchers: programs told of every ref forge moves, every change it opens, closes or merges and
 //! every dispatch a writer sends, each event a message of its own (`deliver ++ borsh(Watched)`)
 //! whose refusal never fails forge's write.
-use ::program::{Error, ExecCtx, Reply, invalid, not_found};
+use ::program::{Error, ExecCtx, ProgramId, Reply, invalid, not_found};
 use gitcore::{Kind, Objects};
 
 use crate::contract::{Principal, Revision, Watched};
@@ -14,6 +14,32 @@ pub(crate) fn watch(ctx: &ExecCtx, deliver: Vec<u8>) -> Result<(), Error> {
     match deliver.is_empty() {
         true => WATCHERS.remove(ctx, &program),
         false => WATCHERS.put(ctx, &program, &deliver),
+    }
+    Ok(())
+}
+
+pub(crate) fn migrate(
+    ctx: &ExecCtx,
+    height: u64,
+    first: Option<ProgramId>,
+    last: Option<ProgramId>,
+) -> Result<(), Error> {
+    let renamed = ctx.renames(height)?;
+    let mut range = WATCHERS.prefix_of(&());
+    if let Some(first) = first {
+        range.start = WATCHERS.key(&first);
+    }
+    if let Some(last) = last {
+        range.end = Some([WATCHERS.key(&last), vec![0]].concat());
+    }
+    for (program, deliver) in WATCHERS.scan(ctx, range)? {
+        let Some(to) = renamed.moved(&program) else {
+            continue;
+        };
+        WATCHERS.remove(ctx, &program);
+        if !WATCHERS.has(ctx, to) {
+            WATCHERS.put(ctx, to, &deliver);
+        }
     }
     Ok(())
 }

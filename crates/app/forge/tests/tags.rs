@@ -29,7 +29,7 @@ const LIVE_OPS: [(&str, i64); 24] = [
     ("AdoptOwners", 23),
     ("Archive", 24),
     ("Dispatch", 25),
-    ("ListInvolved", 26),
+    ("Migrate", 27),
 ];
 
 const GRANT_TAG: u8 = 2;
@@ -37,6 +37,7 @@ const REVOKE_TAG: u8 = 3;
 const ARCHIVE_ENDED_TAG: u8 = 17;
 const ACTIVITY_TAG: u8 = 10;
 const JUDGMENT_TAG: u8 = 13;
+const LIST_INVOLVED_TAG: u8 = 26;
 
 const LIVE_QUERIES: [(&str, i64); 4] = [
     ("Changes", 11),
@@ -232,4 +233,20 @@ fn the_queries_and_replies_beside_the_retired_judgment_keep_their_tags() {
         let judged = tags.iter().any(|(name, _)| *name == "Judgment");
         assert!(!judged, "{root}: {tags:?}");
     }
+}
+
+#[test]
+fn a_list_involved_tag_is_refused_and_writes_nothing() {
+    let sandbox = founded();
+    create(&sandbox, REPO, HashKind::Sha1);
+    let before = repo_read(&sandbox);
+    let no_after: Option<Vec<u8>> = None;
+    let bytes = op_bytes(LIST_INVOLVED_TAG, &[encoded(&no_after)]);
+    let refused = sandbox
+        .forge
+        .refused(|| sent_as_bytes(&sandbox, STRANGER, &bytes));
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+    let undecoded = refused.message.starts_with("forge: Op did not decode: ");
+    assert!(undecoded, "{refused}");
+    assert_eq!(repo_read(&sandbox), before);
 }

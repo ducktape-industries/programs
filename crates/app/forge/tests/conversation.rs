@@ -275,19 +275,6 @@ fn seated(sandbox: &MemorySandbox, room: &str) -> BTreeSet<u64> {
     seats(sandbox, room).into_keys().collect()
 }
 
-fn unseat(sandbox: &MemorySandbox, room: &str, account: u64) {
-    let ctx = sandbox.chat.exec(MockHost::env("chat"));
-    chat::tables::MEMBERS.remove(&ctx, &(room.to_owned(), Principal::Account(account)));
-}
-
-fn as_opened_before_listing(sandbox: &MemorySandbox, room: &str) {
-    for account in seated(sandbox, room) {
-        unseat(sandbox, room, account);
-    }
-    let ctx = sandbox.chat.exec(MockHost::env("chat"));
-    chat::tables::CHANNEL_META.remove(&ctx, &room.to_owned());
-}
-
 fn review_as(sandbox: &MemorySandbox, key: &[u8], height: u64, n: u64, ahead: Oid) {
     let op = Op::ReviewSubmit {
         repo: "project".into(),
@@ -332,24 +319,6 @@ fn a_reviewer_asked_later_or_one_who_reviews_unasked_is_seated_and_a_seat_held_k
         BTreeMap::from([(11, 3), (12, 1), (13, 1), (14, 4)]),
         "each seat keeps the block that first seated it"
     );
-}
-
-#[test]
-fn list_involved_is_retired_refused_and_lists_nothing() {
-    let (mut sandbox, _, _) = seeded();
-    sandbox
-        .chain
-        .seat::<scheduler::Scheduler>(scheduler::PROGRAM);
-    opened(&sandbox, FEATURE);
-    as_opened_before_listing(&sandbox, OWN);
-    let walk = Op::ListInvolved { after: None };
-    let refused = sandbox
-        .forge
-        .refused(|| signed_op(&sandbox, STRANGER, 2, &walk));
-    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
-    sandbox.chain.at(10, TIME);
-    assert_eq!(listed(&sandbox, OWN), None);
-    assert!(seated(&sandbox, OWN).is_empty());
 }
 
 fn line(sandbox: &MemorySandbox, room: &str, group: &str) -> chat::MsgRow {

@@ -451,16 +451,17 @@ first gave it, and chat's answer is absorbed. chat itself seats whoever posts in
 mentioned there. The repository's owner is not seated: they are told of a change no one was asked
 to review, and a post seats them. A change that talks in another room never touches that room.
 
-`ListInvolved` (tag 26) gave the rooms opened before this the same listing, one change a block,
-and is retired now that its walk has run: it is refused, and the variant goes, its tag kept, with
-forge's next append.
+`ListInvolved` (tag 26) gave the rooms opened before this the same listing, one change a block.
+Its walk has run, and the variant is gone: its tag is kept, and an op sent with it is refused.
 
 ### Watchers
 
 A program that sends `Watch { deliver }` (a program only: `sending_program`) hears each
 event below as a message of its own, `deliver ++ borsh(Watched)`, sent with
 `Reply::Wanted`: forge absorbs the answer, so a watcher's refusal never fails forge's
-write. An empty `deliver` stops it. Each event names who acted.
+write. An empty `deliver` stops it. Each event names who acted. A watcher the programs role
+renames hears under its new id once `Migrate { height, first, last }` (anyone's, over the
+watchers `first..=last`) has run over it; a watch set under the new id already is kept.
 
 | `Watched` | when |
 |---|---|
