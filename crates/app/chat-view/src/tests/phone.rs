@@ -534,6 +534,24 @@ fn a_refused_room_says_why_and_retry_reads_it_again() {
 }
 
 #[test]
+fn a_room_whose_read_had_no_answer_is_read_again_on_the_next_block() {
+    let (mut cx, view) = in_general();
+    cx.update(&view, |chat, _, cx| {
+        chat.room.as_mut().unwrap().messages =
+            Loadable::Failed(view::host::Error::new("node_failed", "no answer came back"));
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(cx.has_text("no answer came back"));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(9, posted("random")));
+    cx.run_until_parked();
+    assert!(cx.has_text("hello"), "{:?}", cx.texts());
+    assert!(!cx.has_text("no answer came back"));
+}
+
+#[test]
 fn a_day_opens_under_its_separator_and_the_chains_today_says_today() {
     let (mut cx, view) = in_general();
     let day = 86_400_000;

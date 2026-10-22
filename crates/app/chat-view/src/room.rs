@@ -632,7 +632,20 @@ impl Chat {
             self.load_choices(cx);
         }
         self.reread_filter(change, cx);
+        let refused = self.room.as_ref().map(|room| {
+            let replies = room.thread.as_ref().map(|thread| &thread.replies);
+            let thread = replies.is_some_and(|replies| replies.failed().is_some());
+            (room.messages.failed().is_some(), thread)
+        });
         self.refresh_room(change, cx);
+        if let Some((rows, thread)) = refused {
+            if rows {
+                self.retry_read(Pane::Timeline, cx);
+            }
+            if thread {
+                self.retry_read(Pane::Thread, cx);
+            }
+        }
         if let Some(me) = self.my_account().filter(|_| self.listening_asked) {
             let listening = ask::Listening {
                 account: me,
