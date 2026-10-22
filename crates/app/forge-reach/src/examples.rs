@@ -27,6 +27,17 @@ pub(crate) fn report() -> Op {
     }
 }
 
+pub(crate) fn report_patch() -> Op {
+    Op::ReportPatch {
+        repo: "programs".into(),
+        n: 12,
+        commit: "0".repeat(40),
+        context: "review".into(),
+        state: CheckState::Passed,
+        url: Some("duck://testnet-0a1b2c3d/forge/programs/12".into()),
+    }
+}
+
 pub(crate) fn reports() -> Query {
     Query::Reports {
         repo: "programs".into(),

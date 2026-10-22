@@ -904,6 +904,216 @@ fn a_merge_previews_each_other_reviewed_change_and_its_stale_lane_is_wanted() {
     assert_eq!(world.wanted(LANE_ACCOUNT), [rerun_of(2, after)]);
 }
 
+fn patch_reviewed(world: &World, head: Oid) -> Result<Vec<u8>, ::program::Error> {
+    let review = Op::ReportPatch {
+        repo: REPO.into(),
+        n: 1,
+        commit: head.to_hex(),
+        context: REVIEW.into(),
+        state: CheckState::Passed,
+        url: Some("review.md".into()),
+    };
+    world
+        .chain
+        .submit(Origin::Signed(REVIEWER.to_vec()), PROGRAM, &review)
+}
+
+fn review_passed() -> (String, CheckState, Option<String>) {
+    (
+        review_context(),
+        CheckState::Passed,
+        Some("review.md".into()),
+    )
+}
+
+const X_REWRITTEN: Files = &[
+    ("Cargo.lock", "lock 2\n"),
+    ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\neight\n"),
+    ("b/y.rs", "y 1\n"),
+];
+
+#[test]
+fn a_review_of_the_patch_carries_while_the_head_holds_whatever_the_target_did() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    patch_reviewed(&world, feature).unwrap();
+    dev_moves(&mut world, base, X_REWRITTEN);
+    let merge = world.preview();
+    assert_eq!(world.statuses(merge), [review_passed()]);
+    let carried = &world.verdict().unwrap().carried[0];
+    assert_eq!(carried.gated, feature.to_hex());
+    assert!(carried.differs.is_empty());
+}
+
+#[test]
+fn a_new_head_with_another_patch_resets_a_review_of_the_patch() {
+    let mut world = world();
+    let (_, feature) = opened(&mut world);
+    patch_reviewed(&world, feature).unwrap();
+    let grown = world.commit(
+        &[feature],
+        &[
+            ("Cargo.lock", "lock 1\n"),
+            ("a/x.rs", "one\n2\n3\n4\n5\n6\n7\n8\n"),
+            ("b/y.rs", "y 1\n"),
+            ("c.md", "new\n"),
+        ],
+    );
+    world.push(Some(feature), grown, "feature");
+    let merge = world.preview();
+    assert_eq!(
+        world.statuses(merge),
+        [(review_context(), CheckState::Pending, None)]
+    );
+    assert_eq!(world.verdict().unwrap().carried[0].differs, ["c.md"]);
+}
+
+#[test]
+fn a_review_of_the_patch_carries_across_a_clean_rebase() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    patch_reviewed(&world, feature).unwrap();
+    dev_moves(
+        &mut world,
+        base,
+        &[
+            ("Cargo.lock", "lock 1\n"),
+            ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\n8\n"),
+            ("b/y.rs", "y 2\n"),
+        ],
+    );
+    rebased(&world, feature);
+    let merge = world.preview();
+    assert_eq!(world.statuses(merge), [review_passed()]);
+    assert_ne!(world.verdict().unwrap().head, feature.to_hex());
+}
+
+#[test]
+fn a_lane_beside_a_review_of_the_patch_is_wanted_when_the_target_rewrote_a_reviewed_file() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    patch_reviewed(&world, feature).unwrap();
+    world.report(feature, LANE_REACH, None).unwrap();
+    dev_moves(&mut world, base, X_REWRITTEN);
+    world.require();
+    let merge = world.preview();
+    assert!(world.statuses(merge).contains(&review_passed()));
+    let lane = (lane_context(), CheckState::Pending, None);
+    assert!(world.statuses(merge).contains(&lane));
+    assert_eq!(world.wanted(LANE_ACCOUNT), [rerun_of(1, merge)]);
+}
+
+#[test]
+fn a_review_of_the_patch_replaces_a_report_of_the_same_commit_and_context() {
+    let mut world = world();
+    let (_, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    patch_reviewed(&world, feature).unwrap();
+    let asked = Query::Reports {
+        repo: REPO.into(),
+        commit: feature.to_hex(),
+        page: PageRequest::first(8),
+    };
+    let Reply::Reports(page) = world.chain.query(PROGRAM, &asked).unwrap() else {
+        panic!("reports answer Reports");
+    };
+    let review: Vec<_> = page
+        .items
+        .iter()
+        .map(|item| (item.reporter, item.context.as_str(), item.reach.len()))
+        .collect();
+    assert_eq!(review, [(REVIEWER_ACCOUNT, REVIEW, 0)]);
+    let merge = world.preview();
+    assert_eq!(world.statuses(merge), [review_passed()]);
+    reviewed(&world, feature);
+    let merge = world.preview();
+    let review = (
+        review_context(),
+        CheckState::Passed,
+        Some("lane.log".into()),
+    );
+    assert_eq!(world.statuses(merge), [review]);
+    assert_eq!(world.verdict().unwrap().carried.len(), 1);
+}
+
+#[test]
+fn reports_lists_a_result_of_the_patch_after_the_trees_with_an_empty_reach() {
+    let mut world = world();
+    let (_, feature) = opened(&mut world);
+    world.report(feature, &["a"], None).unwrap();
+    patch_reviewed(&world, feature).unwrap();
+    let mut seen = Vec::new();
+    let mut after = None;
+    loop {
+        let asked = Query::Reports {
+            repo: REPO.into(),
+            commit: feature.to_hex(),
+            page: PageRequest::resume(after, 1),
+        };
+        let Reply::Reports(page) = world.chain.query(PROGRAM, &asked).unwrap() else {
+            panic!("reports answer Reports");
+        };
+        seen.extend(
+            page.items
+                .into_iter()
+                .map(|item| (item.reporter, item.context, item.reach)),
+        );
+        match page.next {
+            Some(next) => after = Some(next),
+            None => break,
+        }
+    }
+    let lane = (LANE_ACCOUNT, CONTEXT.to_owned(), vec!["a".to_owned()]);
+    let review = (REVIEWER_ACCOUNT, REVIEW.to_owned(), Vec::new());
+    assert_eq!(seen, [lane, review]);
+}
+
+#[test]
+fn a_result_of_the_patch_touches_the_verdict_and_the_reports_of_its_commit() {
+    use ::program::Reads;
+    let row = crate::state::PATCHES.key(&(
+        REPO.to_owned(),
+        "0".repeat(40),
+        REVIEWER_ACCOUNT,
+        REVIEW.to_owned(),
+    ));
+    let verdict = Query::Verdict {
+        repo: REPO.into(),
+        n: 1,
+    };
+    let reports = Query::Reports {
+        repo: REPO.into(),
+        commit: "0".repeat(40),
+        page: PageRequest::first(8),
+    };
+    assert!(verdict.touched_by(PROGRAM, std::slice::from_ref(&row)));
+    assert!(reports.touched_by(PROGRAM, &[row]));
+}
+
+#[test]
+fn a_review_of_the_patch_names_a_full_commit_and_its_context() {
+    let mut world = world();
+    let (_, feature) = opened(&mut world);
+    for (commit, context) in [
+        (feature.to_hex()[..12].to_owned(), REVIEW),
+        (feature.to_hex(), " "),
+    ] {
+        let review = Op::ReportPatch {
+            repo: REPO.into(),
+            n: 1,
+            commit,
+            context: context.into(),
+            state: CheckState::Passed,
+            url: None,
+        };
+        let refused = world
+            .chain
+            .submit(Origin::Signed(REVIEWER.to_vec()), PROGRAM, &review)
+            .unwrap_err();
+        assert_eq!(refused.code, ::program::code::INVALID_INPUT);
+    }
+}
+
 #[test]
 fn a_merge_leaves_a_change_with_a_required_context_unpassed_as_it_was() {
     let mut world = world();

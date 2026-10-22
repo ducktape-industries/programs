@@ -4,7 +4,7 @@ use ::program::schema::Return;
 use ::program::tools::{Described, Tools};
 use ::program::{Error, ExecCtx, Program, QueryCtx, Reply as Wanted};
 
-use crate::rules::{Reported, report, reports, verdict, wanted, watched};
+use crate::rules::{Patched, Reported, report, report_patch, reports, verdict, wanted, watched};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct ForgeReach;
@@ -49,6 +49,24 @@ impl Program for ForgeReach {
                     url,
                     reach,
                     change,
+                },
+            ),
+            Op::ReportPatch {
+                repo,
+                n,
+                commit,
+                context,
+                state,
+                url,
+            } => report_patch(
+                ctx,
+                Patched {
+                    repo,
+                    n,
+                    commit,
+                    context,
+                    state,
+                    url,
                 },
             ),
         }

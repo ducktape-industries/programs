@@ -9,7 +9,7 @@ use forge::{
 };
 
 use crate::state::{
-    HEADS, Kept, PREVIEWED, PREVIEWING, REACH, REPORTS, Reporting, WANTED, WANTING,
+    HEADS, Kept, PATCHES, PREVIEWED, PREVIEWING, REACH, REPORTS, Reporting, WANTED, WANTING,
 };
 use crate::{
     AccountNumber, Carried, PROGRAM, PageRequest, PageResponse, PreviewVerdict, Report, Rerun,
@@ -101,14 +101,7 @@ fn previewing(ctx: &QueryCtx, repo: &str, commit: &str) -> Result<Vec<u64>, Erro
 
 pub(crate) fn report(ctx: &ExecCtx, reported: Reported) -> Result<(), Error> {
     let reporter = ctx.sender_account()?;
-    if !is_full_oid(&reported.commit) {
-        return Err(invalid(
-            "a report names its commit by its full lowercase hex id",
-        ));
-    }
-    if reported.context.trim().is_empty() {
-        return Err(invalid("a report names its context"));
-    }
+    check_named(&reported.commit, &reported.context)?;
     if reported.reach.is_empty() {
         return Err(invalid(
             "a report names the paths its check read; \"\" is the whole tree",
@@ -135,6 +128,9 @@ pub(crate) fn report(ctx: &ExecCtx, reported: Reported) -> Result<(), Error> {
         height: ctx.env().height,
     };
     REPORTS.put(ctx, &key, &kept);
+    if PATCHES.get(ctx, &key)?.is_some() {
+        PATCHES.remove(ctx, &key);
+    }
     if let Some(n) = reported.change {
         HEADS.insert(ctx, &(reported.repo.clone(), n, reported.commit.clone()));
     }
@@ -144,6 +140,52 @@ pub(crate) fn report(ctx: &ExecCtx, reported: Reported) -> Result<(), Error> {
     };
     for n in changes {
         tell(ctx, &reported.repo, n)?;
+    }
+    Ok(())
+}
+
+pub(crate) struct Patched {
+    pub repo: String,
+    pub n: u64,
+    pub commit: String,
+    pub context: String,
+    pub state: CheckState,
+    pub url: Option<String>,
+}
+
+pub(crate) fn report_patch(ctx: &ExecCtx, patched: Patched) -> Result<(), Error> {
+    let reporter = ctx.sender_account()?;
+    check_named(&patched.commit, &patched.context)?;
+    let key: Reporting = (
+        patched.repo.clone(),
+        patched.commit.clone(),
+        reporter,
+        patched.context,
+    );
+    for old in REACH.scan(ctx, REACH.prefix_of(&key))? {
+        REACH.remove(ctx, &old);
+    }
+    if REPORTS.get(ctx, &key)?.is_some() {
+        REPORTS.remove(ctx, &key);
+    }
+    let kept = Kept {
+        state: patched.state,
+        url: patched.url,
+        height: ctx.env().height,
+    };
+    PATCHES.put(ctx, &key, &kept);
+    HEADS.insert(ctx, &(patched.repo.clone(), patched.n, patched.commit));
+    tell(ctx, &patched.repo, patched.n)
+}
+
+fn check_named(commit: &str, context: &str) -> Result<(), Error> {
+    if !is_full_oid(commit) {
+        return Err(invalid(
+            "a report names its commit by its full lowercase hex id",
+        ));
+    }
+    if context.trim().is_empty() {
+        return Err(invalid("a report names its context"));
     }
     Ok(())
 }
@@ -231,15 +273,24 @@ fn judge(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Judgement>, Error>
         return Ok(None);
     };
     let reported = results(ctx, repo, n, &preview.from_head, &preview.merge)?;
-    let any_earlier = reported.values().any(|(_, _, earlier)| *earlier);
+    let any_earlier = reported.values().any(|found| found.earlier);
     let ours = match any_earlier {
         true => changed(ctx, repo, &preview.into_head, &preview.merge),
         false => None,
     };
     let mut judged = Vec::new();
-    for ((reporter, context), (gated, kept, earlier)) in reported {
+    for ((reporter, context), found) in reported {
+        let Found {
+            commit: gated,
+            kept,
+            earlier,
+            patch,
+        } = found;
         let key: Reporting = (repo.to_owned(), gated.clone(), reporter, context.clone());
-        let mut differs = differing_paths(ctx, repo, &key, &preview.merge)?;
+        let mut differs = match patch {
+            true => Vec::new(),
+            false => differing_paths(ctx, repo, &key, &preview.merge)?,
+        };
         let same_reach_elsewhere = earlier && differs.is_empty();
         if same_reach_elsewhere {
             let theirs = patch_of(ctx, repo, &gated, &preview.into_head);
@@ -353,7 +404,7 @@ fn preview_the_rest(ctx: &ExecCtx, repo: &str, merged: u64) -> Result<(), Error>
     for ((_, n), (head, merge)) in open {
         let passed: BTreeSet<String> = results(ctx, repo, n, &head, &merge)?
             .into_iter()
-            .filter(|(_, (_, kept, _))| kept.state == CheckState::Passed)
+            .filter(|(_, found)| found.kept.state == CheckState::Passed)
             .map(|((reporter, context), _)| format!("{reporter}/{context}"))
             .collect();
         let all_passed = required.iter().all(|context| passed.contains(context));
@@ -439,23 +490,45 @@ fn own_account(ctx: &QueryCtx) -> Result<Option<AccountNumber>, Error> {
     }
 }
 
-type Results = BTreeMap<(AccountNumber, String), (String, Kept, bool)>;
+struct Found {
+    commit: String,
+    kept: Kept,
+    earlier: bool,
+    patch: bool,
+}
+
+type Results = BTreeMap<(AccountNumber, String), Found>;
+
+type KeptAt = Vec<((AccountNumber, String), Kept, bool)>;
+
+fn kept_at(ctx: &QueryCtx, repo: &str, commit: &str) -> Result<KeptAt, Error> {
+    let at = (repo.to_owned(), commit.to_owned());
+    let trees = REPORTS
+        .scan(ctx, REPORTS.prefix_of(&at))?
+        .into_iter()
+        .map(|((_, _, reporter, context), kept)| ((reporter, context), kept, false));
+    let patches = PATCHES
+        .scan(ctx, PATCHES.prefix_of(&at))?
+        .into_iter()
+        .map(|((_, _, reporter, context), kept)| ((reporter, context), kept, true));
+    Ok(trees.chain(patches).collect())
+}
 
 fn results(ctx: &QueryCtx, repo: &str, n: u64, head: &str, merge: &str) -> Result<Results, Error> {
-    let mut reported: Results = reported_earlier(ctx, repo, n, head, merge)?
-        .into_iter()
-        .map(|(key, (commit, kept))| (key, (commit, kept, true)))
-        .collect();
+    let mut reported = reported_earlier(ctx, repo, n, head, merge)?;
     for commit in [head, merge] {
-        let at = (repo.to_owned(), commit.to_owned());
-        for ((_, _, reporter, context), kept) in REPORTS.scan(ctx, REPORTS.prefix_of(&at))? {
-            reported.insert((reporter, context), (commit.to_owned(), kept, false));
+        for (key, kept, patch) in kept_at(ctx, repo, commit)? {
+            let found = Found {
+                commit: commit.to_owned(),
+                kept,
+                earlier: false,
+                patch,
+            };
+            reported.insert(key, found);
         }
     }
     Ok(reported)
 }
-
-type Gated = BTreeMap<(AccountNumber, String), (String, Kept)>;
 
 fn reported_earlier(
     ctx: &QueryCtx,
@@ -463,22 +536,26 @@ fn reported_earlier(
     n: u64,
     head: &str,
     merge: &str,
-) -> Result<Gated, Error> {
-    let mut earlier = Gated::new();
+) -> Result<Results, Error> {
+    let mut earlier = Results::new();
     let change = (repo.to_owned(), n);
     for (_, _, commit) in HEADS.scan(ctx, HEADS.prefix_of(&change))? {
         let previewed = commit == head || commit == merge;
         if previewed {
             continue;
         }
-        let at = (repo.to_owned(), commit.clone());
-        for ((_, _, reporter, context), kept) in REPORTS.scan(ctx, REPORTS.prefix_of(&at))? {
-            let key = (reporter, context);
+        for (key, kept, patch) in kept_at(ctx, repo, &commit)? {
             let newer = earlier
                 .get(&key)
-                .is_none_or(|(_, was)| kept.height > was.height);
+                .is_none_or(|was| kept.height > was.kept.height);
             if newer {
-                earlier.insert(key, (commit.clone(), kept));
+                let found = Found {
+                    commit: commit.clone(),
+                    kept,
+                    earlier: true,
+                    patch,
+                };
+                earlier.insert(key, found);
             }
         }
     }
@@ -641,21 +718,38 @@ pub(crate) fn reports(
     page: &PageRequest,
 ) -> Result<PageResponse<Report>, Error> {
     let head = (repo.to_owned(), commit.to_owned());
-    REPORTS.range_of(ctx, &head, page)?.try_map(|(key, kept)| {
-        let reach = REACH
-            .scan(ctx, REACH.prefix_of(&key))?
-            .into_iter()
-            .map(|(_, path)| path)
-            .collect();
-        Ok(Report {
-            reporter: key.2,
-            context: key.3,
-            state: kept.state,
-            url: kept.url,
-            height: kept.height,
-            reach,
-        })
-    })
+    let trees = REPORTS.key(&head);
+    let patches = PATCHES.key(&head);
+    let past_trees = page
+        .open(&trees)?
+        .is_some_and(|cursor| PATCHES.owns(&cursor.after));
+    let listing = page.listing(ctx, trees.clone())?;
+    let mut rows = Vec::new();
+    if !past_trees {
+        for (key, kept) in REPORTS.scan(ctx, listing.scan_ahead(&trees))? {
+            let reach = REACH
+                .scan(ctx, REACH.prefix_of(&key))?
+                .into_iter()
+                .map(|(_, path)| path)
+                .collect();
+            rows.push((REPORTS.key(&key), report_of(key, kept, reach)));
+        }
+    }
+    for (key, kept) in PATCHES.scan(ctx, listing.scan_ahead(&patches))? {
+        rows.push((PATCHES.key(&key), report_of(key, kept, Vec::new())));
+    }
+    Ok(listing.reply(rows))
+}
+
+fn report_of(key: Reporting, kept: Kept, reach: Vec<String>) -> Report {
+    Report {
+        reporter: key.2,
+        context: key.3,
+        state: kept.state,
+        url: kept.url,
+        height: kept.height,
+        reach,
+    }
 }
 
 pub(crate) fn wanted(

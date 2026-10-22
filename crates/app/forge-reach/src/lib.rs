@@ -15,7 +15,7 @@ pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{HEADS, REACH, REPORTS, WANTED};
+use crate::state::{HEADS, PATCHES, REACH, REPORTS, WANTED};
 
 pub const PROGRAM: &str = "forge-reach";
 
@@ -78,6 +78,15 @@ pub enum Op {
         reach: Vec<String>,
         change: Option<u64>,
     },
+    #[tool_op(description = "Report your result of change n's patch at its head commit (its full hex id) in a context, such as a review: it reads what the change changes, not the tree the change lands in. It is carried to every Preview of that head whatever the target branch did since, and to a later head only while that head's patch is the same; saying it again replaces it, and so does a Report of the same commit and context. Anyone may; it is recorded as yours, and the status it carries is `<your account>/<context>`.", example = crate::examples::report_patch)]
+    ReportPatch {
+        repo: String,
+        n: u64,
+        commit: String,
+        context: String,
+        state: CheckState,
+        url: Option<String>,
+    },
 }
 
 #[derive(
@@ -94,15 +103,15 @@ pub enum Op {
 #[ask(ForgeReach)]
 pub enum Query {
     #[ask(Reply::Reports(PageResponse<Report>))]
-    #[reads(REPORTS, REACH)]
-    #[tool_query(description = "Every result reported for a commit, by reporter and context, each with the paths its check read.", example = crate::examples::reports)]
+    #[reads(REPORTS, REACH, PATCHES)]
+    #[tool_query(description = "Every result reported for a commit, by reporter and context, each with the paths its check read: the results of a tree first, then the results of a change's patch (ReportPatch), each with an empty reach, which no Report has.", example = crate::examples::reports)]
     Reports {
         repo: String,
         commit: String,
         page: PageRequest,
     },
     #[ask(Reply::Verdict(Option<PreviewVerdict>))]
-    #[reads(REPORTS, REACH, HEADS)]
+    #[reads(REPORTS, REACH, HEADS, PATCHES)]
     #[reads(forge::Forge: forge::tables::PREVIEWS, forge::tables::REPOS)]
     #[tool_query(description = "How each result reported for change n's head, or on an earlier head of it for a reporter with none on the head, stands on its latest Preview: carried with its state, or Pending with the paths that differ there (a reached path, or a path the patch of an earlier head and the Preview's patch change differently). Null while the change has no Preview.", example = crate::examples::verdict)]
     Verdict { repo: String, n: u64 },
@@ -143,6 +152,17 @@ pub fn describe(op: &Op) -> describe::Description {
                 field("reach", Value::count(reach.len() as u64)),
             ],
         ),
+        Op::ReportPatch {
+            repo,
+            n,
+            commit,
+            context,
+            state,
+            ..
+        } => (
+            format!("Report {context} {} of {repo}#{n}", state.word()),
+            vec![field("commit", Value::text(commit))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -151,5 +171,8 @@ describe::export!(Op, describe);
 
 #[test]
 fn op_variants_only_append() {
-    assert_eq!(describe::variants::<Op>(), ["Watched", "Report"]);
+    assert_eq!(
+        describe::variants::<Op>(),
+        ["Watched", "Report", "ReportPatch"]
+    );
 }
