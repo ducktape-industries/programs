@@ -3,13 +3,15 @@
 //! script calls, when that recipient is an active program account and the program registered.
 use std::collections::{BTreeMap, BTreeSet};
 
-use ::program::{Error, ExecCtx, QueryCtx, Reply, invalid, stale, unexpected_reply};
+use ::program::{
+    Error, ExecCtx, QueryCtx, Range, Renames, Reply, invalid, stale, unexpected_reply,
+};
 use abi::role::identity::{Kind as Account, Profile, Standing};
 
 use crate::state::{CHANGES, OBJECTS, OF, ObjectKey, REGISTERED, SEQ, TO};
 use crate::{
     AccountNumber, Actor, Change, Kind, PageRequest, PageResponse, ProgramId, Reason, Relation,
-    Relations, Source, Transfer, Update,
+    Relations, Rows, Source, Transfer, Update,
 };
 
 type Held = BTreeMap<(AccountNumber, Reason), Vec<u8>>;
@@ -210,6 +212,80 @@ fn attribute_one(ctx: &ExecCtx, program: &ProgramId, update: Update) -> Result<(
 pub(crate) fn register(ctx: &ExecCtx, deliver: Vec<u8>) -> Result<(), Error> {
     let program = ctx.env().sending_program()?;
     REGISTERED.put(ctx, &program, &deliver);
+    Ok(())
+}
+
+pub(crate) fn migrate(ctx: &ExecCtx, height: u64, rows: Rows) -> Result<(), Error> {
+    let renamed = ctx.renames(height)?;
+    match rows {
+        Rows::Objects { first, last } => {
+            let at = |at: ObjectKey| OBJECTS.key(&at);
+            let range = within(OBJECTS.prefix_of(&()), first.map(at), last.map(at));
+            objects_renamed(ctx, &renamed, range)
+        }
+        Rows::Of { first, last } => {
+            let at = |at: (ProgramId, String, String, u64)| OF.key(&at);
+            let range = within(OF.prefix_of(&()), first.map(at), last.map(at));
+            of_renamed(ctx, &renamed, range)
+        }
+        Rows::Registered { first, last } => {
+            let at = |at: ProgramId| REGISTERED.key(&at);
+            let range = within(REGISTERED.prefix_of(&()), first.map(at), last.map(at));
+            registered_renamed(ctx, &renamed, range)
+        }
+    }
+}
+
+fn within(mut range: Range, first: Option<Vec<u8>>, last: Option<Vec<u8>>) -> Range {
+    if let Some(first) = first {
+        range.start = first;
+    }
+    if let Some(last) = last {
+        range.end = Some([last, vec![0]].concat());
+    }
+    range
+}
+
+fn objects_renamed(ctx: &ExecCtx, renamed: &Renames, range: Range) -> Result<(), Error> {
+    for ((program, kind, id), row) in OBJECTS.scan(ctx, range)? {
+        let Some(to) = renamed.moved(&program).cloned() else {
+            continue;
+        };
+        OBJECTS.remove(ctx, &(program, kind.clone(), id.clone()));
+        let at = (to.clone(), kind, id);
+        if OBJECTS.has(ctx, &at) {
+            continue;
+        }
+        let source = Source {
+            program: to,
+            ..row.source
+        };
+        OBJECTS.put(ctx, &at, &Relations { source, ..row });
+    }
+    Ok(())
+}
+
+fn of_renamed(ctx: &ExecCtx, renamed: &Renames, range: Range) -> Result<(), Error> {
+    for (program, kind, id, seq) in OF.scan(ctx, range)? {
+        let Some(to) = renamed.moved(&program).cloned() else {
+            continue;
+        };
+        OF.remove(ctx, &(program, kind.clone(), id.clone(), seq));
+        OF.insert(ctx, &(to, kind, id, seq));
+    }
+    Ok(())
+}
+
+fn registered_renamed(ctx: &ExecCtx, renamed: &Renames, range: Range) -> Result<(), Error> {
+    for (program, deliver) in REGISTERED.scan(ctx, range)? {
+        let Some(to) = renamed.moved(&program) else {
+            continue;
+        };
+        REGISTERED.remove(ctx, &program);
+        if !REGISTERED.has(ctx, to) {
+            REGISTERED.put(ctx, to, &deliver);
+        }
+    }
     Ok(())
 }
 

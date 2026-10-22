@@ -1,6 +1,6 @@
 //! A working value of each attribution op and query, as `#[tool_op]` and `#[tool_query]` name
 //! them: what an agent edits rather than build one from the schema.
-use crate::{Actor, Object, Op, PageRequest, Query, Reason, Relation, Source, Update};
+use crate::{Actor, Object, Op, PageRequest, Query, Reason, Relation, Rows, Source, Update};
 
 fn object() -> Object {
     Object {
@@ -42,6 +42,16 @@ pub(crate) fn attribute_batch() -> Op {
 
 pub(crate) fn register() -> Op {
     Op::Register { deliver: vec![0] }
+}
+
+pub(crate) fn migrate() -> Op {
+    Op::Migrate {
+        height: 300_000,
+        rows: Rows::Objects {
+            first: Some(("chat".into(), "message".into(), "general-176".into())),
+            last: None,
+        },
+    }
 }
 
 pub(crate) fn relations() -> Query {

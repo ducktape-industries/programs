@@ -358,3 +358,97 @@ fn a_change_reads_back_by_its_seq() {
     assert_eq!(second.kind, Kind::Added);
     assert_eq!(change_at(&chain, 3), None);
 }
+
+#[test]
+fn migrate_moves_a_renamed_programs_objects_their_changes_and_its_registration() {
+    let mut chain = scripted_chain();
+    report(&chain, update("t", 1, vec![owner(SCRIPTED)], Vec::new())).unwrap();
+    report(&chain, update("u", 1, vec![owner(USER)], Vec::new())).unwrap();
+    chain.seat::<Reporter>("o/reporter");
+    chain.register("o/reporter", 905);
+    chain.seat::<::program::Renamer>("programs");
+    let renames: Vec<(ProgramId, ProgramId)> = [(REPORTER, "o/reporter"), (LISTENER, "o/listener")]
+        .into_iter()
+        .map(|(from, to)| (from.to_owned(), to.to_owned()))
+        .collect();
+    chain.submit(signed(ADA), "programs", &renames).unwrap();
+    let since = Report::Send(update("t", 1, vec![owner(USER)], Vec::new()));
+    chain.submit(signed(ADA), "o/reporter", &since).unwrap();
+    let migrate = |rows: Rows| {
+        let op = Op::Migrate { height: 0, rows };
+        chain.submit(signed(ADA), PROGRAM, &op).unwrap();
+    };
+    let at = |program: &str, id: &str| Source {
+        program: program.into(),
+        object: Object {
+            kind: "task".into(),
+            id: id.into(),
+        },
+    };
+    let key = |id: &str| Some((REPORTER.to_owned(), "task".to_owned(), id.to_owned()));
+    migrate(Rows::Objects {
+        first: key("u"),
+        last: key("u"),
+    });
+    assert_eq!(relations(&chain, at(REPORTER, "u")), None, "u moved");
+    let moved = relations(&chain, at("o/reporter", "u")).unwrap();
+    assert_eq!(moved.source, at("o/reporter", "u"));
+    assert_eq!(moved.relations, [owner(USER)]);
+    assert!(
+        relations(&chain, at(REPORTER, "t")).is_some(),
+        "t is outside the range"
+    );
+    let objects = || Rows::Objects {
+        first: None,
+        last: None,
+    };
+    migrate(objects());
+    assert_eq!(relations(&chain, at(REPORTER, "t")), None);
+    assert_eq!(
+        relations(&chain, at("o/reporter", "t")).unwrap().relations,
+        [owner(USER)],
+        "the object reported under the new id since is kept"
+    );
+    let of = || Rows::Of {
+        first: None,
+        last: None,
+    };
+    migrate(of());
+    let changes_of = |source: Source| -> Vec<(u64, ProgramId)> {
+        let asked = Query::ChangesOf {
+            source,
+            page: PageRequest::default(),
+        };
+        let Reply::Changes(page) = chain.query(PROGRAM, &asked).unwrap() else {
+            panic!()
+        };
+        page.items
+            .into_iter()
+            .map(|change| (change.seq, change.source.program))
+            .collect()
+    };
+    assert_eq!(
+        changes_of(at("o/reporter", "t")),
+        [(1, REPORTER.to_owned()), (3, "o/reporter".to_owned())],
+        "each change keeps the id it was recorded with"
+    );
+    assert_eq!(changes_of(at(REPORTER, "t")), []);
+    let registered = || Rows::Registered {
+        first: None,
+        last: None,
+    };
+    migrate(registered());
+    let Reply::Registered(listed) = chain.query(PROGRAM, &Query::Registered).unwrap() else {
+        panic!()
+    };
+    assert_eq!(listed, ["o/listener".to_owned(), OTHER.to_owned()]);
+    let before = chain.host(PROGRAM).borrow().state.clone();
+    for rows in [objects(), of(), registered()] {
+        migrate(rows);
+    }
+    assert_eq!(
+        chain.host(PROGRAM).borrow().state,
+        before,
+        "a second run writes nothing"
+    );
+}

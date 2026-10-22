@@ -609,6 +609,11 @@ account whose script calls a program that never registered is recorded and
 handed to no one. Whoever acts for such an account off the network follows
 attribution's `to/<recipient>/<seq>` rows (each key is the recipient and the
 seq, both u64 big-endian) and reads each change with `Query::Change { seq }`.
+A renamed program's objects, the index of their changes and its
+registration follow it to its new id once attribution's
+`Migrate { height, rows }` (anyone's, one table a call: `Objects`, `Of`,
+`Registered`) has run over them; each change keeps the ids it was recorded
+with, and `ChangesOf` under the new id lists it.
 
 A reply names only the message's id. A program that wants to know *what* it
 was waiting for keeps that itself:

@@ -4,7 +4,7 @@ use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::rules::{
-    attribute, change_at, changes, changes_of, changes_to, register, registered, relations,
+    attribute, change_at, changes, changes_of, changes_to, migrate, register, registered, relations,
 };
 use crate::{Op, PROGRAM, Query, Reply};
 
@@ -25,6 +25,7 @@ impl Program for Attribution {
             Op::Attribute(update) => attribute(ctx, vec![update]),
             Op::AttributeBatch { updates } => attribute(ctx, updates),
             Op::Register { deliver } => register(ctx, deliver),
+            Op::Migrate { height, rows } => migrate(ctx, height, rows),
         }
     }
 

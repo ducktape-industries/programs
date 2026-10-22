@@ -120,6 +120,24 @@ pub enum Op {
     AttributeBatch { updates: Vec<Update> },
     #[tool_op(description = "From a program: be handed each change about an account whose script calls it, as deliver followed by the borsh of the Change; registering again replaces deliver.", example = crate::examples::register)]
     Register { deliver: Vec<u8> },
+    #[tool_op(description = "Rewrite the program ids attribution stores by the programs role's Renames at height, over one table's rows from first to last (null: from the first, or to the last), a call each: Objects (each [program, kind, id]) moves a renamed program's objects to its new id, an object reported there since staying; Of (each [program, kind, id, seq]) moves the index of those objects' changes, so ChangesOf under the new id lists them, while each change keeps the ids it was recorded with; Registered (each a program id) moves a renamed program's registration, one made under the new id since staying. Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.", example = crate::examples::migrate)]
+    Migrate { height: u64, rows: Rows },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Rows {
+    Objects {
+        first: Option<(ProgramId, String, String)>,
+        last: Option<(ProgramId, String, String)>,
+    },
+    Of {
+        first: Option<(ProgramId, String, String, u64)>,
+        last: Option<(ProgramId, String, String, u64)>,
+    },
+    Registered {
+        first: Option<ProgramId>,
+        last: Option<ProgramId>,
+    },
 }
 
 #[derive(
@@ -214,6 +232,40 @@ pub fn describe(op: &Op) -> describe::Description {
                 .to_owned(),
             Vec::new(),
         ),
+        Op::Migrate { height, rows } => {
+            let (table, first, last) = match rows {
+                Rows::Objects { first, last } => {
+                    let at = |(program, kind, id): &(ProgramId, String, String)| {
+                        format!("{program}/{kind}/{id}")
+                    };
+                    ("objects", first.as_ref().map(at), last.as_ref().map(at))
+                }
+                Rows::Of { first, last } => {
+                    let at = |(program, kind, id, seq): &(ProgramId, String, String, u64)| {
+                        format!("{program}/{kind}/{id} change {seq}")
+                    };
+                    (
+                        "changes by object",
+                        first.as_ref().map(at),
+                        last.as_ref().map(at),
+                    )
+                }
+                Rows::Registered { first, last } => {
+                    ("registered programs", first.clone(), last.clone())
+                }
+            };
+            let bound = |bound: Option<String>, open: &str| {
+                Value::text(bound.unwrap_or_else(|| open.to_owned()))
+            };
+            (
+                format!("Migrate · {table}"),
+                vec![
+                    field("height", Value::text(height.to_string())),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
 }
@@ -224,6 +276,14 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Attribute", "AttributeBatch", "Register"]
+        ["Attribute", "AttributeBatch", "Register", "Migrate"]
+    );
+}
+
+#[test]
+fn rows_variants_only_append() {
+    assert_eq!(
+        describe::variants::<Rows>(),
+        ["Objects", "Of", "Registered"]
     );
 }
