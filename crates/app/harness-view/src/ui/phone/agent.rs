@@ -231,6 +231,14 @@ fn threads(
                 ));
             let frames = design::plural(thread.frames, "frame", "frames");
             let topic = detail.topics.get(&id).map(|topic| quoted(topic));
+            let model = detail.models.get(&id).and_then(|row| {
+                let kept = row.kept.as_ref()?;
+                Some(
+                    design::row_caption(kept.model.clone(), ladder, theme)
+                        .id(SharedString::from(format!("thread-{id}-model")))
+                        .min_w_0(),
+                )
+            });
             let (badge, words) = match thread.closed {
                 true => (
                     closed_badge(format!("thread-{id}-state"), theme, ladder),
@@ -258,7 +266,8 @@ fn threads(
                     Some(topic.unwrap_or(words)),
                     theme,
                     ladder,
-                ),
+                )
+                .children(model),
                 Some(design::ago(roster.now, thread.last_time)),
                 theme,
                 ladder,

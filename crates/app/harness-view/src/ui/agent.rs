@@ -646,6 +646,14 @@ fn threads(
                 .into_any_element(),
             _ => caption(context_short(thread.context, window), &theme).into_any_element(),
         };
+        let model = detail.models.get(&id).and_then(|row| {
+            let kept = row.kept.as_ref()?;
+            Some(
+                caption(kept.model.clone(), &theme)
+                    .id(SharedString::from(format!("thread-{id}-model")))
+                    .truncate(),
+            )
+        });
         let topic = detail.topics.get(&id).map(|topic| {
             caption(quoted(topic), &theme)
                 .id(SharedString::from(format!("thread-{id}-topic")))
@@ -703,6 +711,7 @@ fn threads(
                                 ladder,
                             )),
                     )
+                    .children(model)
                     .children(topic),
             )
             .child(

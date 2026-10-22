@@ -5,6 +5,7 @@ mod conversations;
 mod faces;
 mod failing;
 mod live_calls;
+mod model_labels;
 mod phone;
 mod policies;
 mod reads;
