@@ -707,6 +707,39 @@ at 0 means the node called the model again. The call's answer, an
 empty-bodied `http::Response`, comes after the last event and says the
 stream ended.
 
+**A read off the block path.** A query whose cost grows with what it reads
+(a grep over a tree, a whole file) is asked of the kernel instead of run in
+the frame:
+
+```rust
+use abi::role::reads::{self, Op, Read};
+let asked = Op::Read { target: "files".into(), query: abi::encode(&query) };
+let read: Read = ctx.call(reads::PROGRAM, &asked).await?;
+```
+
+The call parks your frame. The member node the epoch assigns runs the query
+off the block, as your program (`Origin::Program`), on its newest state (at
+or after the block that asked), and puts the reply as a blob of kind `read`.
+Once the blobs role holds it, the kernel holds it for your program on line
+`read/` + the call's ticket (u64 big-endian) and resumes you with
+`Read { entry, at }`: `entry` names the blob (`id`, its framed `len`,
+`kind`) and `at` is the height the member read at. The resume costs the
+same whatever the reply's size, and the frame reads the bytes only if it
+asks for them (`ctx.blob_get`). Let go of the hold with
+`ctx.blob_release(entry.id)`, or of every read's with
+`ctx.blob_release_lines("read/")`. A network with no member seated refuses
+the call at once (`not_found`, `reads::unserved`); a query the member's
+node refuses answers that refusal; a read no member answered within
+`reads::WAIT` blocks (egress's `DEFAULT_WAIT`) is refused `exhausted`
+(`reads::expired`). A network serves `$reads` from its `READS_FROM` height
+(core `host::namespace`), and before it the call goes to no program. On a
+`MockChain` the test plays the member: `chain.reads()` lists the open
+reads, `chain.answer_read(id)` runs the query as the member does and puts
+the reply, `chain.ready_read(id)` holds it and resumes the caller,
+`chain.answer_reads()` does both for every read open, `chain.at` past
+`made + reads::WAIT` refuses a read as expired, and
+`chain.serve_reads(false)` is a network with no member.
+
 **A run for a later block.** `ctx.schedule(height, target, &op).await`
 asks the program bound to the scheduler role to run `target` with `op` at
 the end of block `height`, which must be after the current one, and answers

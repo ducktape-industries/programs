@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
 
 use abi::role::identity::{Kind, Profile, Query, Reply, Standing};
-use abi::role::{self, awaits, ownership, scheduler};
+use abi::role::{self, awaits, ownership, reads, scheduler};
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::awaiting::{self, Answer, Awaiting, Step, Suspended};
@@ -115,12 +115,22 @@ struct Start {
 struct Checkpoint {
     written: Vec<crate::mock::Written>,
     parked: BTreeSet<FrameId>,
+    reads: BTreeMap<Ticket, OpenRead>,
 }
 
 struct Parked {
     suspended: Suspended,
     env: Env,
     waiter: Waiter,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpenRead {
+    pub requester: ProgramId,
+    pub target: ProgramId,
+    pub query: Vec<u8>,
+    pub made: u64,
+    pub answered: Option<reads::Read>,
 }
 
 /// Who holds what, for a chain with no identity program seated: each key
@@ -220,6 +230,8 @@ pub struct MockChain {
     parked: RefCell<BTreeMap<FrameId, Parked>>,
     clock: Cell<(u64, u64)>,
     held: RefCell<BTreeMap<BlobId, Blob>>,
+    reads: RefCell<BTreeMap<Ticket, OpenRead>>,
+    unserved: Cell<bool>,
 }
 
 impl Default for MockChain {
@@ -247,6 +259,8 @@ impl MockChain {
             parked: RefCell::default(),
             clock: Cell::new((1, 0)),
             held: RefCell::default(),
+            reads: RefCell::default(),
+            unserved: Cell::new(false),
         }
     }
 
@@ -284,6 +298,85 @@ impl MockChain {
 
     pub fn frames(&self) -> usize {
         self.parked.borrow().len()
+    }
+
+    pub fn serve_reads(&self, served: bool) {
+        self.unserved.set(!served);
+    }
+
+    pub fn reads(&self) -> Vec<(Ticket, OpenRead)> {
+        let open = self.reads.borrow();
+        open.iter().map(|(id, read)| (*id, read.clone())).collect()
+    }
+
+    pub fn answer_read(&self, id: Ticket) -> Result<(), Error> {
+        let open = self.open_read(id)?;
+        if open.answered.is_some() {
+            let answered = format!("read {id} is answered already");
+            return Err(Error::new(code::WRONG_STATE, answered));
+        }
+        if !self.awaited(id) {
+            self.reads.borrow_mut().remove(&id);
+            return Ok(());
+        }
+        let (height, _) = self.clock.get();
+        let env = Env {
+            origin: Origin::Program(open.requester.clone()),
+            sender: None,
+            ..self.env(open.target.clone())
+        };
+        let reply = match self.query_raw(&env, &open.query) {
+            Ok(reply) => reply,
+            Err(refusal) => {
+                self.reads.borrow_mut().remove(&id);
+                return self.resolve_read(id, Err(refusal));
+            }
+        };
+        let framed = blob::frame(reads::KIND, &reply).map_err(crate::kernel::error_from)?;
+        let entry = reads::Entry {
+            id: self.put_blob(reads::KIND, reply)?,
+            len: framed.len() as u64,
+            kind: reads::KIND.to_owned(),
+        };
+        if let Some(open) = self.reads.borrow_mut().get_mut(&id) {
+            open.answered = Some(reads::Read { entry, at: height });
+        }
+        Ok(())
+    }
+
+    pub fn ready_read(&self, id: Ticket) -> Result<(), Error> {
+        let open = self.open_read(id)?;
+        let Some(read) = open.answered else {
+            let early = format!("read {id} is not answered yet");
+            return Err(Error::new(code::WRONG_STATE, early));
+        };
+        self.reads.borrow_mut().remove(&id);
+        if !self.awaited(id) {
+            return Ok(());
+        }
+        let line = [b"read/".as_slice(), &id.to_be_bytes()].concat();
+        let requester = self.seated(&open.requester)?;
+        let on = (open.requester.clone(), line);
+        requester.host.borrow_mut().lines.insert(on, read.entry.id);
+        self.resolve_read(id, Ok(abi::encode(&read)))
+    }
+
+    pub fn answer_reads(&self) -> Result<(), Error> {
+        let asked: Vec<Ticket> = self
+            .reads
+            .borrow()
+            .iter()
+            .filter(|(_, open)| open.answered.is_none())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in asked {
+            self.answer_read(id)?;
+            let answered = self.reads.borrow().contains_key(&id);
+            if answered {
+                self.ready_read(id)?;
+            }
+        }
+        Ok(())
     }
 
     // ends every frame `program` has parked as the kernel does when the program's code changes
@@ -401,6 +494,7 @@ impl MockChain {
         for ended in from..height {
             self.clock.set((ended, then));
             self.run_scheduled();
+            self.expire_reads();
         }
         self.clock.set((height, time));
     }
@@ -987,6 +1081,13 @@ impl MockChain {
             acting,
         } in calls
         {
+            if target == reads::PROGRAM {
+                match self.ask_read(env, ticket, &payload) {
+                    Ok(()) => open.push(awaits::Call { ticket, target }),
+                    Err(refusal) => ready.push_back((ticket, Err(refusal))),
+                }
+                continue;
+            }
             let ran = match self.sender(&env.program, acting, &caller) {
                 Err(refusal) => Run::finished(Err(refusal)),
                 Ok(sender) => {
@@ -1143,6 +1244,65 @@ impl MockChain {
         self.follow(env, start, segment, depth);
     }
 
+    fn open_read(&self, id: Ticket) -> Result<OpenRead, Error> {
+        let open = self.reads.borrow().get(&id).cloned();
+        open.ok_or_else(|| Error::new(code::NOT_FOUND, format!("no read {id} is open")))
+    }
+
+    fn ask_read(&self, env: &Env, ticket: Ticket, payload: &[u8]) -> Result<(), Error> {
+        let asked = abi::decode::<reads::Op>(payload).map_err(crate::kernel::error_from)?;
+        let reads::Op::Read { target, query } = asked else {
+            let only = "a program asks $reads to read; only a member answers a read";
+            return Err(Error::new(code::UNSUPPORTED, only));
+        };
+        if self.unserved.get() {
+            return Err(crate::kernel::error_from(reads::unserved()));
+        }
+        let open = OpenRead {
+            requester: env.program.clone(),
+            target,
+            query,
+            made: env.height,
+            answered: None,
+        };
+        self.reads.borrow_mut().insert(ticket, open);
+        Ok(())
+    }
+
+    fn awaited(&self, id: Ticket) -> bool {
+        let Ok(awaits) = self.role(role::AWAITS) else {
+            return false;
+        };
+        let asked = awaits::Query::Ticket { ticket: id };
+        let row = self.query::<_, awaits::Reply>(&awaits, &asked);
+        matches!(row, Ok(awaits::Reply::Ticket(Some(_))))
+    }
+
+    fn resolve_read(&self, id: Ticket, answer: Result<Vec<u8>, Error>) -> Result<(), Error> {
+        let answer = answer.map_err(crate::kernel::refusal_from);
+        let resolve = awaits::Op::Resolve { ticket: id, answer };
+        let env = self.env(reads::PROGRAM);
+        self.tell_awaits(Origin::Root, &resolve, &env, 0).map(drop)
+    }
+
+    fn expire_reads(&self) {
+        let (height, _) = self.clock.get();
+        let due: Vec<Ticket> = self
+            .reads
+            .borrow()
+            .iter()
+            .filter(|(_, open)| open.made.saturating_add(reads::WAIT) <= height)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in due {
+            self.reads.borrow_mut().remove(&id);
+            if self.awaited(id) {
+                let expired = crate::kernel::error_from(reads::expired(id));
+                let _ = self.resolve_read(id, Err(expired));
+            }
+        }
+    }
+
     fn share_blobs(&self) {
         let mut every = self.held.borrow().clone();
         for seat in self.seats.values() {
@@ -1161,6 +1321,7 @@ impl MockChain {
                 .map(|seat| seat.host.written())
                 .collect(),
             parked: self.parked.borrow().keys().copied().collect(),
+            reads: self.reads.borrow().clone(),
         }
     }
 
@@ -1171,6 +1332,7 @@ impl MockChain {
         self.parked
             .borrow_mut()
             .retain(|frame, _| checkpoint.parked.contains(frame));
+        *self.reads.borrow_mut() = checkpoint.reads;
     }
 }
 

@@ -1,7 +1,9 @@
 use abi::role::awaits::{Op, Query, Reply, Ticket, TicketRow};
+use abi::role::reads;
 use borsh::{BorshDeserialize, BorshSerialize};
 use program::{
-    Awaiting, Ctx, Error, ExecCtx, MessageId, MockChain, Origin, Outcome, Program, QueryCtx, code,
+    Awaiting, Ctx, Error, ExecCtx, MessageId, MockChain, OpenRead, Origin, Outcome, Program,
+    QueryCtx, code,
 };
 
 use crate::{Awaits, PROGRAM};
@@ -100,6 +102,25 @@ impl Program for Sender {
 
     fn query(ctx: &QueryCtx, (): ()) -> Result<Option<Outcome>, Error> {
         ctx.record("outcome")
+    }
+}
+
+struct Shelf;
+
+impl Program for Shelf {
+    const NAME: &'static str = "shelf";
+    type Op = Vec<u8>;
+    type Query = ();
+    type Reply = (Vec<u8>, Origin);
+
+    fn execute(ctx: &ExecCtx, shelved: Vec<u8>) -> Result<(), Error> {
+        ctx.set("shelf", shelved);
+        Ok(())
+    }
+
+    fn query(ctx: &QueryCtx, (): ()) -> Result<(Vec<u8>, Origin), Error> {
+        let shelved = ctx.get("shelf").unwrap_or_default();
+        Ok((shelved, ctx.env().origin.clone()))
     }
 }
 
@@ -354,4 +375,134 @@ fn migrate_moves_open_tickets_to_renamed_ids_and_the_new_target_resolves_them() 
     };
     chain.submit(ada(), "o/teller", &by_new_id).unwrap();
     assert_eq!(answers(&chain, "asker"), vec![Ok(b"A".to_vec())]);
+}
+
+fn read_plan(query: Vec<u8>) -> Plan {
+    let read = reads::Op::Read {
+        target: "shelf".into(),
+        query,
+    };
+    Plan {
+        target: reads::PROGRAM.into(),
+        asks: vec![abi::encode(&read)],
+        fail: false,
+    }
+}
+
+fn reading() -> MockChain {
+    let mut chain = chain();
+    chain.seat::<Shelf>("shelf");
+    chain.submit(ada(), "shelf", &b"shelved".to_vec()).unwrap();
+    chain
+}
+
+fn line(id: Ticket) -> (String, Vec<u8>) {
+    (
+        "asker".to_owned(),
+        [b"read/".as_slice(), &id.to_be_bytes()].concat(),
+    )
+}
+
+#[test]
+fn a_read_parks_the_caller_until_the_reply_a_member_put_is_held_for_it() {
+    let chain = reading();
+    chain
+        .submit(ada(), "asker", &read_plan(abi::encode(&())))
+        .unwrap();
+    assert_eq!(chain.frames(), 1);
+    let open: Vec<(Ticket, OpenRead)> = chain.reads();
+    let [(id, asked)] = open.as_slice() else {
+        panic!("open reads {open:?}");
+    };
+    let asked = (asked.requester.as_str(), asked.target.as_str(), asked.made);
+    assert_eq!(asked, ("asker", "shelf", 1));
+
+    chain.at(2, 20);
+    chain.answer_read(*id).unwrap();
+    assert_eq!(chain.frames(), 1, "an answer alone resumes no one");
+    chain.ready_read(*id).unwrap();
+    assert_eq!(chain.frames(), 0);
+    assert!(chain.reads().is_empty());
+    assert_eq!(chain.ready_read(*id).unwrap_err().code, code::NOT_FOUND);
+
+    let got = answers(&chain, "asker");
+    let [Ok(answer)] = got.as_slice() else {
+        panic!("asker got {got:?}");
+    };
+    let read: reads::Read = abi::decode(answer).unwrap();
+    assert_eq!((read.at, read.entry.kind.as_str()), (2, reads::KIND));
+    let reply = abi::encode(&(b"shelved".to_vec(), Origin::Program("asker".into())));
+    let host = chain.host("asker").borrow();
+    let blob = &host.blobs[&read.entry.id];
+    assert_eq!((blob.kind.as_str(), &blob.body), (reads::KIND, &reply));
+    let header = format!("{} {}\0", reads::KIND, reply.len());
+    assert_eq!(read.entry.len, (header.len() + reply.len()) as u64);
+    assert_eq!(host.lines.get(&line(*id)), Some(&read.entry.id));
+}
+
+#[test]
+fn a_read_no_member_serves_is_refused_in_the_callers_frame() {
+    let chain = reading();
+    chain.serve_reads(false);
+    let output = chain
+        .submit(ada(), "asker", &read_plan(abi::encode(&())))
+        .unwrap();
+    assert_eq!((chain.frames(), chain.reads().len()), (0, 0));
+    let unserved = program::kernel::error_from(reads::unserved());
+    assert_eq!(finished(&output), (vec![Err(unserved)], 1));
+}
+
+#[test]
+fn a_read_its_target_refuses_resumes_the_caller_with_the_refusal_and_holds_nothing() {
+    let chain = reading();
+    chain.submit(ada(), "asker", &read_plan(vec![9])).unwrap();
+    chain.answer_read(0).unwrap();
+    assert_eq!((chain.frames(), chain.reads().len()), (0, 0));
+    let got = answers(&chain, "asker");
+    assert!(matches!(got.as_slice(), [Err(_)]), "asker got {got:?}");
+    assert!(chain.host("asker").borrow().lines.is_empty());
+}
+
+#[test]
+fn a_read_no_member_answered_is_refused_once_its_wait_has_passed() {
+    let chain = reading();
+    chain
+        .submit(ada(), "asker", &read_plan(abi::encode(&())))
+        .unwrap();
+    chain.at(1 + reads::WAIT, 0);
+    assert_eq!(chain.frames(), 1);
+    chain.at(2 + reads::WAIT, 0);
+    assert_eq!((chain.frames(), chain.reads().len()), (0, 0));
+    let expired = program::kernel::error_from(reads::expired(0));
+    assert_eq!(answers(&chain, "asker"), vec![Err(expired)]);
+}
+
+#[test]
+fn a_read_whose_caller_was_cancelled_is_dropped_and_nothing_is_held() {
+    let chain = reading();
+    chain
+        .submit(ada(), "asker", &read_plan(abi::encode(&())))
+        .unwrap();
+    chain.cancel_parked("asker");
+    chain.answer_reads().unwrap();
+    assert!(chain.reads().is_empty());
+    assert!(chain.host("asker").borrow().lines.is_empty());
+    assert_eq!(answers(&chain, "asker"), Vec::new());
+}
+
+#[test]
+fn only_a_member_answers_a_read() {
+    let chain = reading();
+    let answer = reads::Op::Ready { id: 0 };
+    let plan = Plan {
+        target: reads::PROGRAM.into(),
+        asks: vec![abi::encode(&answer)],
+        fail: false,
+    };
+    let output = chain.submit(ada(), "asker", &plan).unwrap();
+    let (got, _) = finished(&output);
+    assert!(
+        matches!(got.as_slice(), [Err(refused)] if refused.code == code::UNSUPPORTED),
+        "asker got {got:?}"
+    );
 }

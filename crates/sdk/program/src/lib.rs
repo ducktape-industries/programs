@@ -69,7 +69,7 @@ pub use abi::{
 };
 pub use awaiting::{Awaiting, Ctx, all};
 #[cfg(not(target_arch = "wasm32"))]
-pub use chain::{MAX_DEPTH, MockChain, Roster};
+pub use chain::{MAX_DEPTH, MockChain, OpenRead, Roster};
 pub use ctx::{ExecCtx, QueryCtx, Reply};
 pub use kernel::{
     AccountNumber, Cause, EntryId, Env, Error, Foreign, FrameId, MessageId, NetworkId, Order,
