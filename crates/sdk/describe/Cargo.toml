@@ -19,8 +19,8 @@ host = ["dep:wasmtime"]
 borsh = { workspace = true }
 serde = { workspace = true, optional = true }
 # pinned exactly: the host's runtime is the node's and the app's
-wasmtime = { version = "=46.0.3", optional = true }
+wasmtime = { version = "=48.0.7", optional = true }
 
 [dev-dependencies]
-wasmtime = { version = "=46.0.3" }
+wasmtime = { version = "=48.0.7" }
 wat = "1"
