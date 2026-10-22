@@ -184,7 +184,7 @@ pub(crate) struct Activity;
 
 impl Tool for Activity {
     const NAME: &'static str = "network_activity";
-    const DESCRIPTION: &'static str = "An account's recent frames on the network, newest first, as the connected node's activity index keeps them: the block, the program it targeted, and whether it applied. With height and position (a frame it listed), why that frame did not apply instead: its code and message, or null where it applied or the node kept no reason for it.";
+    const DESCRIPTION: &'static str = "An account's recent frames on the network, newest first, as the connected node's activity index keeps them: the block, the program it targeted, and whether it applied. With height and position (a frame it listed), why that frame did not apply instead: its code and message, or null where it applied or the node kept no reason for it. A node that keeps no activity index refuses both; what your own calls did is then in your conversation's frames (harness Frames).";
     const WRITES: bool = true;
     type Args = ActivityArgs;
 

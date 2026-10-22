@@ -114,7 +114,7 @@ impl Tool for Put {
                 "content": { "type": "string", "description": "the blob's bytes as text, put as UTF-8; give this or source" },
                 "source": { "type": "string", "description": "an absolute file path of the network's filesystem, whose whole file is the blob's bytes; give this or content" },
                 "snapshot": snapshot_schema(),
-                "hash": { "type": "string", "enum": ["sha256", "sha1"], "description": "the hash the blob's id is taken with; sha256 if omitted" },
+                "hash": { "type": "string", "enum": ["sha256", "sha1"], "description": "the hash the blob's id is taken with; sha256 if omitted. The network frames a blob as git frames an object, so sha1 with kind blob answers the git blob id of the same bytes: how to check, with no git at hand, that a file is the blob a sha1 repository holds" },
             }),
             &["kind"],
         )
