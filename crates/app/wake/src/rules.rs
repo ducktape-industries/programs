@@ -480,6 +480,7 @@ fn who(by: Option<&Principal>) -> String {
     match by {
         Some(Principal::Account(number)) => format!("account {number}"),
         Some(Principal::Root) => "the network".to_owned(),
+        Some(Principal::Foreign(foreign)) => foreign.to_string(),
         None => "someone".to_owned(),
     }
 }

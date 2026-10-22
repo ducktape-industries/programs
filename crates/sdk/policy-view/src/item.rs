@@ -210,7 +210,7 @@ pub async fn standing(host: Host, item: Item, reader: Option<Party>) -> Result<S
     {
         numbers.extend(parties.iter().filter_map(|party| match party {
             Party::Account(number) => Some(*number),
-            Party::Program(_) => None,
+            Party::Program(_) | Party::Foreign(_) => None,
         }));
     }
     let mut names = BTreeMap::new();

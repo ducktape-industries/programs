@@ -2,11 +2,12 @@
 //! what it hears from whom it answers, routed to the conversation bound to its chat thread or
 //! channel, else its canonical one; anyone closes a bound one, its manager the canonical one.
 use ::program::{
-    BlobId, Ctx, Error, ExecCtx, Principal, QueryCtx, not_found, unauthorized, unexpected_reply,
-    wrong_state,
+    BlobId, Ctx, Error, ExecCtx, Foreign, Party, Principal, ProgramId, QueryCtx, not_found,
+    unauthorized, unexpected_reply, wrong_state,
 };
 use abi::role::identity::{AccountNumber, Category, Kind, Profile, Standing};
 use attribution::{Actor, Change, Kind as Changed, Reason, Source};
+use chat::ForeignName;
 
 use crate::config::Pin;
 use crate::conversations::{binding, bound_at, conversation, current, route};
@@ -213,16 +214,39 @@ pub(crate) fn managed(ctx: &ExecCtx, number: AccountNumber) -> Result<Agent, Err
 
 // whom an agent answers is identity's to say: its manager always, anyone else as it or its manager
 // set it (`SetOwnership`), asked as every runtime that delivers to an agent asks it (`Hears`)
-fn answers(ctx: &QueryCtx, agent: &Agent, actor: AccountNumber) -> Result<bool, Error> {
+fn answers(ctx: &QueryCtx, agent: &Agent, actor: &Principal) -> Result<bool, Error> {
     let role = ctx.env().role(abi::role::IDENTITY)?.clone();
+    let from = match actor {
+        Principal::Account(from) => *from,
+        Principal::Foreign(foreign) => return answers_foreign(ctx, &role, agent, *foreign),
+        Principal::Root => return Ok(false),
+    };
     let asked = identity::Query::Hears {
         account: agent.number,
-        from: actor,
+        from,
     };
     match ctx.query::<identity::Query, identity::Reply>(&role, &asked)? {
         identity::Reply::Hears(hears) => Ok(hears),
         other => Err(unexpected_reply(&role, "Hears", &other)),
     }
+}
+
+fn answers_foreign(
+    ctx: &QueryCtx,
+    identity: &ProgramId,
+    agent: &Agent,
+    foreign: Foreign,
+) -> Result<bool, Error> {
+    let asked = identity::Query::Answers {
+        account: agent.number,
+    };
+    let answers = match ctx.query::<identity::Query, identity::Reply>(identity, &asked)? {
+        identity::Reply::Answers(answers) => answers,
+        other => return Err(unexpected_reply(identity, "Answers", &other)),
+    };
+    let manager = Party::Account(agent.manager);
+    let sender = [Party::Foreign(foreign.into())];
+    Ok(answers.is_some_and(|answers| answers.allows(Some(&manager), &sender)))
 }
 
 pub(crate) fn thread(ctx: &QueryCtx, id: u64) -> Result<ThreadRow, Error> {
@@ -326,10 +350,42 @@ struct Designation {
     room: Option<String>,
 }
 
-fn name_of(ctx: &QueryCtx, number: AccountNumber) -> String {
-    match profile(ctx, number) {
-        Ok(Some(profile)) => format!("{} (account {number})", profile.name),
-        _ => format!("account {number}"),
+pub(crate) fn foreign_handle(ctx: &QueryCtx, foreign: Foreign) -> String {
+    let unheard = |named: ForeignName| {
+        ForeignName {
+            name: None,
+            ..named
+        }
+        .handle()
+    };
+    match chat::foreign_name(ctx, foreign) {
+        Ok(named) if named.name.is_some() => {
+            format!("{} ({})", named.handle(), unheard(named.clone()))
+        }
+        Ok(named) => unheard(named),
+        Err(_) => unheard(ForeignName {
+            foreign,
+            name: None,
+            network: None,
+        }),
+    }
+}
+
+fn name_of(ctx: &QueryCtx, actor: &Principal) -> String {
+    match actor {
+        Principal::Account(number) => match profile(ctx, *number) {
+            Ok(Some(profile)) => format!("{} (account {number})", profile.name),
+            _ => format!("account {number}"),
+        },
+        Principal::Foreign(foreign) => foreign_handle(ctx, *foreign),
+        Principal::Root => "the network".to_owned(),
+    }
+}
+
+fn from_whom(ctx: &QueryCtx, actor: &Principal) -> String {
+    match actor {
+        Principal::Account(number) => format!("account {number}"),
+        Principal::Foreign(_) | Principal::Root => name_of(ctx, actor),
     }
 }
 
@@ -405,7 +461,7 @@ fn chat_places(channel: &str, thread: Option<u64>) -> Vec<String> {
 fn designation(
     ctx: &QueryCtx,
     change: &Change,
-    actor: AccountNumber,
+    actor: &Principal,
     heard: Heard,
 ) -> Result<Designation, Error> {
     if let Some((row, emoji)) = reacted_on(ctx, change)? {
@@ -461,7 +517,7 @@ fn reacted_on(ctx: &QueryCtx, change: &Change) -> Result<Option<(chat::MsgRow, S
     }
 }
 
-fn reacted(ctx: &QueryCtx, row: chat::MsgRow, actor: AccountNumber, emoji: &str) -> Designation {
+fn reacted(ctx: &QueryCtx, row: chat::MsgRow, actor: &Principal, emoji: &str) -> Designation {
     let who = name_of(ctx, actor);
     let in_thread = match row.thread {
         Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
@@ -487,7 +543,7 @@ fn reacted(ctx: &QueryCtx, row: chat::MsgRow, actor: AccountNumber, emoji: &str)
 fn said_in(
     ctx: &QueryCtx,
     row: chat::MsgRow,
-    actor: AccountNumber,
+    actor: &Principal,
     heard: Heard,
 ) -> Result<Designation, Error> {
     let who = name_of(ctx, actor);
@@ -638,7 +694,7 @@ fn own_post(
         from,
         room,
         ..
-    } = said_in(ctx, row, agent, Heard::Own)?;
+    } = said_in(ctx, row, &Principal::Account(agent), Heard::Own)?;
     PLACES.put(ctx, &(agent, reached), &thread.id);
     if let Some(room) = &room {
         crate::room_rules::tell(ctx, &mut thread, room)?;
@@ -670,13 +726,15 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         return Ok(Hearing { told: None, woke });
     }
     let added = change.kind == Changed::Added;
-    let Actor::Account(actor) = change.actor else {
-        return Ok(Hearing::default());
+    let actor = match &change.actor {
+        Actor::Account(number) => Principal::Account(*number),
+        Actor::Foreign(foreign) => Principal::Foreign((*foreign).into()),
+        Actor::Key(_) | Actor::Program(_) | Actor::System => return Ok(Hearing::default()),
     };
     let Some(why) = heard_as(&change.reason) else {
         return Ok(Hearing::default());
     };
-    let by_another = actor != change.recipient;
+    let by_another = actor != Principal::Account(change.recipient);
     let told_already =
         LAST.get(ctx, &change.recipient)? == Some((change.source.clone(), change.revision));
     let heeded = added && by_another && !told_already;
@@ -688,10 +746,10 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     };
     let posted = posted(ctx, &change)?;
     let why = match &posted {
-        Some(row) => continued(ctx, &agent, row, actor, why)?,
+        Some(row) => continued(ctx, &agent, row, &actor, why)?,
         None => why,
     };
-    let woke = waited(ctx, &agent, &change, actor, why)?;
+    let woke = waited(ctx, &agent, &change, &actor, why)?;
     let seen = (change.source.clone(), change.revision);
     // what the agent chose not to hear is never delivered: nothing of it is written, so another
     // relation of the same message may still bring it
@@ -701,10 +759,10 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         }
         return Ok(Hearing { told: None, woke });
     }
-    if !answers(ctx, &agent, actor)? {
+    if !answers(ctx, &agent, &actor)? {
         match woke {
             Some(_) => LAST.put(ctx, &agent.number, &seen),
-            None => dropped(ctx, &agent, actor, why, &change)?,
+            None => dropped(ctx, &agent, &actor, why, &change)?,
         }
         return Ok(Hearing { told: None, woke });
     }
@@ -716,12 +774,17 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         text,
         pictures,
         room,
-    } = designation(ctx, &change, actor, why)?;
+    } = designation(ctx, &change, &actor, why)?;
     let (mut thread, reached) = route(ctx, &agent, &places, place)?;
     PLACES.put(ctx, &(agent.number, reached), &thread.id);
     if let Some(row) = &posted {
         match why {
-            Heard::Mention => crate::runs::open(ctx, agent.number, row, actor, thread.id)?,
+            Heard::Mention => match &actor {
+                Principal::Account(author) => {
+                    crate::runs::open(ctx, agent.number, row, *author, thread.id)?
+                }
+                Principal::Root | Principal::Foreign(_) => {}
+            },
             Heard::Continued { .. } => {
                 crate::runs::reached(ctx, agent.number, &row.channel_id, thread.id)?
             }
@@ -743,7 +806,7 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         crate::room_rules::tell(ctx, &mut thread, room)?;
     }
     let text = text + &crate::waits::still_armed(ctx, thread.id)?;
-    let author = Principal::Account(actor);
+    let author = actor;
     let body = match why.light() {
         true => Body::Light { author, text },
         false => Body::Post { author, text },
@@ -792,7 +855,7 @@ fn continued(
     ctx: &ExecCtx,
     agent: &Agent,
     row: &chat::MsgRow,
-    actor: AccountNumber,
+    actor: &Principal,
     why: Heard,
 ) -> Result<Heard, Error> {
     if why.light() {
@@ -850,7 +913,7 @@ fn waited(
     ctx: &ExecCtx,
     agent: &Agent,
     change: &Change,
-    actor: AccountNumber,
+    actor: &Principal,
     why: Heard,
 ) -> Result<Option<u64>, Error> {
     let waits = crate::waits::message_waits(ctx, agent.number)?;
@@ -874,7 +937,7 @@ fn waited(
         else {
             continue;
         };
-        let theirs = from.is_none_or(|from| from == actor);
+        let theirs = from.is_none_or(|from| Principal::Account(from) == *actor);
         if waited_in != channel || !theirs || (mentions_me && !to_me) {
             continue;
         }
@@ -897,7 +960,7 @@ fn waited(
 fn dropped(
     ctx: &ExecCtx,
     agent: &Agent,
-    actor: AccountNumber,
+    actor: &Principal,
     heard: Heard,
     change: &Change,
 ) -> Result<(), Error> {
@@ -915,8 +978,10 @@ fn dropped(
     };
     let Source { program, object } = &change.source;
     let text = format!(
-        "dropped {what} from account {actor} ({program} {} {}): this agent doesn't answer it (identity: Answers)",
-        object.kind, object.id
+        "dropped {what} from {} ({program} {} {}): this agent doesn't answer it (identity: Answers)",
+        from_whom(ctx, actor),
+        object.kind,
+        object.id
     );
     let Designation { place, .. } = designation(ctx, change, actor, heard)?;
     let mut row = conversation(ctx, agent, &place)?;

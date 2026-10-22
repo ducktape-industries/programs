@@ -11,7 +11,10 @@ access, ownership}`) or, for blobs, ducktape's `blob::contract`. The programs in
 nothing scheduled runs. The egress role (`abi::role::egress`) is optional and
 the kernel never calls it: a node reads it, and `crates/app/egress` fills it.
 The ownership role (`abi::role::ownership`) is optional: on a network that
-fills none, no write is guarded.
+fills none, no write is guarded. The crosspond role (`abi::role::crosspond`)
+is optional and the kernel never calls it: the host lets only the program
+that fills it send a message as a user of a linked network, and
+`crates/system/crosspond` fills it.
 
 ## The roles
 
@@ -23,6 +26,7 @@ fills none, no write is guarded.
 | `awaits` | `awaits` | when a frame parks waiting on calls, sends `Park { frame, program, calls }` with the `System` origin, and `Close { frame }` when the frame finishes or the programs role changes its code; the role opens a ticket per call, and a `Resolve { ticket, answer }` from the called program makes it hand the frame its answer through the host's `Resume`; a ticket has no deadline. A refusal of `Park` fails the frame. Its `Migrate { height, first, last }`, anyone's, rewrites each open ticket's caller and target by the programs role's `Renames(height)` ("Renaming a program") |
 | `scheduler` | `scheduler` | at the end of each block, after its frames and hooks and before the epoch step, asks `Due { height }` page by page (no limit: every entry) and, for each entry still due (`Entry { id }` asked again first, so a run that cancels a later entry of the same block holds), runs `payload` on `target` as the program that scheduled the entry would send a message: `Origin::Program(scheduler)`, that program's account, `Cause::Scheduled { entry }`, the network's per-frame limits; a refused run undoes only its own writes. It then sends `Ran { entry, receipt }` with the `System` origin, and the role keeps the receipt on the entry; the block does not carry it. A program sends `Schedule { height, target, payload }` (the SDK's `ctx.schedule`), answered with the entry id: the role takes the scheduler from the origin, so a program schedules only as itself, and refuses a height not after the current one, so a scheduled run never lands in its own block. Only the scheduling program sends `Cancel { entry }`, before the run. Its `Migrate { height, first, last }`, anyone's, rewrites each due entry's scheduler and target by the programs role's `Renames(height)` ("Renaming a program"); an entry that ran keeps the ids it ran with |
 | `egress` | `egress` | nothing: the node reads it. After each block a member node asks `Assigned { key }` with its own key and `Node { key }`; it calls each request elected to it, through the services its `egress.toml` names, and signs `Answer { id, answer }` (for a request that asks `Delivery::Events`, a `text/event-stream` response's events instead, as `Event { id, seq, data }` in frames sent as the events arrive, without waiting for a block to carry the frame before, then `EndStream { id, events, end }`), and `Serve { services }` while the role's record of it differs from its config. A program asks `Serving { service }` for the member nodes that would be elected, and calls the role with `Request { request, delivery, wait }`. An events request's requester hears each event as its own op, `deliver` followed by the encoded `Event`, and its call answers the stream's end: `Complete` as the encoded `http::Response` with the stream's status and headers and an empty body (what a whole `Http` reply answers too, so the call decodes one type either way), a cut as a refusal; each event moves the request's expiry `wait` blocks past it. `seq` counts from 0 per call the node makes, and the requester hears each `seq` once and in order whatever order the frames land in: egress keeps an event that lands before the one due until the gap fills, drops a repeated `seq`, and takes a `seq` back at 0 as the node calling the service again after a restart, which drops what waited and voids what came before. It holds an `EndStream` until the requester has heard every event the end counts. An event the requester refuses is passed over, and the next one is heard. A relay is answered whole, and asking one with `Delivery::Events` is refused. The egress program expires a request itself: it schedules its own `Expire { id }` through the scheduler role `wait` blocks on (`DEFAULT_WAIT`, 64, when `wait` is `None`) and cancels it when the answer comes; no node signs an expiry |
+| `crosspond` | `crosspond` | nothing: it calls no op of the role. The host runs a message sent with `HostOp::EmitForeign` (the SDK's `ctx.emit_foreign`), which acts as `Principal::Foreign { network, account }`, only when the program bound to this role sent it. `crates/system/crosspond` keeps the links to other networks, commits the packets its accounts send at `role::crosspond::commitment_key`, asks egress for `Request::Crosspond { link }` to relay them, and runs each packet another network delivers, once its light client proves the packet, on the program bound to the packet's port role (its [README](../crates/system/crosspond/README.md)) |
 | `blobs` | `blobs` | when a program reads a blob (`blob_get`) that no program put, and when the programs role admits code, asks `Held { blob }`: the blob is served only once a bundle naming it is held, which it is from the receipt that brings two thirds of the current validators. The node watches the role's writes: it gathers every bundle put, and a validator's node receipts a bundle once it holds every blob |
 | `access` | `access` | while a program fills the role, before every op it executes (`ProgramCall::Execute`; not a reply to a program's message and not a run by the chain itself), asks the target program `ProgramCall::Access(payload)`, which answers what the op needs: `Vec<Need>`, each `Need { key, action }` with `Action::Write` or `Action::Delete`. With any need, it runs the role's `Op::Check { program, actor, needs }` as the chain, in the same unit as the op: the check may send no message, and its refusal refuses the op. `actor` is the sender's account and, for a message from a program, that program too (`Party::Account(n)`, `Party::Program(id)`). "Who may write a key", below, has the rules |
 | `ownership` | `ownership` | once a run (an op, a resumed op, a reply) that wrote keys returns, and before anything it emitted runs, executes `Op::Guard { program, origin, sender, writes }` with the `System` origin: the frame's origin and sender, and each key the run created with a claim or changed while the ownership program held a record for it (`Write { key, claimed, existed, kept }`, once each, in key order). A key is shared unless the write that creates it claims it (`HostOp::SetOwned { key, value, kind }`, the SDK's `set_with` and `Map<K, Owned<T>>`); the host knows a key is recorded by reading the ownership program's state at `role::ownership::record_key(program, key)`. A run that claimed no new key and changed no recorded key makes no call; the kernel's own runs, the validators' messages and the ownership program's own runs are never guarded. The guard may send no message, and its refusal undoes the run. `crates/system/ownership` records each claimed key's owner (the account the frame acts as, or the program when it acts as none) and the policy its owner's defaults choose (kind, then program, then everything, then the owner's "Only me", which admits only them; `Query::OnlyMe` names it once made, and the open policy is only what an adopted row that anyone wrote keeps; neither is ever edited, switched or retired), and admits a change or delete only where that policy admits the actor. A program moves a record between two of its own keys with `Op::Moved { from_key, to_key }`, sent in its own message as its own account (files, when a guarded path moves) |
@@ -39,20 +43,20 @@ code = "valset.wasm"
 roles = ["validators"]
 
 [[programs]]
-id = "chat"
-code = "chat.wasm"
+id = "activity"
+code = "activity.wasm"
 ```
 
 The roles are a table, not a fixed set of fields: `abi::Roles` maps a role's
 name to its program, and the names are constants in `abi::role` (`PROGRAMS`,
 `VALIDATORS`, `IDENTITY`, `BLOBS`, `AWAITS`, `HALO`, `EGRESS`, `SCHEDULER`,
-`ACCESS`, `OWNERSHIP`). A new role is a new row. The programs role keeps the table (its
+`ACCESS`, `OWNERSHIP`, `CROSSPOND`). A new role is a new row. The programs role keeps the table (its
 `ROLES` map) and answers it with `Query::Roles`. The roles in
 `abi::role::REQUIRED` (programs, validators, identity, blobs, awaits and
 halo) are filled for the network's life: the kernel calls programs,
 validators, identity, blobs and awaits, and every node reads halo's lane
-table. Any other role, access, egress, scheduler and ownership here, is
-optional: the kernel checks ops with access, and guards writes with
+table. Any other role, access, egress, scheduler, ownership and crosspond
+here, is optional: the kernel checks ops with access, and guards writes with
 ownership, only while a program fills that role. Removing a program unbinds
 every role it fills in the same block. Founding
 refuses a role two programs name and a founding that leaves a required role
@@ -82,11 +86,16 @@ hands it to the program as `Env.sender`:
   that program, while the account is active. Any other answer, or a refusal,
   rejects the message, so no key is held anywhere for an account a program
   runs;
+- a message the program bound to the crosspond role sends as a user of a
+  linked network (`ctx.emit_foreign(foreign, ..)`, `HostOp::EmitForeign`)
+  acts as that user, `Foreign { network, account }`. Identity is not asked:
+  the user holds no account on this network. The message is refused from
+  any other program, and when it also names an account to act as;
 - founding and the kernel's own calls act as the chain (`Root`).
 
-A program reads it as `ctx.sender()`, which is `Principal::Account(number)`
-or `Principal::Root` and refuses a frame that acts as no one, so no row a
-program writes names a bare key. `Env::signer`, `sending_program` and
+A program reads it as `ctx.sender()`, which is `Principal::Account(number)`,
+`Principal::Root` or `Principal::Foreign(foreign)` and refuses a frame that
+acts as no one, so no row a program writes names a bare key. `Env::signer`, `sending_program` and
 `sent_by` check the raw origin instead, where a program needs the key or the
 program itself (blobs takes a receipt from a validator's key; chat's `:`
 namespace belongs to the program its prefix names).

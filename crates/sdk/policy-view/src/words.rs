@@ -44,6 +44,7 @@ pub fn party(party: &Party, names: &BTreeMap<u64, String>) -> String {
             .cloned()
             .unwrap_or_else(|| format!("account {number}")),
         Party::Program(program) => program.clone(),
+        Party::Foreign(foreign) => ::program::Foreign::from(*foreign).to_string(),
     }
 }
 

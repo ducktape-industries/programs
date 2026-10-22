@@ -33,6 +33,7 @@ impl From<Lister> for Party {
         match party {
             Lister::Account(number) => Party::Account(number),
             Lister::Program(program) => Party::Program(program),
+            Lister::Foreign(foreign) => Party::Foreign(foreign),
         }
     }
 }
@@ -42,6 +43,7 @@ pub fn owner_of(principal: &Principal, program: &str) -> Party {
     match principal {
         Principal::Account(number) => Party::Account(*number),
         Principal::Root => Party::Program(program.to_owned()),
+        Principal::Foreign(foreign) => Party::Foreign((*foreign).into()),
     }
 }
 

@@ -793,6 +793,7 @@ fn reask(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     }
     let by = match &env.sender {
         Some(Principal::Account(number)) => format!("account {number}"),
+        Some(Principal::Foreign(foreign)) => crate::agents::foreign_handle(ctx, *foreign),
         Some(Principal::Root) | None => "the network".to_owned(),
     };
     row.seen = row.last_input - 1;

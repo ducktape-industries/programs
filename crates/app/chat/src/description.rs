@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 
 use describe::{Description, Field, Value, field};
 
-use crate::{Notices, Op, PostPolicy, Principal, dm_peers, notice_text, plain_text};
+use crate::{
+    Notices, Op, PeerMessage, PeerWrite, PostPolicy, Principal, dm_peers, hex, notice_text,
+    plain_text,
+};
 
 fn noticed(
     channel_id: &str,
@@ -275,6 +278,21 @@ pub fn describe(op: &Op) -> Description {
                 fields: Vec::new(),
             };
         }
+        Op::Link { channel_id, peer } => match peer {
+            Some(peer) => (
+                "Link channel",
+                channel_id,
+                vec![
+                    field("network", Value::text(hex(&peer.network))),
+                    field("peer", Value::text(format!("#{}", peer.channel_id))),
+                ],
+            ),
+            None => ("Unlink channel", channel_id, vec![]),
+        },
+        Op::FromPeer { channel_id, write } => {
+            let (title, fields) = from_peer(write);
+            (title, channel_id, fields)
+        }
     };
     let mut all = channel_description_fields(channel);
     all.extend(fields);
@@ -355,6 +373,55 @@ fn principal_description(principal: &Principal) -> Value {
     match principal {
         Principal::Account(number) => Value::Account(*number),
         Principal::Root => Value::text("system"),
+        Principal::Foreign(_) => Value::text(crate::view::unnamed(principal)),
+    }
+}
+
+fn named(message: &PeerMessage) -> Field {
+    let named = match message {
+        PeerMessage::Here(id) => format!("{id}, here"),
+        PeerMessage::There(id) => format!("{id}, there"),
+    };
+    field("message", Value::text(named))
+}
+
+fn from_peer(write: &PeerWrite) -> (&'static str, Vec<Field>) {
+    match write {
+        PeerWrite::Post {
+            message_id, blocks, ..
+        } => (
+            "Post from a linked channel",
+            vec![
+                field("text", Value::Text(plain_text(blocks))),
+                field("message", Value::text(message_id)),
+            ],
+        ),
+        PeerWrite::Notify {
+            message_id, notice, ..
+        } => (
+            "Notice from a linked channel",
+            vec![
+                field("text", Value::Text(notice_text(notice))),
+                field("message", Value::text(message_id)),
+            ],
+        ),
+        PeerWrite::Edit {
+            message, blocks, ..
+        } => (
+            "Edit from a linked channel",
+            vec![
+                named(message),
+                field("text", Value::Text(plain_text(blocks))),
+            ],
+        ),
+        PeerWrite::Delete { message } => ("Delete from a linked channel", vec![named(message)]),
+        PeerWrite::React { message, emoji, on } => (
+            match on {
+                true => "Reaction from a linked channel",
+                false => "Reaction taken back from a linked channel",
+            },
+            vec![named(message), field("emoji", Value::text(emoji))],
+        ),
     }
 }
 

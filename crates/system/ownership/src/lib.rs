@@ -39,6 +39,7 @@ pub type PolicyId = u64;
 pub enum Party {
     Account(AccountNumber),
     Program(ProgramId),
+    Foreign(abi::Foreign),
 }
 
 impl fmt::Display for Party {
@@ -46,6 +47,7 @@ impl fmt::Display for Party {
         match self {
             Party::Account(number) => write!(f, "account {number}"),
             Party::Program(program) => write!(f, "program {program}"),
+            Party::Foreign(foreign) => write!(f, "{}", ::program::Foreign::from(*foreign)),
         }
     }
 }
@@ -272,6 +274,7 @@ fn party(party: &Party) -> describe::Value {
     match party {
         Party::Account(number) => describe::Value::Account(*number),
         Party::Program(program) => describe::Value::Program(program.clone()),
+        Party::Foreign(_) => describe::Value::text(party.to_string()),
     }
 }
 

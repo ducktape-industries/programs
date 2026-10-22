@@ -14,6 +14,7 @@ pub(crate) fn name(chat: &Chat, author: &Principal) -> String {
         (Some(names), author) => names.member(author),
         (None, Principal::Account(number)) => format!("account {number}"),
         (None, Principal::Root) => "the system".to_owned(),
+        (None, Principal::Foreign(_)) => chat::view::unnamed(author),
     }
 }
 

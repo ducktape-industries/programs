@@ -478,6 +478,7 @@ fn party_name(party: &Party, roster: &Roster) -> String {
     match party {
         Party::Account(number) => roster.name(*number),
         Party::Program(program) => format!("the {program} program"),
+        Party::Foreign(foreign) => program::Foreign::from(*foreign).to_string(),
     }
 }
 
@@ -658,6 +659,7 @@ pub(crate) fn author(author: &harness::Principal, roster: Option<&Roster>) -> St
             roster.map_or_else(|| format!("account {number}"), |r| r.name(*number))
         }
         harness::Principal::Root => "the chain".to_owned(),
+        harness::Principal::Foreign(foreign) => foreign.to_string(),
     }
 }
 

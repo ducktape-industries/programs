@@ -1,7 +1,7 @@
-//! A mention's run: once a post that mentions an agent reaches its conversation, its author's very
-//! next posts in that chat room reach the agent too, until a post by anyone else ends it. A room
-//! the agent listens to, or a direct room, keeps none: every post there reaches it already.
-use ::program::{Error, ExecCtx, QueryCtx};
+//! A mention's run: once an account's post that mentions an agent reaches its conversation, its
+//! author's very next posts in that chat room reach the agent too, until a post by anyone else ends
+//! it. A room the agent listens to, or a direct room, keeps none: every post there reaches it.
+use ::program::{Error, ExecCtx, Principal, QueryCtx};
 use abi::role::identity::AccountNumber;
 use chat::MsgRow;
 
@@ -37,7 +37,7 @@ pub(crate) fn step(
     ctx: &ExecCtx,
     agent: AccountNumber,
     row: &MsgRow,
-    actor: AccountNumber,
+    actor: &Principal,
     listened: bool,
 ) -> Result<Option<u64>, Error> {
     let key = (agent, row.channel_id.clone());
@@ -47,7 +47,7 @@ pub(crate) fn step(
     if row.seq <= run.last {
         return Ok(None);
     }
-    let next = actor == run.author && row.seq == run.last + 1 && !listened;
+    let next = *actor == Principal::Account(run.author) && row.seq == run.last + 1 && !listened;
     if next {
         RUNS.put(
             ctx,

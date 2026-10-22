@@ -501,7 +501,7 @@ pub(super) fn pods_get(target: &str) -> Value {
 pub(super) fn pods_answer(chain: &MockChain, target: &str, output: Vec<u8>) {
     let asked = |row: &RequestRow| match &row.request {
         Request::Http { head, .. } => head.target == target,
-        Request::Relay { .. } => false,
+        Request::Relay { .. } | Request::Crosspond { .. } => false,
     };
     let rows = assigned(chain, PODS);
     let row = rows.iter().find(|row| asked(row)).expect("pods is asked");

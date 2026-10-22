@@ -27,6 +27,7 @@ attribution = { path = "../../app/attribution" }
 awaits = { path = "../../system/awaits" }
 blobs = { path = "../../system/blobs" }
 chat = { path = "../../app/chat" }
+crosspond = { path = "../../system/crosspond" }
 egress = { path = "../../app/egress" }
 files = { path = "../../app/files" }
 fleet = { path = "../../app/fleet" }

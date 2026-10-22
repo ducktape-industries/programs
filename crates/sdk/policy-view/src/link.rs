@@ -121,6 +121,7 @@ pub fn listed(party: &Party) -> Listed {
     match party {
         Party::Account(number) => Listed::Account(*number),
         Party::Program(program) => Listed::Program(program.clone()),
+        Party::Foreign(foreign) => Listed::Foreign(*foreign),
     }
 }
 
@@ -128,5 +129,6 @@ pub fn party(listed: &Listed) -> Party {
     match listed {
         Listed::Account(number) => Party::Account(*number),
         Listed::Program(program) => Party::Program(program.clone()),
+        Listed::Foreign(foreign) => Party::Foreign(*foreign),
     }
 }

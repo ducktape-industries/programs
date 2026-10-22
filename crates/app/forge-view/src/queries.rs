@@ -154,5 +154,6 @@ pub(crate) async fn conversation(
 
 /// Every account's profile, folded into [`Names`](chat::view::Names).
 pub(crate) async fn roster(host: Host) -> Result<chat::view::Names, Error> {
-    chat::view::roster(move |ask| host.query(ask)).await
+    let foreigners = host.clone();
+    chat::view::roster(move |ask| host.query(ask), move |ask| foreigners.query(ask)).await
 }

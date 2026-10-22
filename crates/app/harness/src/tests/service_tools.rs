@@ -65,7 +65,9 @@ fn asked(chain: &MockChain) -> Vec<RequestRow> {
 fn head_of(row: &RequestRow) -> http::Head {
     match &row.request {
         Request::Http { head, .. } => head.clone(),
-        Request::Relay { .. } => panic!("a service step asks over HTTP"),
+        Request::Relay { .. } | Request::Crosspond { .. } => {
+            panic!("a service step asks over HTTP")
+        }
     }
 }
 
@@ -613,7 +615,7 @@ fn refusal(chain: &MockChain, thread: u64, call: &str) -> String {
 fn target(row: &RequestRow) -> String {
     match &row.request {
         Request::Http { head, .. } => head.target.clone(),
-        Request::Relay { .. } => String::new(),
+        Request::Relay { .. } | Request::Crosspond { .. } => String::new(),
     }
 }
 
@@ -659,7 +661,7 @@ fn on_its_line(chain: &MockChain, thread: u64, call: &str) -> Option<BlobId> {
 fn body_part(row: &RequestRow) -> BlobId {
     match &row.request {
         Request::Http { body, .. } => body[0],
-        Request::Relay { .. } => panic!("an HTTP request"),
+        Request::Relay { .. } | Request::Crosspond { .. } => panic!("an HTTP request"),
     }
 }
 

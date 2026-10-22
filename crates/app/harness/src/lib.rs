@@ -1195,6 +1195,7 @@ pub fn awaited(
             (streamed_as(thread) == *deliver).then_some(Awaited::Reply { thread })
         }
         (Request::Http { head, .. }, Delivery::Whole) => wire::awaited(head),
+        (Request::Crosspond { .. }, _) => None,
     }
 }
 

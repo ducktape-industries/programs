@@ -3,7 +3,10 @@
 use std::collections::BTreeMap;
 
 use crate::message::Status;
-use crate::{Block, Mark, Notice, Notices, Op, PageRequest, PostPolicy, Principal, Query, Span};
+use crate::{
+    Block, Mark, Notice, Notices, Op, PageRequest, Peer, PeerMessage, PeerWrite, PostPolicy,
+    Principal, Query, Span,
+};
 
 const ROOM: &str = "design";
 
@@ -444,4 +447,33 @@ pub(crate) fn repliers() -> Query {
         channel_id: room(),
         roots: vec![4, 9],
     }
+}
+
+pub(crate) fn link() -> Op {
+    Op::Link {
+        channel_id: room(),
+        peer: Some(Peer {
+            network: [0x22; 32],
+            channel_id: room(),
+        }),
+    }
+}
+
+pub(crate) fn from_peer() -> Op {
+    Op::FromPeer {
+        channel_id: room(),
+        write: PeerWrite::React {
+            message: PeerMessage::There("hello-1".into()),
+            emoji: "👍".into(),
+            on: true,
+        },
+    }
+}
+
+pub(crate) fn peer() -> Query {
+    Query::Peer { channel_id: room() }
+}
+
+pub(crate) fn foreigners() -> Query {
+    Query::Foreigners { page: twenty() }
 }

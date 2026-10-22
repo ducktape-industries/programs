@@ -67,7 +67,7 @@ pub(crate) fn writable(
     if !channel.admits(principal, seated) {
         return Err(unauthorized(format!(
             "{} is not a member of {}: ask the channel owner to add the account as a member",
-            handle(principal),
+            handle(ctx, principal),
             channel.id
         )));
     }
@@ -119,9 +119,13 @@ pub(crate) fn notice(ctx: &QueryCtx, notice: &Notice) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn handle(principal: &Principal) -> String {
+pub(crate) fn handle(ctx: &QueryCtx, principal: &Principal) -> String {
     match principal {
         Principal::Account(account) => format!("acct:{account}"),
         Principal::Root => "system".to_string(),
+        Principal::Foreign(foreign) => match crate::foreign_name(ctx, *foreign) {
+            Ok(named) => named.handle(),
+            Err(_) => crate::view::unnamed(principal),
+        },
     }
 }

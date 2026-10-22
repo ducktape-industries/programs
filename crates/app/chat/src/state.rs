@@ -11,8 +11,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Kind, Map, Owned, Set};
 
 use crate::{
-    AccountNumber, Block, ChannelRow, MemberRow, MsgRow, Notices, Principal, Reaction, plain_text,
-    tags,
+    AccountNumber, Block, ChannelRow, MemberRow, MsgRow, NetworkId, Notices, Peer, Principal,
+    Reaction, plain_text, tags,
 };
 
 type ChannelId = String;
@@ -69,6 +69,8 @@ pub const DRAFTS: Map<(ChannelId, Principal), Drafted> = Map::new("draft/");
 pub const DRAFT_PIECES: Map<(ChannelId, Principal, u64), String> = Map::new("draft-piece/");
 pub const LEASES: Map<(ChannelId, Option<Seq>), Lease> = Map::new("lease/");
 pub const PLACE_WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("place-watcher/");
+pub const PEERS: Map<ChannelId, Peer> = Map::new("peer/");
+pub const FOREIGNERS: Set<(NetworkId, AccountNumber)> = Set::new("foreigner/");
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the

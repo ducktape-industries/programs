@@ -32,6 +32,8 @@ impl Program for Chat {
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         let sender = ctx.sender()?;
+        crate::linked::admitted(ctx, &sender, &op)?;
+        crate::linked::heard(ctx, &sender);
         match op {
             Op::CreateChannel {
                 channel_id,
@@ -156,6 +158,10 @@ impl Program for Chat {
                 let blocks = crate::ops::noticed(ctx, notice, text)?;
                 crate::ops::notify_with(ctx, &sender, channel_id, message_id, thread, blocks, by)
             }
+            Op::Link { channel_id, peer } => crate::linked::link(ctx, &channel_id, peer),
+            Op::FromPeer { channel_id, write } => {
+                crate::linked::from_peer(ctx, &sender, channel_id, write)
+            }
         }
     }
 
@@ -167,8 +173,8 @@ impl Program for Chat {
         Ok(())
     }
 
-    fn access(_: &QueryCtx, op: &Op) -> Result<Vec<::program::Need>, Error> {
-        Ok(crate::gate::needs(op))
+    fn access(ctx: &QueryCtx, op: &Op) -> Result<Vec<::program::Need>, Error> {
+        crate::gate::needs(ctx, op)
     }
 
     fn resource(ctx: &QueryCtx, key: &str) -> Result<::program::Resource, Error> {
@@ -300,6 +306,13 @@ impl Program for Chat {
             }
             Query::Repliers { channel_id, roots } => (
                 Reply::Repliers(crate::queries::repliers(ctx, &channel_id, roots)?),
+                vec![],
+            ),
+            Query::Peer { channel_id } => {
+                (Reply::Peer(crate::linked::peer(ctx, &channel_id)?), vec![])
+            }
+            Query::Foreigners { page } => (
+                Reply::Foreigners(crate::linked::foreigners(ctx, &page)?),
                 vec![],
             ),
         };

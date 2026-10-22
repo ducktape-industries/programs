@@ -95,6 +95,9 @@ impl Rig {
                 }
             },
             Principal::Root => Origin::Root,
+            Principal::Foreign(foreign) => {
+                panic!("{foreign} signs nothing here: it arrives through crosspond")
+            }
         };
         self.sandbox
             .chat_execute(origin, self.height, TIME, msg)

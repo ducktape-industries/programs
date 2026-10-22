@@ -38,6 +38,7 @@ pub enum Actor {
     Key(Vec<u8>),
     Program(ProgramId),
     System,
+    Foreign(abi::Foreign),
 }
 
 #[derive(

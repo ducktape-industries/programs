@@ -28,7 +28,7 @@ pub(crate) fn take(
         return Ok(());
     }
     if let Some(holder) = busy(ctx, channel_id, thread, sender)? {
-        return Err(wrong_state(refusal(&holder, channel_id, thread)));
+        return Err(wrong_state(refusal(ctx, &holder, channel_id, thread)));
     }
     let lease = Lease {
         holder: sender.clone(),
@@ -38,7 +38,7 @@ pub(crate) fn take(
     Ok(())
 }
 
-fn refusal(holder: &Holder, channel_id: &str, thread: Option<u64>) -> String {
+fn refusal(ctx: &QueryCtx, holder: &Holder, channel_id: &str, thread: Option<u64>) -> String {
     let doing = match holder.kind {
         Holding::Lease => "holds",
         Holding::Draft => "is drafting in",
@@ -47,7 +47,7 @@ fn refusal(holder: &Holder, channel_id: &str, thread: Option<u64>) -> String {
         Some(root) => format!("thread {root} of #{channel_id}"),
         None => format!("#{channel_id}"),
     };
-    let who = rules::handle(&holder.principal);
+    let who = rules::handle(ctx, &holder.principal);
     format!("busy: {who} {doing} {at}")
 }
 

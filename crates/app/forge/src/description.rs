@@ -285,5 +285,6 @@ fn principal(principal: &Principal) -> Value {
     match principal {
         Principal::Account(number) => Value::Account(*number),
         Principal::Root => Value::text("system"),
+        Principal::Foreign(foreign) => Value::text(foreign.to_string()),
     }
 }

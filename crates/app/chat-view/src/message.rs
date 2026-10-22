@@ -317,6 +317,7 @@ fn draft_spans(spans: &[Span]) -> String {
         .iter()
         .map(|span| {
             let mention = span.marks.iter().find_map(|mark| match mark {
+                Mark::Mention(Principal::Foreign(_)) => Some(span.text.clone()),
                 Mark::Mention(principal) => Some(mention_token(principal)),
                 _ => None,
             });
@@ -538,6 +539,22 @@ mod tests {
         mark_message_groups(&mut messages, None);
         let heads: Vec<bool> = messages.iter().map(|m| m.show_author).collect();
         assert_eq!(heads, [true, false]);
+    }
+
+    #[test]
+    fn a_draft_writes_a_foreign_mention_back_as_the_text_that_resolves_to_it() {
+        let chief = Principal::Foreign(chat::Foreign {
+            network: [0x22; 32],
+            account: 18,
+        });
+        let blocks = vec![Block::Paragraph(vec![
+            Span::plain("hi "),
+            Span {
+                text: "@18@there".into(),
+                marks: vec![Mark::Mention(chief)],
+            },
+        ])];
+        assert_eq!(editable_markdown_with_mention_ids(&blocks), "hi @18@there");
     }
 
     #[test]

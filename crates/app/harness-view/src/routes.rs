@@ -48,7 +48,7 @@ pub(crate) enum Press {
 
 pub(crate) enum Then {
     Stay,
-    Send(harness::Op),
+    Send(Box<harness::Op>),
     Done,
 }
 
@@ -128,7 +128,7 @@ impl RouteDraft {
                     None => return Then::Stay,
                 };
                 match op {
-                    Ok(op) => return Then::Send(op),
+                    Ok(op) => return Then::Send(Box::new(op)),
                     Err(problem) => {
                         self.asking = None;
                         self.problem = Some(problem);
@@ -243,7 +243,7 @@ impl Agents {
         match self.route_draft.press(press) {
             Then::Stay => {}
             Then::Send(op) => {
-                let submit = cx.host().ask::<Submit<harness::Harness>>(op);
+                let submit = cx.host().ask::<Submit<harness::Harness>>(*op);
                 let task = cx.land(submit, |view, answer, cx| {
                     let sent = applied(answer).err();
                     view.press_route(Press::Sent(sent), cx)

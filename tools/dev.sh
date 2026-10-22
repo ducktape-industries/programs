@@ -4,7 +4,7 @@
 # stale (one cargo invocation per program, the feature-unification rule) and
 # gate the rebuilt views, one line per artifact. Freshness is cargo's own
 # (`"fresh"` in its JSON messages), never an mtime computed here.
-#   env: CARGO, BUILD_TARGET, WASM_PROFILE, WASM_OUT, WASM_BUILD (the Makefile's)
+#   env: CARGO, BUILD_TARGET, WASM_PROFILE, WASM_OUT, WASM_BUILD, TELEGRAM_BUILD (the Makefile's)
 #   tools/dev.sh "<program ...>" "<view ...>"
 set -eu
 here=$(dirname "$0")
@@ -58,7 +58,11 @@ done
 
 for v in $views; do
     a=$(artifact "$v")
-    eval "$WASM_BUILD" --target-dir "$BUILD_TARGET" -p "$v" --message-format=json-render-diagnostics > "$log"
+    case $v in
+        telegram-view) build=$TELEGRAM_BUILD ;;
+        *) build=$WASM_BUILD ;;
+    esac
+    eval "$build" --target-dir "$BUILD_TARGET" -p "$v" --message-format=json-render-diagnostics > "$log"
     # Fresh, and for release bytes the artifact is the optimized one a
     # finished gate left (the gate leaves fast bytes as cargo wrote them).
     if ! rebuilt "$v" && { [ -n "$fast" ] || cmp -s "$a" "$a.optimized"; }; then

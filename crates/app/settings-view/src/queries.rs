@@ -95,6 +95,7 @@ impl Agent {
                 None => format!("#{person}"),
             },
             Party::Program(program) => program.clone(),
+            Party::Foreign(foreign) => crate::words::foreign(foreign),
         }
     }
 }

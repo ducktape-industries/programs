@@ -9,7 +9,6 @@
 //! |------------------------------------------|-------------------------------------------|
 //! | `Refusal { reason, sentence }`, `reason` | [`Error`] `{ code, message }`, [`code`]   |
 //! | `Origin::{External, Program, System}`    | [`Origin`]`::{Signed, Program, Root}`     |
-//! | `Principal::{Account, System}`           | [`Principal`]`::{Account, Root}`          |
 //! | `Env { network, me, .. }`                | [`Env`] `{ chain_id, program, .. }`       |
 //! | `Roles`, `ProgramId`                     | [`Roles`], [`ProgramId`] (the same types) |
 //! | `ItemRef { source, item }`               | [`MessageId`] `{ program, seq }`          |
@@ -66,13 +65,60 @@ impl From<Origin> for abi::Origin {
 /// An account's number: the identity role's (`abi::role::identity`).
 pub type AccountNumber = abi::role::identity::AccountNumber;
 
-/// Who a write acts as, resolved by the host once per frame through the
-/// identity role: a signed frame is the account its key holds, a message
-/// the account of the program that sent it, genesis `Root`. A key that holds
-/// no account (or an account that is not live) acts as no one
-/// ([`ExecCtx::sender`](crate::ExecCtx::sender) refuses), so no row ever
-/// names a bare key.
-///
+pub type NetworkId = abi::NetworkId;
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+pub struct Foreign {
+    pub network: NetworkId,
+    pub account: AccountNumber,
+}
+
+impl core::fmt::Display for Foreign {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "account {} of network {}",
+            self.account,
+            abi::hex(&self.network)
+        )
+    }
+}
+
+impl From<abi::Foreign> for Foreign {
+    fn from(f: abi::Foreign) -> Self {
+        Foreign {
+            network: f.network,
+            account: f.account,
+        }
+    }
+}
+
+impl From<Foreign> for abi::Foreign {
+    fn from(f: Foreign) -> Self {
+        abi::Foreign {
+            network: f.network,
+            account: f.account,
+        }
+    }
+}
+
 /// There is no default principal: "nobody" is `Option<Principal>::None`,
 /// never the most trusted variant.
 #[derive(
@@ -97,6 +143,7 @@ pub enum Principal {
     Account(AccountNumber),
     /// genesis and system-internal writes.
     Root,
+    Foreign(Foreign),
 }
 
 impl Principal {
@@ -104,7 +151,7 @@ impl Principal {
     pub fn account(&self) -> Option<AccountNumber> {
         match self {
             Principal::Account(account) => Some(*account),
-            Principal::Root => None,
+            Principal::Root | Principal::Foreign(_) => None,
         }
     }
 
@@ -128,6 +175,7 @@ impl From<abi::Principal> for Principal {
         match p {
             abi::Principal::Account(number) => Principal::Account(number),
             abi::Principal::System => Principal::Root,
+            abi::Principal::Foreign(foreign) => Principal::Foreign(foreign.into()),
         }
     }
 }
@@ -137,6 +185,7 @@ impl From<Principal> for abi::Principal {
         match p {
             Principal::Account(number) => abi::Principal::Account(number),
             Principal::Root => abi::Principal::System,
+            Principal::Foreign(foreign) => abi::Principal::Foreign(foreign.into()),
         }
     }
 }
@@ -407,7 +456,16 @@ mod tests {
             Origin::Program("b".into()),
             Origin::Root,
         ];
-        let senders = [Some(Principal::Account(4)), Some(Principal::Root), None];
+        let foreign = Principal::Foreign(Foreign {
+            network: [5; 32],
+            account: 18,
+        });
+        let senders = [
+            Some(Principal::Account(4)),
+            Some(Principal::Root),
+            None,
+            Some(foreign),
+        ];
         let calls = origins.into_iter().cycle().zip(senders.into_iter().cycle());
         for (cause, (origin, sender)) in causes.zip(calls) {
             let env = Env {

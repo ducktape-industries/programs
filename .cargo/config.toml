@@ -2,7 +2,3 @@
 # fetcher, while the real git binary picks up the usual ssh agent/keys.
 [net]
 git-fetch-with-cli = true
-
-# Telegram's device-seeded backend; other views do not compile getrandom 0.4.
-[target.wasm32-unknown-unknown]
-rustflags = ['--cfg', 'getrandom_backend="custom"']

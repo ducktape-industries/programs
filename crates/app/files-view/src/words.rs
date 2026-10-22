@@ -115,6 +115,7 @@ pub fn author(principal: &Principal, names: Option<&Names>) -> String {
     match principal {
         Principal::Account(number) => account(*number, names.and_then(|names| names.of(*number))),
         Principal::Root => CHAIN.into(),
+        Principal::Foreign(foreign) => foreign.to_string(),
     }
 }
 

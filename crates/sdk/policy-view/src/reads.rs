@@ -126,7 +126,7 @@ fn listed_accounts_once(policies: &[Policy]) -> BTreeSet<u64> {
         if let Writers::Listed(parties) = &policy.write {
             numbers.extend(parties.iter().filter_map(|party| match party {
                 Party::Account(number) => Some(*number),
-                Party::Program(_) => None,
+                Party::Program(_) | Party::Foreign(_) => None,
             }));
         }
     }

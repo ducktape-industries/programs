@@ -10,8 +10,8 @@ mod tools;
 
 pub use ::program::{BlobId, ProgramId};
 pub use abi::role::egress::{
-    Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, RELAY, RESERVED, Request, RequestRow,
-    ServiceRow, StreamEnd, http,
+    Answer, CROSSPOND, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, RELAY, RESERVED, Request,
+    RequestRow, ServiceRow, StreamEnd, http,
 };
 pub use abi::role::identity::AccountNumber;
 pub use program::Egress;
@@ -145,6 +145,18 @@ pub fn describe(op: &Op) -> describe::Description {
             "Request a relay".to_owned(),
             vec![
                 field("note", Value::count(note.len() as u64)),
+                field("delivery", Value::text(delivered(delivery))),
+                field("wait", Value::count(wait.unwrap_or(DEFAULT_WAIT))),
+            ],
+        ),
+        Op::Request {
+            request: Request::Crosspond { link },
+            delivery,
+            wait,
+        } => (
+            "Request a crosspond relay".to_owned(),
+            vec![
+                field("network", Value::Hash(link.to_vec())),
                 field("delivery", Value::text(delivered(delivery))),
                 field("wait", Value::count(wait.unwrap_or(DEFAULT_WAIT))),
             ],

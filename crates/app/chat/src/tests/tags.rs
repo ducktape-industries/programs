@@ -3,7 +3,7 @@ use borsh::schema::Definition;
 
 use super::*;
 
-const LIVE_OPS: [(&str, i64); 28] = [
+const LIVE_OPS: [(&str, i64); 30] = [
     ("CreateChannel", 0),
     ("CreateDmChannel", 1),
     ("RenameChannel", 2),
@@ -31,10 +31,12 @@ const LIVE_OPS: [(&str, i64); 28] = [
     ("WatchPlaces", 29),
     ("Break", 30),
     ("SetPostPolicy", 31),
+    ("Link", 33),
+    ("FromPeer", 34),
     ("NotifyWith", 35),
 ];
 
-const LIVE_QUERIES: [(&str, i64); 27] = [
+const LIVE_QUERIES: [(&str, i64); 29] = [
     ("Channels", 0),
     ("Channel", 1),
     ("MessageById", 2),
@@ -62,9 +64,11 @@ const LIVE_QUERIES: [(&str, i64); 27] = [
     ("Clients", 27),
     ("Seated", 28),
     ("Repliers", 29),
+    ("Peer", 30),
+    ("Foreigners", 31),
 ];
 
-const LIVE_REPLIES: [(&str, i64); 27] = [
+const LIVE_REPLIES: [(&str, i64); 29] = [
     ("Channels", 0),
     ("Channel", 1),
     ("Message", 2),
@@ -92,6 +96,8 @@ const LIVE_REPLIES: [(&str, i64); 27] = [
     ("Clients", 27),
     ("Seated", 28),
     ("Repliers", 29),
+    ("Peer", 30),
+    ("Foreigners", 31),
 ];
 
 const MIGRATE_TAG: u8 = 13;
@@ -105,6 +111,8 @@ const SEARCH_TAG: u8 = 8;
 const SET_ROOM_ORDER_TAG: u8 = 23;
 const ROOM_ORDER_TAG: u8 = 20;
 const NOTIFY_BY_TAG: u8 = 32;
+const LINK_TAG: u8 = 33;
+const FROM_PEER_TAG: u8 = 34;
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -315,4 +323,24 @@ fn a_notify_by_tag_is_refused_and_writes_nothing() {
     assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
     let undecoded = refused.message.starts_with("chat: Op did not decode: ");
     assert!(undecoded, "{refused}");
+}
+
+#[test]
+fn link_and_from_peer_are_written_under_the_tags_a_linked_network_reads() {
+    let link = Op::Link {
+        channel_id: "general".into(),
+        peer: None,
+    };
+    let from_peer = Op::FromPeer {
+        channel_id: "general".into(),
+        write: crate::PeerWrite::Delete {
+            message: crate::PeerMessage::There("m1".into()),
+        },
+    };
+    assert_eq!(encoded(&link)[0], LINK_TAG);
+    assert_eq!(encoded(&from_peer)[0], FROM_PEER_TAG);
+    let mut bytes = encoded(&from_peer);
+    assert_eq!(abi::decode::<Op>(&bytes).unwrap(), from_peer);
+    bytes[0] = 32;
+    assert!(abi::decode::<Op>(&bytes).is_err());
 }

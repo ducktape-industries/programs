@@ -53,20 +53,28 @@ gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpu
 
 # ---- the kernel ABI a program and the host share: ducktape's own
 # `crates/kernel/abi`, at the rev the host below is pinned to
-abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
+abi = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
 
 # ---- the blobs contract the blobs program records and the programs that read
 # held blobs ask it by; the host the founding suite runs the boot set on and
 # the key schemes it signs with, and the probe fixture it seats
 # (dev-dependencies only)
-host = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
-blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
-fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
-commonware-cryptography = "2026.9.0"
-commonware-runtime = "2026.9.0"
+host = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
+blob = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
+keyscheme = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
+fixture-wasm = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
+state = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
+node = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
+consensus = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
 
 # ---- external
+commonware-codec = { version = "2026.9.0", default-features = false }
+commonware-cryptography = { version = "2026.9.0", default-features = false }
+commonware-storage = { version = "2026.9.0", default-features = false }
+commonware-utils = { version = "2026.9.0", default-features = false }
+commonware-consensus = "2026.9.0"
+commonware-parallel = "2026.9.0"
+commonware-runtime = "2026.9.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # borsh — the one codec the program abi is written in, with the schemas that describe a
@@ -190,5 +198,5 @@ strip = "debuginfo"
 [patch.crates-io]
 # core's state crate builds on its vendored commonware-storage (an owned reader of the QMDB log),
 # so every build that links it takes the same copy
-commonware-storage = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
+commonware-storage = { git = "duck://duckpond-725bcad1/forge/core", rev = "08bb091599bf44088b44a6476a8090e6d1f9f8ec" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "eef11e96c9fcf7e0389d31f125013370a1b02d92" }

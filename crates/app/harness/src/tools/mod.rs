@@ -338,10 +338,11 @@ pub(crate) fn next(next: &Option<Vec<u8>>) -> Value {
     next.as_deref().map(abi::hex).into()
 }
 
-pub(crate) fn principal(principal: &Principal) -> Value {
+pub(crate) fn principal(ctx: &QueryCtx, principal: &Principal) -> Value {
     match principal {
         Principal::Account(number) => json!(format!("account {number}")),
         Principal::Root => json!("the network"),
+        Principal::Foreign(foreign) => json!(crate::agents::foreign_handle(ctx, *foreign)),
     }
 }
 

@@ -1,11 +1,16 @@
 //! A typed `@name`: which runs of a message are names, and what chat stores
 //! for one that one account holds, that none holds, or that several hold.
 use super::*;
-use crate::mentions::typed_names;
+use crate::mentions::{Typed, typed_names};
 use crate::{Category, Kind, Profile, Standing};
 
 fn names(text: &str) -> Vec<String> {
-    typed_names(&parse_message(text)).into_iter().collect()
+    (typed_names(&parse_message(text)).into_iter())
+        .map(|typed| match typed {
+            Typed::Local(name) => name,
+            Typed::Foreign { name, network } => format!("{name}@{network}"),
+        })
+        .collect()
 }
 
 #[test]

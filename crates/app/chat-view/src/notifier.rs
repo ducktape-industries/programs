@@ -92,7 +92,13 @@ impl Notifier for ChatNotices {
                 let change = change.as_ref();
                 notices.moved.heard(change);
                 notices.load_rooms(cx);
-                if notices.names.is_none() {
+                let foreigners = chat::ask::Foreigners {
+                    page: PageRequest::default(),
+                };
+                let met_another_network =
+                    change.is_some_and(|change| change.touches::<chat::Chat, _>(&foreigners));
+                let read_names = notices.names.is_none() || met_another_network;
+                if read_names {
                     notices.load_names(cx);
                 }
                 if let Some(me) = notices.session.account
@@ -185,8 +191,9 @@ impl ChatNotices {
             return;
         }
         self.reading_names = true;
-        let host = cx.host();
-        let names = ::chat::view::roster(move |ask| host.query(ask));
+        let (host, foreigners) = (cx.host(), cx.host());
+        let names =
+            ::chat::view::roster(move |ask| host.query(ask), move |ask| foreigners.query(ask));
         self.load(
             names,
             |notices, names, cx| {

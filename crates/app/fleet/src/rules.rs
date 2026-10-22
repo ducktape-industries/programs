@@ -631,6 +631,7 @@ fn is(ctx: &QueryCtx, party: &ownership::Party, account: AccountNumber) -> Resul
     match party {
         ownership::Party::Account(number) => Ok(*number == account),
         ownership::Party::Program(program) => Ok(account_of(ctx, program)? == Some(account)),
+        ownership::Party::Foreign(_) => Ok(false),
     }
 }
 

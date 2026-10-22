@@ -71,11 +71,12 @@ SYSROOT := $(shell rustc --print sysroot)
 # names std's sources by their place under the sysroot, not by /rustc/<commit>
 # as it does without it. The last matching remap wins: both read /rustc/<commit>.
 RUSTC_COMMIT := $(shell rustc -vV | sed -n 's/^commit-hash: //p')
-# Telegram alone links getrandom 0.4; all wasm entry points select its
-# device-seeded backend here (plain cargo also has .cargo/config.toml).
-WASM_RUSTFLAGS := --remap-path-prefix=$(CURDIR)=/build --remap-path-prefix=$(CARGO_HOME_DIR)=/cargo --remap-path-prefix=$(SYSROOT)=/rustc --remap-path-prefix=$(SYSROOT)/lib/rustlib/src/rust=/rustc/$(RUSTC_COMMIT) --cfg getrandom_backend=\"custom\"
+WASM_RUSTFLAGS := --remap-path-prefix=$(CURDIR)=/build --remap-path-prefix=$(CARGO_HOME_DIR)=/cargo --remap-path-prefix=$(SYSROOT)=/rustc --remap-path-prefix=$(SYSROOT)/lib/rustlib/src/rust=/rustc/$(RUSTC_COMMIT)
 WASM_CARGO := RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) build --target wasm32-unknown-unknown
 WASM_BUILD = $(WASM_CARGO) --profile $(WASM_PROFILE)
+TELEGRAM_CFG := --cfg getrandom_backend=\"custom\"
+TELEGRAM_CARGO := RUSTFLAGS="$(WASM_RUSTFLAGS) $(TELEGRAM_CFG)" $(CARGO) build --target wasm32-unknown-unknown
+TELEGRAM_BUILD = $(TELEGRAM_CARGO) --profile $(WASM_PROFILE)
 # The view gate: wasm-opt, then the ABI check; `--fast` skips wasm-opt for
 # any profile but release (tools/view-gate.sh).
 VIEW_GATE = tools/view-gate.sh $(if $(filter release,$(WASM_PROFILE)),,--fast)
@@ -98,7 +99,7 @@ program_build = $(WASM_BUILD) --target-dir $(call PROGRAM_TARGET,$1) -p $1 --fea
 # place FROM,TO: an artifact lands under a temporary name and is renamed into place,
 # so a reader of $(WASM_OUT) never sees half of one.
 place = cp $1 $2.part && mv -f $2.part $2
-export CARGO BUILD_TARGET WASM_PROFILE WASM_OUT WASM_BUILD WASM_OPT
+export CARGO BUILD_TARGET WASM_PROFILE WASM_OUT WASM_BUILD TELEGRAM_BUILD WASM_OPT
 
 .PHONY: dev wasm-why new-program new-view scaffold-check
 .PHONY: program-wasm-check wasm-programs wasm-views wasm-notifiers view-wasm-check test
@@ -123,7 +124,7 @@ dev:
 wasm-why:
 	@test -n "$V" || { echo "usage: make wasm-why V=<view>"; exit 1; }
 	@command -v twiggy >/dev/null || { echo "twiggy is not on PATH: cargo install twiggy"; exit 1; }
-	@$(WASM_CARGO) --target-dir $(BUILD_TARGET) --profile why -p $V
+	@$(if $(filter telegram-view,$V),$(TELEGRAM_CARGO),$(WASM_CARGO)) --target-dir $(BUILD_TARGET) --profile why -p $V
 	twiggy top -n 25 $(BUILD_TARGET)/wasm32-unknown-unknown/why/$(subst -,_,$V).wasm
 
 ## scaffolds crates/app/NAME in valset's shape and adds its line to founding's
@@ -301,12 +302,11 @@ wasm-reproducible:
 	  if strings $$f | grep -qE "$(CURDIR)|$(HOME)|/rustc/lib/"; then echo "$$f embeds a path of this machine"; strings $$f | grep -E "$(CURDIR)|$(HOME)|/rustc/lib/" | head -3; exit 1; fi; \
 	done; echo "no program or view embeds a path of this checkout, home or toolchain"
 
-# Telegram is deployed later by SetView, outside VIEWS and genesis. Its random
-# backend cfg is shared by all wasm build entry points above; view-gate keeps
-# the backend symbol internal before applying the five-export ABI gate.
+# Telegram is deployed later by SetView, outside VIEWS and genesis. view-gate
+# keeps the backend symbol internal before applying the five-export ABI gate.
 .PHONY: wasm-telegram-view
 wasm-telegram-view:
-	@$(WASM_BUILD) --locked --target-dir $(BUILD_TARGET) -p telegram-view
+	@$(TELEGRAM_BUILD) --locked --target-dir $(BUILD_TARGET) -p telegram-view
 	@$(VIEW_GATE) telegram-view $(WASM_OUT)/telegram_view.wasm
 
 ## builds every view for wasm32 under $(WASM_OUT)/, optimized (the bytes
@@ -344,9 +344,10 @@ $(addprefix wasm-notifiers/,$(sort $(NOTIFIERS))): wasm-notifiers/%:
 ## exported view probe of view, the example view and every notifier, then fails
 ## if the normal wasm32 dependency tree of any of them names a VIEW_FORBIDDEN crate.
 view-wasm-check:
-	@for crate in $(VIEW_LINKABLE); do \
+	@for crate in $(filter-out telegram-view,$(VIEW_LINKABLE)); do \
 	  $(CARGO) build --target wasm32-unknown-unknown -p $$crate || exit 1; \
 	done; \
+	RUSTFLAGS="$(TELEGRAM_CFG)" $(CARGO) build --target wasm32-unknown-unknown -p telegram-view || exit 1; \
 	$(CARGO) build --target wasm32-unknown-unknown -p view --example exported_view || exit 1; \
 	$(CARGO) build --target wasm32-unknown-unknown -p example-view || exit 1; \
 	for view in $(NOTIFIERS); do \

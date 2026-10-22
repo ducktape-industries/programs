@@ -11,10 +11,13 @@ mod asks;
 mod attachments;
 mod attributed;
 mod channels;
+mod confined;
 mod drafts;
+mod foreign;
 mod gate;
 mod involved;
 mod leases;
+mod linked;
 mod mentions;
 mod messages;
 mod order;
@@ -95,6 +98,9 @@ fn signer(who: &Principal) -> Origin {
     match who {
         Principal::Account(number) => Origin::Signed(number.to_be_bytes().to_vec()),
         Principal::Root => Origin::Root,
+        Principal::Foreign(foreign) => {
+            panic!("{foreign} signs nothing here: it arrives through crosspond")
+        }
     }
 }
 

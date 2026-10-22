@@ -1,6 +1,7 @@
 //! A mention's run: once a post that mentions the agent reaches it, its author's very next posts
 //! in that room reach it too, until anyone else posts there; a listened room keeps none, and a
 //! continuation waits out the settle window as other general input does.
+use super::listen::{CHIEF, Heard};
 use super::schedule::{answered, schemed, turn};
 use super::*;
 use crate::state::RUNS;
@@ -472,4 +473,52 @@ fn an_answer_in_another_room_ends_the_run_and_its_watch() {
         assigned(chain, SERVICE).is_empty(),
         "nothing asks the model"
     );
+}
+
+#[test]
+fn a_post_from_another_network_ends_the_run_and_a_mention_from_there_opens_none() {
+    let roles = ::program::MockHost::roles_with(abi::role::CROSSPOND, "crosspond");
+    let mut world = world_founded(PROGRAM, roles);
+    world.chain.seat::<Heard>("crosspond");
+    let chain = &world.chain;
+    let thread = world.opened("m1", BRIDGE, Some(WINDOW));
+    assert_eq!(runs(chain, thread), [run(&world, 1, 1)]);
+    let link = chat::Op::Link {
+        channel_id: "general".into(),
+        peer: Some(chat::Peer {
+            network: CHIEF.network,
+            channel_id: "lobby".into(),
+        }),
+    };
+    chain.submit(signed(ADA), chat::PROGRAM, &link).unwrap();
+    let from_there = |id: &str, text: &str| chat::Op::FromPeer {
+        channel_id: "general".into(),
+        write: chat::PeerWrite::Post {
+            message_id: id.into(),
+            blocks: chat::parse_message(text),
+            thread: None,
+        },
+    };
+    let elsewhere = from_there("c2", "the bridge is fine");
+    chain
+        .submit_foreign(CHIEF, chat::PROGRAM, &elsewhere)
+        .unwrap();
+    assert!(
+        runs(chain, thread).is_empty(),
+        "the post from there ends the run"
+    );
+    assert!(!watches(chain, world.agent), "and its watch");
+    let mention = from_there("c3", &format!("<@{}> are you there", world.agent));
+    chain
+        .submit_foreign(CHIEF, chat::PROGRAM, &mention)
+        .unwrap();
+    let reached: Vec<u64> = (world.threads().into_iter())
+        .map(|row| row.id)
+        .filter(|id| !heard_of(chain, *id, "are you there").is_empty())
+        .collect();
+    let [reached] = reached[..] else {
+        panic!("the mention from there reaches one conversation: {reached:?}")
+    };
+    assert!(runs(chain, reached).is_empty(), "and opens no run");
+    assert!(!watches(chain, world.agent));
 }

@@ -1,6 +1,9 @@
-//! An agent that listens to a channel: a message there reaches it as general input that waits
-//! out its settle window, a mention ends the window at once, its own posts and other channels
-//! reach nothing, and `listen` seeds the room once, so chat's choice stands after it.
+//! An agent that listens to a channel: a message there (a linked network's user's too) waits out
+//! its settle window, a mention ends it at once, its own posts and other channels reach nothing,
+//! and `listen` seeds the room once, so chat's choice stands after it.
+use ::program::{ExecCtx, Foreign, MockHost, Program, QueryCtx};
+use abi::role::crosspond as role;
+
 use super::*;
 
 const SETTLE: u64 = 10_000;
@@ -250,4 +253,127 @@ fn a_listen_pattern_seeds_every_open_room_it_names_as_it_appears() {
     chain.at(4, 0);
     world.mention("m2", "a new room");
     assert_eq!(listened_to(chain, world.agent), ["j-1", "j-3"]);
+}
+
+pub(super) const CHIEF: Foreign = Foreign {
+    network: [0x22; 32],
+    account: 18,
+};
+
+pub(super) struct Heard;
+
+impl Program for Heard {
+    const NAME: &'static str = "crosspond";
+    type Op = role::Op;
+    type Query = role::Query;
+    type Reply = role::Reply;
+
+    fn execute(_: &ExecCtx, _: role::Op) -> Result<(), Error> {
+        Err(::program::invalid("this crosspond sends nothing"))
+    }
+
+    fn query(_: &QueryCtx, query: role::Query) -> Result<role::Reply, Error> {
+        Ok(match query {
+            role::Query::Name(foreign) => {
+                role::Reply::Name((foreign == CHIEF.into()).then(|| "chief".to_owned()))
+            }
+            role::Query::Link { network } => {
+                role::Reply::Link((network == CHIEF.network).then(|| role::Link {
+                    name: "there".into(),
+                    epoch_length: 4,
+                    trusted: 0,
+                    header: None,
+                    next_in: 1,
+                    next_out: 1,
+                    refused: None,
+                    closed: false,
+                }))
+            }
+            other => return Err(::program::invalid(format!("not asked here: {other:?}"))),
+        })
+    }
+}
+
+#[test]
+fn a_post_from_another_network_wakes_an_agent_that_listens_there_and_names_its_author() {
+    let roles = MockHost::roles_with(abi::role::CROSSPOND, "crosspond");
+    let mut world = world_founded(PROGRAM, roles);
+    world.chain.seat::<Heard>("crosspond");
+    let chain = &world.chain;
+    let thread = listening(&world, None);
+    block(chain, 4);
+    let link = chat::Op::Link {
+        channel_id: "general".into(),
+        peer: Some(chat::Peer {
+            network: CHIEF.network,
+            channel_id: "lobby".into(),
+        }),
+    };
+    chain.submit(signed(ADA), chat::PROGRAM, &link).unwrap();
+    let from_there = chat::Op::FromPeer {
+        channel_id: "general".into(),
+        write: chat::PeerWrite::Post {
+            message_id: "b1".into(),
+            blocks: chat::parse_message("anyone here?"),
+            thread: None,
+        },
+    };
+    chain
+        .submit_foreign(CHIEF, chat::PROGRAM, &from_there)
+        .unwrap();
+    assert_eq!(assigned(chain, SERVICE).len(), 1, "the post woke the agent");
+    let heard = "chief@there (18@there) wrote in chat channel general, which you listen to, \
+                 message 2 (reply_to 2 to answer in its thread):\nanyone here?";
+    assert!(last_said(chain).ends_with(heard), "{}", last_said(chain));
+    let authors: Vec<Principal> = (frames(chain, thread).into_iter())
+        .filter_map(|body| match body {
+            Body::Post { author, .. } => Some(author),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(authors.last(), Some(&Principal::Foreign(CHIEF)));
+}
+
+#[test]
+fn a_post_by_a_user_of_another_network_crosspond_has_no_name_for_reads_as_their_number_there() {
+    let roles = MockHost::roles_with(abi::role::CROSSPOND, "crosspond");
+    let mut world = world_founded(PROGRAM, roles);
+    world.chain.seat::<Heard>("crosspond");
+    let chain = &world.chain;
+    let thread = listening(&world, None);
+    block(chain, 4);
+    let link = chat::Op::Link {
+        channel_id: "general".into(),
+        peer: Some(chat::Peer {
+            network: CHIEF.network,
+            channel_id: "lobby".into(),
+        }),
+    };
+    chain.submit(signed(ADA), chat::PROGRAM, &link).unwrap();
+    let unheard = Foreign {
+        network: CHIEF.network,
+        account: 19,
+    };
+    let from_there = chat::Op::FromPeer {
+        channel_id: "general".into(),
+        write: chat::PeerWrite::Post {
+            message_id: "b1".into(),
+            blocks: chat::parse_message("hello from someone"),
+            thread: None,
+        },
+    };
+    chain
+        .submit_foreign(unheard, chat::PROGRAM, &from_there)
+        .unwrap();
+    assert_eq!(assigned(chain, SERVICE).len(), 1, "the post woke the agent");
+    let heard = "19@there wrote in chat channel general, which you listen to, \\
+                 message 2 (reply_to 2 to answer in its thread):\\nhello from someone";
+    assert!(last_said(chain).ends_with(heard), "{}", last_said(chain));
+    let authors: Vec<Principal> = (frames(chain, thread).into_iter())
+        .filter_map(|body| match body {
+            Body::Post { author, .. } => Some(author),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(authors.last(), Some(&Principal::Foreign(unheard)));
 }

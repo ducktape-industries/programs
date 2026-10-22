@@ -269,8 +269,12 @@ fn world() -> World {
 }
 
 fn world_as(id: &str) -> World {
+    world_founded(id, ::program::MockHost::roles())
+}
+
+fn world_founded(id: &str, roles: ::program::Roles) -> World {
     SEATED.with(|seated| *seated.borrow_mut() = id.to_owned());
-    let mut chain = MockChain::default();
+    let mut chain = MockChain::founded(roles);
     chain.seat::<identity::Identity>(identity::PROGRAM);
     chain.seat::<Valset>("valset");
     chain.seat::<awaits::Awaits>(awaits::PROGRAM);

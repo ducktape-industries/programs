@@ -247,3 +247,54 @@ A notice's `link` is either a whole link (`duck://…`, `https://…`) or a path
 chain, `<program>/<tail…>` (`ducklink::path`), which is how a program links, since it can't name
 its network's chain. A reader puts its own session's chain in front (`ducklink::on_chain`) and
 never takes a chain from the path, so a path can't point at another network.
+
+## Users of other networks
+
+crosspond runs a user of a linked network here as `Principal::Foreign { network, account }`. chat
+takes from them only `FromPeer`, which a linked channel's peer sends, and refuses every other op
+from them `unauthorized`, so they write only in a channel linked to their network. There a room
+takes them as it takes an account: an open room lets them post, a members-only room once its owner
+seats them with `SetMembership`, and a message they post is theirs (`Party::Foreign` owns its key),
+so they edit and delete it and the room's owner deletes it. A local write names a user of another
+network only in a linked channel: a post or an edit whose blocks mention one, typed or marked, and a
+`SetMembership` that seats one, are refused `unauthorized` in any other channel. chat keeps each one
+it holds as an author, a member, a reactor or a mention, and `Query::Foreigners { page }` answers
+them with the name crosspond last heard for each and their network's name (`ForeignName`, written
+`name@network`, or `18@network` before a name is heard); chat-view and harness name them so.
+
+A typed `@18@network` is that account of the linked network of that name, and `@chief@network` the
+one account of it crosspond heard under that name, if exactly one; a network name that no link or
+several links hold, or a name no account or several hold, stays text. The network is this one's
+own name (`Env.chain_id`) for this network's accounts: `@18@net` is `<@18>` here. The stored span
+reads `@18@network`, which an edit resolves again.
+
+## Linked channels
+
+`Op::Link { channel_id, peer }` links a channel to its peer, a channel on a network crosspond links
+this one to (`Peer { network, channel_id }`), and `peer: null` unlinks it. Whoever may rename the
+channel links it, never a direct room, and only to a link crosspond holds open. Each side's owner
+links their own side. `Query::Peer { channel_id }` answers it.
+
+Every post, notice, edit, delete and reaction an account of this network makes in a linked channel
+is sent to the peer as one packet: crosspond's `SendFor { to, port: "chat", op, account }`, `op`
+being `Op::FromPeer { channel_id: <the peer's>, write }`. A write whose packet crosspond refuses
+(a closed link, a packet past its `max_packet`) is refused with it, so a message stands here only
+when its packet is committed. A notice is sent with no `concerns`, which name accounts of this
+network. What a user of another network writes here is never sent on.
+
+`FromPeer { channel_id, write }` runs the peer's write here as its author, a user of the peer's
+network. It is refused `unauthorized` from anyone else: an account here, or a user of any network
+but the one `channel_id` is linked to, so an unlinked channel takes none. A post is kept under the id `chat:<network id>:<its id
+there>` (`copy_id`), which only chat writes. The peer names a message by `PeerMessage::Here(id)`,
+its id on the network the write is sent to, or `PeerMessage::There(id)`, its id where the write was
+made; a message neither side holds is `not_found`. Mentions are written in the receiver's terms: an
+account of the sender is a foreign user of the sender's network, and a user of the receiver's
+network is its own account. The room's rules and every check of the op it carries hold as for a
+local write.
+
+The packet's `op` is the receiver's encoding of `Op::FromPeer`, so both networks must run a chat
+whose `FromPeer` tag and `PeerWrite` shapes match, `Block`, `Notice` and `Mark` within them. `Link`
+is tag 33 and `FromPeer` tag 34, written in the enum so an op another change adds never moves them
+(`src/tests/tags.rs`). A variant one side lacks, such as a `Mark` or `Block` appended on one network
+only, makes that side refuse the packet: the write stands where it was made and is missing on the
+other side.

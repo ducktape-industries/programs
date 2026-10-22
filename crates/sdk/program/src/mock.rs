@@ -18,7 +18,7 @@ use abi::{
 use sha2::Digest as _;
 
 use crate::{
-    AccountNumber, Cause, Env, Error, ExecCtx, FrameId, Order, Origin, Principal, Program,
+    AccountNumber, Cause, Env, Error, ExecCtx, Foreign, FrameId, Order, Origin, Principal, Program,
     ProgramId, QueryCtx, Range, Roles, Roster, Ticket, code,
 };
 
@@ -118,6 +118,7 @@ pub struct MockState {
     /// The last query's response.
     pub response: Vec<u8>,
     pub emissions: Vec<Message>,
+    pub foreign_emissions: BTreeMap<usize, Foreign>,
     /// The number the next emit gets: 0 after a [`MockHost::take_emissions`];
     /// a [`MockChain`](crate::MockChain) carries it across a frame.
     pub next_message: u64,
@@ -140,6 +141,20 @@ pub struct Work {
     pub blob_gets: u64,
     pub blob_stats: u64,
     pub blob_reads: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Emitted {
+    pub message: Message,
+    pub foreign: Option<Foreign>,
+}
+
+impl Emitted {
+    pub fn as_its_emitter(&self) -> bool {
+        let sent_as_a_foreign_user = self.foreign.is_some();
+        let acts_as_another_account = self.message.acting.is_some();
+        !(sent_as_a_foreign_user || acts_as_another_account)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -167,6 +182,7 @@ pub(crate) struct Written {
     holders: BTreeMap<BlobId, BTreeSet<ProgramId>>,
     lines: BTreeMap<(ProgramId, Vec<u8>), BlobId>,
     sent: (Vec<u8>, Vec<Message>, Vec<Vec<u8>>),
+    sent_as_foreign: BTreeMap<usize, Foreign>,
     waits: (Vec<Called>, bool, Vec<Resumed>),
 }
 
@@ -279,7 +295,20 @@ impl MockHost {
     pub fn take_emissions(&self) -> Vec<Message> {
         let mut mock = self.borrow_mut();
         mock.next_message = 0;
+        mock.foreign_emissions.clear();
         std::mem::take(&mut mock.emissions)
+    }
+
+    pub fn take_emitted(&self) -> Vec<Emitted> {
+        let mut foreign = std::mem::take(&mut self.borrow_mut().foreign_emissions);
+        self.take_emissions()
+            .into_iter()
+            .enumerate()
+            .map(|(index, message)| Emitted {
+                message,
+                foreign: foreign.remove(&index),
+            })
+            .collect()
     }
 
     /// The last query's response, as [`crate::query`] handed it over.
@@ -326,6 +355,7 @@ impl MockHost {
                 mock.emissions.clone(),
                 mock.events.clone(),
             ),
+            sent_as_foreign: mock.foreign_emissions.clone(),
             waits: (mock.calls.clone(), mock.deferred, mock.resumes.clone()),
         }
     }
@@ -337,6 +367,7 @@ impl MockHost {
         mock.holders = written.holders;
         mock.lines = written.lines;
         (mock.output, mock.emissions, mock.events) = written.sent;
+        mock.foreign_emissions = written.sent_as_foreign;
         (mock.calls, mock.deferred, mock.resumes) = written.waits;
     }
 
@@ -474,6 +505,17 @@ impl MockHost {
                 let item = mock.next_message;
                 mock.next_message += 1;
                 mock.emissions.push(message);
+                HostReply::Item(abi::ItemRef {
+                    source: env.program.clone(),
+                    item,
+                })
+            }
+            HostOp::EmitForeign { message, foreign } => {
+                let item = mock.next_message;
+                mock.next_message += 1;
+                let index = mock.emissions.len();
+                mock.emissions.push(message);
+                mock.foreign_emissions.insert(index, foreign.into());
                 HostReply::Item(abi::ItemRef {
                     source: env.program.clone(),
                     item,
@@ -663,6 +705,14 @@ impl Env {
         Env {
             origin: Origin::Program(program.into()),
             sender: account.map(Principal::Account),
+            ..self
+        }
+    }
+
+    pub fn from_foreign(self, crosspond: impl Into<ProgramId>, foreign: Foreign) -> Env {
+        Env {
+            origin: Origin::Program(crosspond.into()),
+            sender: Some(Principal::Foreign(foreign)),
             ..self
         }
     }

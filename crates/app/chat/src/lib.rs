@@ -30,6 +30,7 @@ mod description;
 mod examples;
 mod gate;
 mod leases;
+mod linked;
 mod listen;
 mod mentions;
 pub mod message;
@@ -51,11 +52,12 @@ use std::collections::BTreeMap;
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-pub use ::program::{AccountNumber, Principal};
+pub use ::program::{AccountNumber, Foreign, NetworkId, Principal};
 pub use abi::hex;
 pub use abi::role::identity::{Category, Kind, Profile, Standing};
 pub use description::describe;
 pub use gate::message_key;
+pub use linked::{copied, copy_id, foreign_name};
 pub use message::{Block, ListMarker, Mark, Notice, Span, list_item, parse_message};
 pub use program::Chat;
 pub use queries::{replies_after, roots_below};
@@ -68,14 +70,16 @@ pub use text::{
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, LEASES, LISTENERS,
-        LISTENING, MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS,
-        PLACE_WATCHERS, POSTED, POSTED_IN, REACTIONS, REPLIES, ROOTS,
+        ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, FOREIGNERS, HEADS, LEASES,
+        LISTENERS, LISTENING, MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS,
+        PEERS, PLACE_WATCHERS, POSTED, POSTED_IN, REACTIONS, REPLIES, ROOTS,
     };
 }
 
 /// The name this program runs under.
 pub const PROGRAM: &str = "chat";
+
+pub const ROLE: &str = "chat";
 
 // The channel meta key a room's rules sit under: the text itself, or a files path whose file
 // holds them (README, "Channel meta"). Readers respect them; nothing enforces them.
@@ -242,6 +246,16 @@ pub enum Op {
         channel_id: String,
         post_policy: PostPolicy,
     },
+    #[tool_op(description = "Link a channel to its peer, a channel on another network crosspond links this one to (network is that network's id), or unlink it with null. Every post, notice, edit, delete and reaction an account of this network makes in the channel is then sent to the peer through crosspond, as that account; what arrives from another network is never sent on. Each side's owner links their own side. Whoever may rename the channel; never a direct room.", example = examples::link)]
+    Link {
+        channel_id: String,
+        peer: Option<Peer>,
+    } = 33,
+    #[tool_op(description = "One write a linked channel on another network sends here, run as its author there: a post kept as chat:<network id>:<its message_id>, a notice, an edit, a delete or a reaction. A message is named by its id here (Here) or by its id on the sending network (There). Only a user of another network sends it, through crosspond.", example = examples::from_peer)]
+    FromPeer {
+        channel_id: String,
+        write: PeerWrite,
+    } = 34,
     #[tool_op(description = "Post a notice as Notify does, with what a person wrote under its line and who acted. text is markdown as Post takes it, written as the blocks after the notice's own (null or blank: the notice alone); a mention in it tells no one, since a notice is told only to its concerns. by, when given, names the account that did what the line reports (an account that exists; never root): it then follows the line's thread as if it had replied there, so it hears the replies under it by chat's own rule, and it is not told of the notice itself. It reaches no one a mention in a reply could not: allowed where Notify is.", example = examples::notify_with)]
     NotifyWith {
         channel_id: String,
@@ -493,6 +507,14 @@ pub enum Query {
     #[reads(state::REPLIES, state::MESSAGES)]
     #[tool_query(description = "For each thread of roots, by its root's seq and in the order asked, the first reply each account wrote in it that is no notice, in reply order (a deleted one included, marked deleted): who has answered which thread, and in what words, in one read. A seq no thread has answers no replies.", example = examples::repliers)]
     Repliers { channel_id: String, roots: Vec<u64> },
+    #[ask(Reply::Peer(Option<crate::Peer>))]
+    #[reads(state::PEERS)]
+    #[tool_query(description = "The channel on another network a channel is linked to, or null.", example = examples::peer)]
+    Peer { channel_id: String },
+    #[ask(Reply::Foreigners(PageResponse<ForeignName>))]
+    #[reads(state::FOREIGNERS)]
+    #[tool_query(description = "Every user of another network chat holds as an author, a member, a reactor or a mention, with the name crosspond last heard for them and their network's name (null while crosspond has none), a page at a time.", example = examples::foreigners)]
+    Foreigners { page: PageRequest },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -532,6 +554,8 @@ pub enum Reply {
     Clients(Vec<(u64, Option<String>)>),
     Seated(Vec<String>),
     Repliers(Vec<(u64, Vec<MsgRow>)>),
+    Peer(Option<Peer>),
+    Foreigners(PageResponse<ForeignName>),
 }
 
 // One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for
@@ -873,6 +897,93 @@ pub enum PlaceEvent {
     },
 }
 
+/// A channel on another network that a channel here is linked to.
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct Peer {
+    pub network: NetworkId,
+    pub channel_id: String,
+}
+
+/// A message a linked channel names: by its id on the network the write is sent to, or by its id
+/// on the network that sends it.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
+pub enum PeerMessage {
+    /// Its id on the network the write is sent to, where it began.
+    Here(String),
+    /// Its id on the network that sends the write, where it began.
+    There(String),
+}
+
+/// One write a linked channel on another network sends to its peer, as its author there.
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
+pub enum PeerWrite {
+    /// A post, by its id on the sending network, in a thread when it names its root.
+    Post {
+        message_id: String,
+        blocks: Vec<Block>,
+        thread: Option<PeerMessage>,
+    },
+    /// A notice, by its id on the sending network, in a thread when it names its root.
+    Notify {
+        message_id: String,
+        thread: Option<PeerMessage>,
+        notice: Notice,
+    },
+    /// A message's blocks replaced.
+    Edit {
+        message: PeerMessage,
+        blocks: Vec<Block>,
+        base_rev: Option<u32>,
+    },
+    /// A message deleted.
+    Delete { message: PeerMessage },
+    /// A reaction added, or taken back when `on` is false.
+    React {
+        message: PeerMessage,
+        emoji: String,
+        on: bool,
+    },
+}
+
+/// A user of another network with the name crosspond last heard for them and their network's
+/// name, each `None` while crosspond has none.
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct ForeignName {
+    pub foreign: Foreign,
+    pub name: Option<String>,
+    pub network: Option<String>,
+}
+
+impl ForeignName {
+    pub fn handle(&self) -> String {
+        let network = (self.network.clone()).unwrap_or_else(|| abi::hex(&self.foreign.network));
+        match &self.name {
+            Some(name) => format!("{name}@{network}"),
+            None => format!("{}@{network}", self.foreign.account),
+        }
+    }
+}
+
 /// The room two accounts share: `dm-<lower>-<higher>`.
 pub fn dm_channel_id(a: AccountNumber, b: AccountNumber) -> String {
     format!("dm-{}-{}", a.min(b), a.max(b))
@@ -954,8 +1065,8 @@ fn op_variants_only_append() {
             "Break",
             "SetPostPolicy",
             "-",
-            "-",
-            "-",
+            "Link",
+            "FromPeer",
             "NotifyWith",
         ]
     );

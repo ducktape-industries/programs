@@ -162,6 +162,7 @@ fn who(principal: &Principal) -> String {
     match principal {
         Principal::Account(number) => format!("account {number}"),
         Principal::Root => "the system".to_owned(),
+        Principal::Foreign(foreign) => foreign.to_string(),
     }
 }
 

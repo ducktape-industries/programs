@@ -51,7 +51,7 @@ pub struct MentionChoice {
 pub fn mention_token(principal: &Principal) -> String {
     match principal {
         Principal::Account(account) => format!("<@{account}>"),
-        Principal::Root => String::new(),
+        Principal::Root | Principal::Foreign(_) => String::new(),
     }
 }
 
@@ -98,6 +98,7 @@ pub fn answers(names: &Names, ownership: &Ownership) -> String {
                 .map(|party| match party {
                     Party::Account(number) => names.member(&Principal::Account(*number)),
                     Party::Program(program) => format!("the {program} program"),
+                    Party::Foreign(foreign) => names.member(&Principal::Foreign((*foreign).into())),
                 })
                 .collect();
             format!("Answers its manager and {}", listed.join(", "))
@@ -209,6 +210,37 @@ mod tests {
         assert_eq!(names.program(&account(3)), Some("forge"));
         assert!(crate::message::agent(&names, &account(2)));
         assert!(!crate::message::agent(&names, &account(3)));
+    }
+
+    #[test]
+    fn a_user_of_another_network_reads_as_their_name_at_their_network() {
+        let there = [0x22; 32];
+        let chief = chat::Foreign {
+            network: there,
+            account: 18,
+        };
+        let dev = chat::Foreign {
+            network: there,
+            account: 19,
+        };
+        let heard = |foreign, name: Option<&str>| chat::ForeignName {
+            foreign,
+            name: name.map(str::to_owned),
+            network: Some("there".into()),
+        };
+        let names = Names::from_roster([profile(1, "ada", Kind::User)])
+            .with_foreigners([heard(chief, Some("chief")), heard(dev, None)]);
+        let (chief, dev) = (Principal::Foreign(chief), Principal::Foreign(dev));
+        assert_eq!(names.author(&chief), "chief@there");
+        assert_eq!(names.mention(&dev), "@19@there");
+        let stranger = Principal::Foreign(chat::Foreign {
+            network: [0x33; 32],
+            account: 7,
+        });
+        let unheard = format!("7@{}", chat::hex(&[0x33; 32]));
+        assert_eq!(names.member(&stranger), unheard);
+        assert!(!names.pickable(&chief));
+        assert_eq!(mention_token(&chief), "");
     }
 
     #[test]

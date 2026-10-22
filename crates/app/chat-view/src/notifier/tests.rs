@@ -135,6 +135,7 @@ impl World {
                         profile(9, "idle", idle),
                     ]))
                 }
+                Query::Foreigners { .. } => Reply::Foreigners(page(Vec::new())),
                 Query::Channels { .. } => Reply::Channels(page(world.rooms.borrow().clone())),
                 Query::Channel { channel_id } => {
                     let rooms = world.rooms.borrow();

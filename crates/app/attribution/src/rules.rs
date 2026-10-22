@@ -37,11 +37,11 @@ fn well_formed(update: &Update) -> Result<(), Error> {
         Actor::Account(number) => *number != 0,
         Actor::Key(key) => !key.is_empty(),
         Actor::Program(program) => !program.is_empty(),
-        Actor::System => true,
+        Actor::System | Actor::Foreign(_) => true,
     };
     if !actor_named {
         return Err(invalid(
-            "an actor is a live account, a key, a program or the system",
+            "an actor is a live account, a key, a program, the system or a foreign user",
         ));
     }
     let mut seen = BTreeSet::new();

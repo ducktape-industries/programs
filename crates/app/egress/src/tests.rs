@@ -13,6 +13,7 @@ use valset::{Genesis, Member, Valset};
 
 use crate::*;
 
+mod crosspond;
 mod order;
 mod owned;
 mod unregister;

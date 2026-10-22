@@ -128,6 +128,11 @@ pub(crate) fn answering_key(draft: &chat::Draft) -> String {
     match &draft.author {
         chat::Principal::Account(number) => format!("answering-{number}-{height}"),
         chat::Principal::Root => format!("answering-system-{height}"),
+        chat::Principal::Foreign(foreign) => format!(
+            "answering-{}-{}-{height}",
+            abi::hex(&foreign.network),
+            foreign.account
+        ),
     }
 }
 

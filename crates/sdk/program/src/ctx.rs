@@ -15,7 +15,9 @@ use abi::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{AccountNumber, Env, Error, FrameId, MessageId, Principal, ProgramId, Range, Ticket};
+use crate::{
+    AccountNumber, Env, Error, Foreign, FrameId, MessageId, Principal, ProgramId, Range, Ticket,
+};
 
 pub(crate) struct Frame {
     env: RefCell<Rc<Env>>,
@@ -352,9 +354,15 @@ impl ExecCtx {
     /// itself (`Root`) is refused: a row that names an account cannot name
     /// it.
     pub fn sender_account(&self) -> Result<AccountNumber, Error> {
-        self.sender()?
-            .account()
-            .ok_or_else(|| crate::unauthorized("only an account does this, not the chain"))
+        match self.sender()? {
+            Principal::Account(account) => Ok(account),
+            Principal::Root => Err(crate::unauthorized(
+                "only an account does this, not the chain",
+            )),
+            Principal::Foreign(foreign) => Err(crate::unauthorized(format!(
+                "only an account of this network does this, not {foreign}"
+            ))),
+        }
     }
 
     /// Writes `value` at `key` in this program's state. A refused frame's
@@ -495,6 +503,38 @@ impl ExecCtx {
             reply: reply == Reply::Wanted,
             acting: Some(account),
         })
+    }
+
+    pub fn emit_foreign<T: BorshSerialize>(
+        &self,
+        foreign: Foreign,
+        target: impl Into<ProgramId>,
+        op: &T,
+        reply: Reply,
+    ) -> MessageId {
+        self.emit_raw_foreign(foreign, target, abi::encode(op), reply)
+    }
+
+    pub fn emit_raw_foreign(
+        &self,
+        foreign: Foreign,
+        target: impl Into<ProgramId>,
+        payload: impl Into<Vec<u8>>,
+        reply: Reply,
+    ) -> MessageId {
+        let message = Message {
+            target: target.into(),
+            payload: payload.into(),
+            reply: reply == Reply::Wanted,
+            acting: None,
+        };
+        match self.host(HostOp::EmitForeign {
+            message,
+            foreign: foreign.into(),
+        }) {
+            HostReply::Item(item) => item.into(),
+            other => protocol("item", other),
+        }
     }
 
     fn send(&self, message: Message) -> MessageId {

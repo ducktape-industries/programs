@@ -125,17 +125,31 @@ pub(crate) fn account(number: u64) -> String {
     format!("account {number}")
 }
 
+pub(crate) fn foreign(foreign: &abi::Foreign) -> String {
+    format!(
+        "account {} of network {}",
+        foreign.account,
+        abi::hex(&foreign.network)
+    )
+}
+
 pub(crate) fn party(party: &Party) -> String {
     match party {
         Party::Account(number) => account(*number),
         Party::Program(_) => "program".into(),
+        Party::Foreign(foreign) => self::foreign(foreign),
     }
+}
+
+pub(crate) fn foreign_id(foreign: &abi::Foreign) -> String {
+    format!("foreign-{}-{}", abi::hex(&foreign.network), foreign.account)
 }
 
 pub(crate) fn party_id(party: &Party) -> String {
     match party {
         Party::Account(number) => number.to_string(),
         Party::Program(program) => format!("program-{program}"),
+        Party::Foreign(foreign) => foreign_id(foreign),
     }
 }
 

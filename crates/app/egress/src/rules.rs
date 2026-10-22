@@ -13,8 +13,8 @@ use crate::state::{
     STREAMS, Stored, Stream, TURNS,
 };
 use crate::{
-    AccountNumber, Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, Op, PROGRAM, RELAY,
-    RESERVED, Request, RequestRow, ServiceRow, StreamEnd, http,
+    AccountNumber, Answer, CROSSPOND, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, Op, PROGRAM,
+    RELAY, RESERVED, Request, RequestRow, ServiceRow, StreamEnd, http,
 };
 
 fn members(ctx: &QueryCtx) -> Result<Vec<Vec<u8>>, Error> {
@@ -224,6 +224,7 @@ fn check(ctx: &QueryCtx, request: &Request) -> Result<(), Error> {
     match service.as_str() {
         HTTP => head.check_url().map_err(error_from)?,
         RELAY => return Err(invalid("relay is asked with Request::Relay")),
+        CROSSPOND => return Err(invalid("crosspond is asked with Request::Crosspond")),
         named => {
             registered(ctx, named)?;
             head.check_path().map_err(error_from)?;

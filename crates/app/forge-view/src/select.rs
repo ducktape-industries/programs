@@ -142,6 +142,9 @@ impl Writer {
         match self {
             Writer::Party(Party::Account(number)) => format!("acct-{number}"),
             Writer::Party(Party::Program(program)) => format!("program-{program}"),
+            Writer::Party(Party::Foreign(foreign)) => {
+                format!("foreign-{}-{}", abi::hex(&foreign.network), foreign.account)
+            }
             Writer::Everyone => "everyone".into(),
         }
     }
@@ -293,6 +296,9 @@ impl Forge {
                 self.principal_name(&Principal::Account(*number))
             }
             Writer::Party(Party::Program(program)) => program.clone(),
+            Writer::Party(Party::Foreign(foreign)) => {
+                self.principal_name(&Principal::Foreign((*foreign).into()))
+            }
             Writer::Everyone => words::EVERYONE.to_owned(),
         }
     }
@@ -661,7 +667,7 @@ impl Forge {
     pub(crate) fn writer_picture(&self, writer: &Writer, cx: &mut Context<Self>) -> Picture {
         match writer {
             Writer::Party(Party::Account(number)) => self.picture(&Principal::Account(*number), cx),
-            Writer::Party(Party::Program(_)) | Writer::Everyone => None,
+            Writer::Party(Party::Program(_) | Party::Foreign(_)) | Writer::Everyone => None,
         }
     }
 

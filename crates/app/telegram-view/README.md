@@ -42,8 +42,10 @@ module through `make wasm-telegram-view`. The same backend flags work with
 `make dev V=telegram-view` and `make wasm-why V=telegram-view`.
 
 `host.random` seeds ChaCha20 once per mount/store load. On wasm32 that generator
-also supplies getrandom 0.4's custom backend, selected by `.cargo/config.toml`
-and shared by the Makefile's `WASM_RUSTFLAGS`. The build removes
+also supplies getrandom 0.4's custom backend, selected by
+`--cfg getrandom_backend="custom"`. The Makefile's Telegram builds pass it
+(`TELEGRAM_CFG`), and no other module's build carries it, so a plain cargo build
+of this crate for wasm32 sets it in `RUSTFLAGS`. The build removes
 Rust's export of the backend symbol before applying the normal view gate.
 No JavaScript randomness or runtime is linked. Time comes from chain status and
 heads until Telegram sets its offset; after that only protocol ticks advance it.

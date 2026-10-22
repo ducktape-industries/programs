@@ -215,6 +215,7 @@ fn who(by: &Principal) -> String {
     match by {
         Principal::Account(number) => format!("account {number}"),
         Principal::Root => "the chain".into(),
+        Principal::Foreign(foreign) => foreign.to_string(),
     }
 }
 

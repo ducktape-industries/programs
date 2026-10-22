@@ -397,7 +397,7 @@ impl Tool for History {
                 json!({
                     "snapshot": blob(&row.id),
                     "seq": row.seq,
-                    "author": principal(&row.author),
+                    "author": principal(ctx, &row.author),
                     "height": row.height,
                     "message": row.message,
                 })

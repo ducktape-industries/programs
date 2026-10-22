@@ -256,7 +256,7 @@ impl Tool for Repos {
                     .map(|info| {
                         json!({
                             "name": info.name,
-                            "owner": principal(&info.repo.owner),
+                            "owner": principal(ctx, &info.repo.owner),
                             "default_branch": String::from_utf8_lossy(&info.repo.settings.head),
                             "refs": info.repo.refs_count,
                         })
@@ -595,7 +595,7 @@ impl Tool for Changes {
                             "number": change.n,
                             "title": change.title,
                             "state": state_name(change.state),
-                            "author": principal(&change.author),
+                            "author": principal(ctx, &change.author),
                             "from": spelled(&change.from),
                             "into": String::from_utf8_lossy(&change.into),
                             "reviews": change.review_count,
@@ -651,7 +651,7 @@ impl Tool for Change {
                     .iter()
                     .map(|review| {
                         json!({
-                            "author": principal(&review.author),
+                            "author": principal(ctx, &review.author),
                             "verdict": format!("{:?}", review.draft.verdict),
                             "body": review.draft.body,
                         })
@@ -662,7 +662,7 @@ impl Tool for Change {
                     "title": change.title,
                     "body": change.body,
                     "state": state_name(change.state),
-                    "author": principal(&change.author),
+                    "author": principal(ctx, &change.author),
                     "from": spelled(&change.from),
                     "into": String::from_utf8_lossy(&change.into),
                     "source_head": source_head,

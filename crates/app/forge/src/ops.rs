@@ -426,6 +426,7 @@ fn change_resource(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Resource, Error
     };
     let owner = match change.author {
         Principal::Account(number) => Some(Party::Account(number)),
+        Principal::Foreign(foreign) => Some(Party::Foreign(foreign.into())),
         Principal::Root => None,
     };
     Ok(Resource {

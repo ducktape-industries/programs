@@ -3,6 +3,10 @@
 Outbound HTTP for programs. A service registered here is served by the
 member nodes assigned to it, and a program's call is answered by one of
 them, whole or as events. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
+Three services are egress's own and never registered: `http`, `relay` and
+`crosspond`. Any member node that serves one may be elected for it, and
+each is asked only as its own `Request` variant (`Http`, `Relay`,
+`Crosspond`).
 
 ## Who may call each op
 

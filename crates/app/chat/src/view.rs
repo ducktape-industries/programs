@@ -1,8 +1,6 @@
-//! The reads a view makes of chat, folded into what a principal is called:
-//! the roster into [`Names`], a channel's roots into one page. Each takes
-//! the asker (`|ask| host.query(ask)` in a view) so this crate links no
-//! view runtime. Names are display text, not identity: "the same person"
-//! is the account number.
+//! The reads a view makes of chat: the roster and the users of other networks into [`Names`], a
+//! channel's roots into one page. Each takes the asker (`|ask| host.query(ask)` in a view), so
+//! this crate links no view runtime. Names are display text, not identity.
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
@@ -11,23 +9,41 @@ use ::program::Error;
 use store::KeyCodec;
 
 use crate::tables::{CHANNEL_META, CHANNELS, HEADS, MESSAGES, REACTIONS, REPLIES, ROOTS};
-use crate::{Kind, MsgRow, PageRequest, PageResponse, Principal, Profile, ask};
+use crate::{
+    Foreign, ForeignName, Kind, MsgRow, PageRequest, PageResponse, Principal, Profile, ask,
+};
 
-/// Every account's profile, every page of it, folded into [`Names`].
-pub async fn roster<F: Future<Output = Result<PageResponse<Profile>, Error>>>(
-    ask: impl Fn(ask::Accounts) -> F,
-) -> Result<Names, Error> {
+pub async fn roster<F, G>(
+    accounts: impl Fn(ask::Accounts) -> F,
+    foreigners: impl Fn(ask::Foreigners) -> G,
+) -> Result<Names, Error>
+where
+    F: Future<Output = Result<PageResponse<Profile>, Error>>,
+    G: Future<Output = Result<PageResponse<ForeignName>, Error>>,
+{
     let mut rows = Vec::new();
     let mut after = None;
     loop {
-        let page = ask(ask::Accounts {
+        let page = accounts(ask::Accounts {
             page: PageRequest { after, limit: None },
         })
         .await?;
         rows.extend(page.items);
         after = page.next;
         if after.is_none() {
-            return Ok(Names::from_roster(rows));
+            break;
+        }
+    }
+    let mut met = Vec::new();
+    loop {
+        let page = foreigners(ask::Foreigners {
+            page: PageRequest { after, limit: None },
+        })
+        .await?;
+        met.extend(page.items);
+        after = page.next;
+        if after.is_none() {
+            return Ok(Names::from_roster(rows).with_foreigners(met));
         }
     }
 }
@@ -64,17 +80,27 @@ pub async fn roots<F: Future<Output = Result<PageResponse<MsgRow>, Error>>>(
     Ok((rows, below.is_some()))
 }
 
-/// The roster as a view reads it: each account's profile, by number.
+/// The roster as a view reads it: each account's profile by number, and each user of another
+/// network by what crosspond heard.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Names {
     profiles: BTreeMap<u64, Profile>,
+    foreign: BTreeMap<Foreign, String>,
 }
 
 impl Names {
     pub const fn empty() -> Self {
         Self {
             profiles: BTreeMap::new(),
+            foreign: BTreeMap::new(),
         }
+    }
+
+    pub fn with_foreigners(mut self, met: impl IntoIterator<Item = ForeignName>) -> Self {
+        for named in met {
+            self.foreign.insert(named.foreign, named.handle());
+        }
+        self
     }
 
     pub fn from_roster(roster: impl IntoIterator<Item = Profile>) -> Self {
@@ -104,7 +130,12 @@ impl Names {
 
     /// The name the roster gives a principal: an account's own.
     pub fn name(&self, principal: &Principal) -> Option<&str> {
-        self.profile(principal).map(|profile| profile.name.as_str())
+        match principal {
+            Principal::Foreign(foreign) => self.foreign.get(foreign).map(String::as_str),
+            Principal::Account(_) | Principal::Root => {
+                self.profile(principal).map(|profile| profile.name.as_str())
+            }
+        }
     }
 
     /// A message's author line: the name, else what the principal is.
@@ -133,6 +164,11 @@ impl Names {
                 .filter(|name| !name.is_empty())
                 .map_or_else(|| format!("@account-{account}"), |name| format!("@{name}")),
             Principal::Root => "@system".into(),
+            Principal::Foreign(_) => format!(
+                "@{}",
+                self.name(principal)
+                    .map_or_else(|| unnamed(principal), str::to_owned)
+            ),
         }
     }
 
@@ -158,6 +194,12 @@ pub fn unnamed(principal: &Principal) -> String {
     match principal {
         Principal::Account(number) => format!("account {number}"),
         Principal::Root => "system".into(),
+        Principal::Foreign(foreign) => ForeignName {
+            foreign: *foreign,
+            name: None,
+            network: None,
+        }
+        .handle(),
     }
 }
 

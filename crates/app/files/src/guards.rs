@@ -2,8 +2,8 @@
 //! everything beneath it. Each write rewrites the nearest row at or above the path it touches, so
 //! the kernel's guard decides it by that row's policy; with no row at or above, anyone writes.
 use ::program::{
-    Error, ExecCtx, Party, QueryCtx, Range, Reply, already_exists, not_found, unauthorized,
-    wrong_state,
+    Error, ExecCtx, Party, Principal, QueryCtx, Range, Reply, already_exists, not_found,
+    unauthorized, wrong_state,
 };
 
 use crate::gate::resource;
@@ -150,6 +150,7 @@ pub(crate) fn guard(ctx: &ExecCtx, path: String) -> Result<(), Error> {
     let theirs = match &owner {
         Party::Account(number) => env.sender.as_ref().and_then(|by| by.account()) == Some(*number),
         Party::Program(program) => env.sent_by(program).is_ok(),
+        Party::Foreign(foreign) => env.sender == Some(Principal::Foreign((*foreign).into())),
     };
     if !theirs {
         return Err(unauthorized(format!(
@@ -184,5 +185,6 @@ fn party(party: &Party) -> String {
     match party {
         Party::Account(number) => format!("account {number}"),
         Party::Program(program) => format!("program {program}"),
+        Party::Foreign(foreign) => ::program::Foreign::from(*foreign).to_string(),
     }
 }

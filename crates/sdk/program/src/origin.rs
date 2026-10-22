@@ -5,16 +5,16 @@ use crate::{Env, Error, Origin, Party, Principal, ProgramId, unauthorized};
 
 impl Env {
     pub fn actor(&self) -> Vec<Party> {
-        let account = self
-            .sender
-            .as_ref()
-            .and_then(Principal::account)
-            .map(Party::Account);
+        let sender = match &self.sender {
+            Some(Principal::Account(number)) => Some(Party::Account(*number)),
+            Some(Principal::Foreign(foreign)) => Some(Party::Foreign((*foreign).into())),
+            Some(Principal::Root) | None => None,
+        };
         let program = match &self.origin {
             Origin::Program(program) => Some(Party::Program(program.clone())),
             Origin::Signed(_) | Origin::Root => None,
         };
-        account.into_iter().chain(program).collect()
+        sender.into_iter().chain(program).collect()
     }
 
     /// The signing key of a signed frame; any other origin is refused.

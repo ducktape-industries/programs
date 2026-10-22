@@ -1,7 +1,7 @@
 //! Tools over `chat`: channels, messages, threads and search read as the agent reads them, and
 //! posts and reactions the agent makes as itself. A post lands whole once its call runs (its draft
 //! shows the text as it arrives), a reaction once its input is whole.
-use ::program::{Error, ExecCtx, Principal, stale};
+use ::program::{Error, ExecCtx, Principal, QueryCtx, stale};
 use chat::{ChannelInfo, MsgRow, Query, Reply};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -33,7 +33,7 @@ fn channel(info: &ChannelInfo) -> Value {
     })
 }
 
-fn message(row: &MsgRow) -> Value {
+fn message(ctx: &QueryCtx, row: &MsgRow) -> Value {
     let reactions: Vec<Value> = row
         .reactions
         .iter()
@@ -41,7 +41,7 @@ fn message(row: &MsgRow) -> Value {
         .collect();
     json!({
         "seq": row.seq,
-        "author": principal(&row.author),
+        "author": principal(ctx, &row.author),
         "time": row.time,
         "text": row.text,
         "reply_to": row.thread,
@@ -52,9 +52,9 @@ fn message(row: &MsgRow) -> Value {
     })
 }
 
-fn messages(rows: &chat::PageResponse<MsgRow>) -> Value {
+fn messages(ctx: &QueryCtx, rows: &chat::PageResponse<MsgRow>) -> Value {
     json!({
-        "messages": rows.items.iter().map(message).collect::<Vec<_>>(),
+        "messages": rows.items.iter().map(|row| message(ctx, row)).collect::<Vec<_>>(),
         "next": next(&rows.next),
     })
 }
@@ -161,7 +161,7 @@ impl Tool for Messages {
             page,
         };
         match ask(ctx, asked)? {
-            Reply::Roots(rows) => Ok(Run::Done(messages(&rows))),
+            Reply::Roots(rows) => Ok(Run::Done(messages(ctx, &rows))),
             other => Err(unexpected(chat::PROGRAM, "Roots", &other)),
         }
     }
@@ -201,8 +201,8 @@ impl Tool for Thread {
         };
         match ask(ctx, asked)? {
             Reply::Thread { root, replies } => Ok(Run::Done(json!({
-                "root": root.as_ref().map(message),
-                "replies": replies.items.iter().map(message).collect::<Vec<_>>(),
+                "root": root.as_ref().map(|row| message(ctx, row)),
+                "replies": replies.items.iter().map(|row| message(ctx, row)).collect::<Vec<_>>(),
                 "next": next(&replies.next),
             }))),
             other => Err(unexpected(chat::PROGRAM, "Thread", &other)),
@@ -218,7 +218,7 @@ pub(crate) struct SearchArgs {
     cursor: Option<String>,
 }
 
-fn hit(row: &MsgRow, terms: &[String], around: Option<usize>) -> Value {
+fn hit(ctx: &QueryCtx, row: &MsgRow, terms: &[String], around: Option<usize>) -> Value {
     let snippets = match around {
         Some(bytes) => chat::around_matches(&row.text, terms, bytes),
         None => chat::sentences_holding(&row.text, terms),
@@ -226,7 +226,7 @@ fn hit(row: &MsgRow, terms: &[String], around: Option<usize>) -> Value {
     json!({
         "channel": row.channel_id,
         "seq": row.seq,
-        "author": principal(&row.author),
+        "author": principal(ctx, &row.author),
         "time": row.time,
         "reply_to": row.thread,
         "snippets": snippets,
@@ -262,7 +262,7 @@ impl Tool for Search {
         };
         match ask(ctx, asked)? {
             Reply::TextHits(rows) => Ok(Run::Done(json!({
-                "hits": rows.items.iter().map(|row| hit(row, &terms, args.around)).collect::<Vec<_>>(),
+                "hits": rows.items.iter().map(|row| hit(ctx, row, &terms, args.around)).collect::<Vec<_>>(),
                 "next": next(&rows.next),
             }))),
             other => Err(unexpected(chat::PROGRAM, "TextSearch", &other)),

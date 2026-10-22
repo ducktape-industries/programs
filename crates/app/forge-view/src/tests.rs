@@ -222,6 +222,21 @@ fn release_diff(files: u64, lines: u64) -> Reply {
 
 const FORGE: u64 = 900;
 
+fn no_foreigners() -> chat::PageResponse<chat::ForeignName> {
+    chat::PageResponse {
+        height: 1,
+        items: Vec::new(),
+        next: None,
+    }
+}
+
+fn roster_answer(query: chat::Query) -> chat::Reply {
+    match query {
+        chat::Query::Foreigners { .. } => chat::Reply::Foreigners(no_foreigners()),
+        _ => chat::Reply::Accounts(accounts()),
+    }
+}
+
 fn accounts() -> chat::PageResponse<chat::Profile> {
     let row = |number, name: &str| chat::Profile {
         number,
@@ -294,6 +309,7 @@ fn job_room() -> Vec<chat::MsgRow> {
 fn chat_answer(query: chat::Query) -> chat::Reply {
     match query {
         chat::Query::Accounts { .. } => chat::Reply::Accounts(accounts()),
+        chat::Query::Foreigners { .. } => chat::Reply::Foreigners(no_foreigners()),
         chat::Query::Roots { channel_id, .. } => chat::Reply::Roots(PageResponse {
             height: 1,
             items: match channel_id.as_str() {
@@ -910,7 +926,7 @@ fn a_refused_read_keeps_its_reason_and_offers_one_retry() {
     cx.host()
         .handle::<Ask>(|_| Err(refusal("refused-object-not-held")));
     cx.host()
-        .handle::<ProgramQuery<::chat::Chat>>(|_| Ok(chat::Reply::Accounts(accounts())));
+        .handle::<ProgramQuery<::chat::Chat>>(|query| Ok(roster_answer(query)));
     cx.host()
         .handle::<ProgramQuery<Identity>>(|_| Ok(no_accounts()));
     cx.open::<Forge>();

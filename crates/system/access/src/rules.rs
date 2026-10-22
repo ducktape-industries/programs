@@ -87,6 +87,7 @@ fn party(party: &Party) -> String {
     match party {
         Party::Account(number) => format!("account {number}"),
         Party::Program(program) => format!("program {program}"),
+        Party::Foreign(foreign) => ::program::Foreign::from(*foreign).to_string(),
     }
 }
 

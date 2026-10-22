@@ -30,9 +30,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::awaiting::{self, Answer, Awaiting, Step, Suspended};
 use crate::{
-    AccountNumber, Blob, BlobId, Called, Cause, EntryId, Env, Error, ExecCtx, FrameId, HashKind,
-    MessageId, MockHost, Need, Origin, Outcome, Principal, Program, ProgramId, QueryCtx, Resumed,
-    Roles, Ticket, code, identity_role, unauthorized, unexpected_reply,
+    AccountNumber, Blob, BlobId, Called, Cause, Emitted, EntryId, Env, Error, ExecCtx, Foreign,
+    FrameId, HashKind, MessageId, MockHost, Need, Origin, Outcome, Principal, Program, ProgramId,
+    QueryCtx, Resumed, Roles, Ticket, code, identity_role, invalid, unauthorized, unexpected_reply,
 };
 
 /// How deep messages nest in one frame: a submission runs at depth 0 and
@@ -556,6 +556,19 @@ impl MockChain {
         self.run_frame(env, call, Waiter::Nobody, 0).outcome
     }
 
+    pub fn submit_foreign<O: BorshSerialize>(
+        &self,
+        foreign: Foreign,
+        program: impl Into<ProgramId>,
+        op: &O,
+    ) -> Result<Vec<u8>, Error> {
+        let crosspond = self.role(role::CROSSPOND)?;
+        let env = self.env(program).from_foreign(crosspond, foreign);
+        let payload = abi::encode(op);
+        self.run_frame(env, Call::Execute(&payload), Waiter::Nobody, 0)
+            .outcome
+    }
+
     /// `program`'s answer to `request`, asked by the chain itself (origin
     /// `Root`, no sender), borsh both ways.
     pub fn query<Q: BorshSerialize, R: BorshDeserialize>(
@@ -626,6 +639,24 @@ impl MockChain {
         match acting {
             None => own.clone(),
             Some(account) => self.run_by(program, account),
+        }
+    }
+
+    fn foreign_sender(
+        &self,
+        program: &ProgramId,
+        acting: Option<AccountNumber>,
+        foreign: Foreign,
+    ) -> Sender {
+        let bound_to_crosspond = self.roles.get(role::CROSSPOND) == Some(program);
+        match (bound_to_crosspond, acting) {
+            (false, _) => Err(unauthorized(
+                "only the program bound to the crosspond role sends as a foreign user",
+            )),
+            (true, Some(account)) => Err(invalid(format!(
+                "a message sent as a foreign user cannot also act as account {account}"
+            ))),
+            (true, None) => Ok(Some(Principal::Foreign(foreign))),
         }
     }
 
@@ -724,7 +755,7 @@ impl MockChain {
             }
         };
         let output = host.take_output();
-        let emitted = host.take_emissions();
+        let emitted = host.take_emitted();
         let calls = host.take_calls();
         let deferred = host.take_deferred();
         let resumes = host.take_resumes();
@@ -820,18 +851,22 @@ impl MockChain {
     fn deliver(
         &self,
         env: &Env,
-        emitted: Vec<abi::Message>,
+        emitted: Vec<Emitted>,
         first: u64,
         depth: u32,
     ) -> Result<(), Error> {
-        let as_itself = emitted.iter().any(|message| message.acting.is_none());
+        let as_itself = emitted.iter().any(Emitted::as_its_emitter);
         let emitter = self.own_sender(&env.program, as_itself);
-        for (seq, message) in emitted.into_iter().enumerate() {
+        for (seq, Emitted { message, foreign }) in emitted.into_iter().enumerate() {
             let id = MessageId {
                 program: env.program.clone(),
                 seq: first + seq as u64,
             };
-            let ran = match self.sender(&env.program, message.acting, &emitter) {
+            let sender = match foreign {
+                Some(foreign) => self.foreign_sender(&env.program, message.acting, foreign),
+                None => self.sender(&env.program, message.acting, &emitter),
+            };
+            let ran = match sender {
                 Err(refusal) => Run::finished(Err(refusal)),
                 Ok(sender) => {
                     let env = self.nested(
@@ -1163,6 +1198,8 @@ impl Seat {
     }
 }
 
+#[cfg(test)]
+mod foreign;
 #[cfg(test)]
 mod guarded;
 #[cfg(test)]

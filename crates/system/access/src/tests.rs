@@ -3,11 +3,13 @@
 
 use ::program::{
     Error, ExecCtx, MockChain, MockHost, Need, Origin, Ownership, Party, Program, ProgramId,
-    QueryCtx, Renamer, Reply as Wait, Resource, Writers, code,
+    QueryCtx, Renamer, Reply as Wait, Resource, Roles, Writers, code,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{Access, Listed, Op, PROGRAM, PageRequest, Query, Reply};
+
+mod foreign;
 
 fn renamed(chain: &mut MockChain, renames: &[(&str, &str)]) {
     chain.seat::<Renamer>("programs");
@@ -143,7 +145,11 @@ fn signed(account: u64) -> Origin {
 }
 
 fn chain() -> MockChain {
-    let mut chain = MockChain::default();
+    chain_with(MockHost::roles())
+}
+
+fn chain_with(roles: Roles) -> MockChain {
+    let mut chain = MockChain::founded(roles);
     chain.seat::<Access>(PROGRAM);
     chain.seat::<Notes>("notes");
     chain.register(PROGRAM, 900);

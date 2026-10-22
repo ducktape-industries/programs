@@ -1,0 +1,39 @@
+[package]
+name = "crosspond"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+program = ["dep:commonware-codec", "dep:state-proof"]
+describe = []
+
+[dependencies]
+abi = { workspace = true }
+borsh = { workspace = true }
+commonware-codec = { workspace = true, optional = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
+state-proof = { path = "../../lib/state-proof", optional = true }
+store = { path = "../../sdk/store" }
+
+[dev-dependencies]
+awaits = { path = "../awaits" }
+crosspond = { path = ".", features = ["program"] }
+commonware-codec = { workspace = true, features = ["std"] }
+commonware-consensus = { workspace = true }
+commonware-cryptography = { workspace = true, features = ["std"] }
+commonware-parallel = { workspace = true }
+commonware-runtime = { workspace = true }
+commonware-storage = { workspace = true, features = ["std"] }
+commonware-utils = { workspace = true, features = ["std"] }
+consensus = { workspace = true }
+egress = { path = "../../app/egress" }
+identity = { path = "../identity" }
+keyscheme = { workspace = true }
+node = { workspace = true }
+scheduler = { path = "../scheduler" }
+state = { workspace = true }
+valset = { path = "../valset" }

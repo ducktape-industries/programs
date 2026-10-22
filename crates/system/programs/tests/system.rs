@@ -168,6 +168,7 @@ impl Net {
     ) -> Net {
         let apps = apps.into_iter().map(|app| match app.program.as_str() {
             egress::PROGRAM => filling(abi::role::EGRESS, app),
+            crosspond::PROGRAM => filling(abi::role::CROSSPOND, app),
             ownership::PROGRAM => filling(abi::role::OWNERSHIP, app),
             _ => app,
         });
@@ -475,6 +476,8 @@ mod activity_tests;
 mod attribution_tests;
 #[path = "system/chat.rs"]
 mod chat_tests;
+#[path = "system/crosspond.rs"]
+mod crosspond_tests;
 #[path = "system/discussion.rs"]
 mod discussion_tests;
 #[path = "system/files.rs"]

@@ -38,11 +38,13 @@ files = { path = "../../app/files" }
 attribution = { path = "../../app/attribution" }
 harness = { path = "../../app/harness" }
 egress = { path = "../../app/egress" }
+crosspond = { path = "../crosspond" }
+node = { workspace = true }
 forge = { path = "../../app/forge" }
 gitcore = { path = "../../lib/gitcore" }
 identity = { path = "../identity" }
 valset = { path = "../valset" }
-commonware-cryptography = { workspace = true }
+commonware-cryptography = { workspace = true, features = ["std"] }
 commonware-runtime = { workspace = true }
 host = { workspace = true }
 fixture-wasm = { workspace = true }

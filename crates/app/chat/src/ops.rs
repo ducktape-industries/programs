@@ -174,6 +174,7 @@ pub(crate) fn set_membership(
 }
 
 fn seat(ctx: &ExecCtx, id: &str, principal: Principal) {
+    crate::linked::heard(ctx, &principal);
     let row = MemberRow {
         principal: principal.clone(),
         height: ctx.env().height,
@@ -251,6 +252,11 @@ pub(crate) fn notify_with(
         Some(Principal::Root) => {
             return Err(invalid("by names who acted: an account, never root"));
         }
+        Some(Principal::Foreign(_)) => {
+            return Err(invalid(
+                "by names who acted: an account of this network, never a user of another",
+            ));
+        }
         None => {}
     }
     write(
@@ -285,6 +291,17 @@ fn write(
 ) -> Result<(), Error> {
     rules::id("message_id", &message_id)?;
     rules::namespace(&message_id, &ctx.env())?;
+    store(ctx, sender, channel_id, message_id, blocks, thread)
+}
+
+pub(crate) fn store(
+    ctx: &ExecCtx,
+    sender: &Principal,
+    channel_id: String,
+    message_id: String,
+    blocks: Vec<Block>,
+    thread: Option<u64>,
+) -> Result<(), Error> {
     rules::writable(ctx, &channel(ctx, &channel_id)?, sender)?;
     if MESSAGE_IDS.has(ctx, &message_id) {
         return Err(already_exists(format!(
@@ -293,6 +310,7 @@ fn write(
     }
     let thread = rooted(ctx, &channel_id, thread)?;
     let blocks = resolve_typed(ctx, blocks)?;
+    crate::linked::names_foreign_where_linked(ctx, &channel_id, &blocks)?;
     let seq = HEADS.get(ctx, &channel_id)?.unwrap_or(0) + 1;
     let row = MsgRow {
         channel_id: channel_id.clone(),
@@ -318,7 +336,9 @@ fn write(
     MESSAGE_IDS.put(ctx, &message_id, &(channel_id.clone(), seq));
     HEADS.put(ctx, &channel_id, &seq);
     undraft(ctx, sender, &channel_id)?;
-    crate::leases::release(ctx, sender, &channel_id, thread)
+    crate::leases::release(ctx, sender, &channel_id, thread)?;
+    crate::linked::mentioned(ctx, &row.blocks);
+    crate::linked::posted(ctx, sender, &row)
 }
 
 fn answer(
@@ -369,6 +389,7 @@ pub(crate) fn edit(
     rules::not_a_notice(&old)?;
     rules::no_notice(&blocks)?;
     let blocks = resolve_typed(ctx, blocks)?;
+    crate::linked::names_foreign_where_linked(ctx, channel_id, &blocks)?;
     let row = MsgRow {
         blocks,
         rev: old.rev + 1,
@@ -382,7 +403,8 @@ pub(crate) fn edit(
     note(ctx, &row);
     seat_involved(ctx, &row)?;
     report(ctx, sender, Some(&old), &row)?;
-    Ok(())
+    crate::linked::mentioned(ctx, &row.blocks);
+    crate::linked::edited(ctx, sender, &row)
 }
 
 pub(crate) fn delete(
@@ -419,7 +441,7 @@ pub(crate) fn delete(
     };
     put_message(ctx, &tombstone)?;
     report(ctx, sender, Some(&old), &tombstone)?;
-    Ok(())
+    crate::linked::deleted(ctx, sender, &old)
 }
 
 pub(crate) fn react(
@@ -449,7 +471,7 @@ pub(crate) fn react(
     put_message(ctx, &row)?;
     let told = crate::attributed::reaction(ctx, sender, &row, emoji, on)?;
     crate::attributed::reacted(ctx, told.into_iter().collect());
-    Ok(())
+    crate::linked::reacted(ctx, sender, &row, emoji, on)
 }
 
 fn count_in(reactions: &mut Vec<Reaction>, emoji: &str) {

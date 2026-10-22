@@ -344,6 +344,9 @@ pub fn describe(op: &Op) -> describe::Description {
                 .chain(parties.iter().map(|party| match party {
                     Party::Account(number) => Value::Account(*number),
                     Party::Program(program) => Value::Program(program.clone()),
+                    Party::Foreign(foreign) => {
+                        Value::text(::program::Foreign::from(*foreign).to_string())
+                    }
                 }))
                 .collect(),
         ),

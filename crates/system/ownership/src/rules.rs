@@ -34,6 +34,7 @@ fn key(party: &Party) -> Vec<u8> {
 fn actor_of(guard: &Guard) -> Party {
     match &guard.sender {
         Some(abi::Principal::Account(number)) => Party::Account(*number),
+        Some(abi::Principal::Foreign(foreign)) => Party::Foreign(*foreign),
         Some(abi::Principal::System) | None => Party::Program(guard.program.clone()),
     }
 }
@@ -163,6 +164,7 @@ fn exists(ctx: &QueryCtx, party: &Party) -> Result<bool, Error> {
                 other => Err(::program::unexpected_reply(&identity, "Profile", &other)),
             }
         }
+        Party::Foreign(_) => Ok(true),
     }
 }
 

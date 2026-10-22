@@ -393,6 +393,9 @@ fn party(party: &Party) -> describe::Value {
     match party {
         Party::Account(number) => describe::Value::Account(*number),
         Party::Program(program) => describe::Value::Program(program.clone()),
+        Party::Foreign(foreign) => {
+            describe::Value::text(::program::Foreign::from(*foreign).to_string())
+        }
     }
 }
 

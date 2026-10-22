@@ -316,7 +316,18 @@ impl Draft {
     }
 }
 
+fn foreign(word: &str) -> Option<program::abi::Foreign> {
+    let (account, network) = word.split_once('@')?;
+    Some(program::abi::Foreign {
+        network: view::design::unhex(network)?.try_into().ok()?,
+        account: account.parse().ok()?,
+    })
+}
+
 fn party(word: &str) -> Party {
+    if let Some(foreign) = foreign(word) {
+        return Party::Foreign(foreign);
+    }
     match word.parse::<u64>() {
         Ok(number) => Party::Account(number),
         Err(_) => Party::Program(word.to_owned()),
@@ -338,6 +349,13 @@ fn parties_as_field_text(parties: &[Party]) -> String {
         .map(|party| match party {
             Party::Account(number) => number.to_string(),
             Party::Program(program) => program.clone(),
+            Party::Foreign(foreign) => {
+                format!(
+                    "{}@{}",
+                    foreign.account,
+                    program::abi::hex(&foreign.network)
+                )
+            }
         })
         .collect();
     words.join(", ")

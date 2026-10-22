@@ -46,7 +46,7 @@ valset = { path = "../../system/valset", optional = true }
 programs = { path = "../../system/programs", optional = true }
 blobs = { path = "../../system/blobs", optional = true }
 access = { path = "../../system/access", optional = true }
-commonware-cryptography = { workspace = true, optional = true }
+commonware-cryptography = { workspace = true, optional = true, features = ["std"] }
 keyscheme = { workspace = true, optional = true }
 sha1 = { version = "0.10", optional = true }
 sha2 = { workspace = true, optional = true }

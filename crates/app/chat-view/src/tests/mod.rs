@@ -313,6 +313,7 @@ fn rooms_alone(
         // nobody is answering in a room unless a test says so
         Query::Drafts { .. } => Ok(Reply::Drafts(Vec::new())),
         Query::Busy { .. } => Ok(Reply::Busy(None)),
+        Query::Foreigners { .. } => Ok(Reply::Foreigners(page(Vec::new()))),
         query => answer(query),
     }
 }

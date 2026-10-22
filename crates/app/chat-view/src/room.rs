@@ -661,6 +661,14 @@ impl Chat {
                 self.load_seated(true, cx);
             }
         }
+        let foreigners = ask::Foreigners {
+            page: PageRequest::default(),
+        };
+        let met_another_network =
+            change.is_some_and(|change| change.touches::<chat::Chat, _>(&foreigners));
+        if met_another_network {
+            self.load_names(cx);
+        }
     }
 
     // every room read again, in place of a read under way

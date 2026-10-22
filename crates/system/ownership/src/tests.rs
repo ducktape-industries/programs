@@ -1,10 +1,14 @@
 //! The guard over a native chain: `notes` writes the keys each op names (claiming each `n/` key as a
 //! `test.note`, a shared `c/` counter), and `bot` sends `notes` the same op as its own account.
 
-use ::program::{Error, ExecCtx, MockChain, Origin, Program, QueryCtx, Reply as Wanted, code};
+use ::program::{
+    Error, ExecCtx, MockChain, MockHost, Origin, Program, QueryCtx, Reply as Wanted, Roles, code,
+};
 use abi::role::ownership::Write;
 
 use crate::*;
+
+mod foreign;
 
 type Writes = Vec<(String, Option<String>)>;
 
@@ -55,7 +59,11 @@ const ADA: Party = Party::Account(1);
 const BOB: Party = Party::Account(2);
 
 fn chain() -> MockChain {
-    let mut chain = MockChain::default();
+    chain_with(MockHost::roles())
+}
+
+fn chain_with(roles: Roles) -> MockChain {
+    let mut chain = MockChain::founded(roles);
     chain.seat::<Notes>("notes");
     chain.seat::<Bot>("bot");
     chain.seat::<Ownership>(PROGRAM);

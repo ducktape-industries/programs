@@ -375,9 +375,10 @@ fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
 }
 ```
 
-`ctx.sender()` is the `Principal` (`Account(n)` or `Root`) and refuses a
-frame that acts as no one; `ctx.sender_account()` is the number and refuses
-the chain too. No row a program writes ever names a bare key.
+`ctx.sender()` is the `Principal` (`Account(n)`, `Root`, or `Foreign` for a
+user of a linked network) and refuses a frame that acts as no one;
+`ctx.sender_account()` is the number and refuses the chain and a foreign
+user too. No row a program writes ever names a bare key.
 
 The **origin** is the raw caller (`Origin::Signed(key)`, `Program(id)`,
 `Root`), for the few rules that need it rather than the account:
@@ -577,6 +578,22 @@ the message, which `reply` then handles like any refusal. A call acts as an
 account the same way (`ctx.call_as`, `call_raw_as`, below), and the refusal
 is the call's answer. harness writes as the agents it runs with
 `call_raw_as`, so chat and files judge the agent's account, not harness's.
+
+`ctx.emit_foreign(foreign, target, &op, reply)` (and `emit_raw_foreign`)
+sends the message as a user of a linked network, `Principal::Foreign`. The
+host runs it so only when this program is the one bound to the crosspond
+role, and refuses it from any other program. The target's own messages act
+as the target's account, as every message does. A test runs a frame as a
+foreign user with `MockChain::submit_foreign` or `Env::from_foreign`.
+
+A program takes ops from users of a linked network by filling a role that a
+crosspond port names: the validators' vote `Port { role, from }` lists the
+networks whose packets run on the program bound to `role`, and chat fills the
+`chat` role for this. A packet's op is the target's own `Op`, encoded, and
+its result or refusal goes back to the sending network as the packet's ack.
+A program sends a packet for one of its accounts with crosspond's
+`SendFor { to, port, op, deadline, account }`, which only the program bound
+to `port` here may send (`crates/system/crosspond/README.md`).
 
 The same script routes `attribution`. A program sends attribution
 `Register { deliver }` once (harness does in its `init`, which founding runs

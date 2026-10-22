@@ -164,6 +164,10 @@ impl Settings {
                     form.listed(Party::Program(program));
                     None
                 }
+                Ok(Found::Party(identity::Party::Foreign(foreign))) => {
+                    form.listed(Party::Foreign(foreign));
+                    None
+                }
                 Ok(Found::Nobody) => Some(Problem::NoSuchAccount),
                 Ok(Found::Several) => Some(Problem::SeveralAccounts),
                 Err(refusal) => Some(Problem::Refused(

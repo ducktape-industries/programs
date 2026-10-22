@@ -132,6 +132,7 @@ pub(crate) fn report(
     let actor = match sender {
         Principal::Account(number) => Actor::Account(*number),
         Principal::Root => Actor::System,
+        Principal::Foreign(foreign) => Actor::Foreign((*foreign).into()),
     };
     let update = Update {
         object: Object {

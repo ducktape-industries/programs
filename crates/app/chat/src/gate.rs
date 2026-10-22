@@ -1,6 +1,6 @@
-//! What each chat op needs of the access program, and who owns each key: a channel (its id) by
-//! the account that opened it, a message (`<channel>/<seq>`) by its author. Each is written by
-//! its owner alone unless the owner lists others; a channel's owner also deletes its messages.
+//! What each chat op needs of the access program, and who owns each key: a channel by whoever
+//! opened it, a message (`<channel>/<seq>`) by its author, a user of another network too; only
+//! the owner writes it unless the owner lists others, and a channel's owner deletes its messages.
 use ::program::{Error, Need, Ownership, Party, Principal, QueryCtx, Resource};
 
 use crate::Op;
@@ -10,15 +10,17 @@ pub fn message_key(channel_id: &str, seq: u64) -> String {
     format!("{channel_id}/{seq}")
 }
 
-pub(crate) fn needs(op: &Op) -> Vec<Need> {
-    match op {
+pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
+    Ok(match op {
         Op::RenameChannel { channel_id, .. }
         | Op::SetChannelArchived { channel_id, .. }
         | Op::SetMembership { channel_id, .. }
         | Op::SetChannelMeta { channel_id, .. }
         | Op::RemoveChannelMeta { channel_id, .. }
         | Op::Break { channel_id, .. }
-        | Op::SetPostPolicy { channel_id, .. } => vec![Need::write(channel_id.clone())],
+        | Op::SetPostPolicy { channel_id, .. }
+        | Op::Link { channel_id, .. } => vec![Need::write(channel_id.clone())],
+        Op::FromPeer { channel_id, write } => crate::linked::needs(ctx, channel_id, write)?,
         Op::EditMessage {
             channel_id, seq, ..
         } => vec![Need::write(message_key(channel_id, *seq))],
@@ -42,7 +44,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Take { .. }
         | Op::Release { .. }
         | Op::WatchPlaces { .. } => Vec::new(),
-    }
+    })
 }
 
 pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
@@ -55,10 +57,11 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
             Err(_) => None,
         },
     };
-    let owner = owner
-        .as_ref()
-        .and_then(Principal::account)
-        .map(Party::Account);
+    let owner = owner.and_then(|owner| match owner {
+        Principal::Account(number) => Some(Party::Account(number)),
+        Principal::Foreign(foreign) => Some(Party::Foreign(foreign.into())),
+        Principal::Root => None,
+    });
     Ok(Resource {
         owner,
         default: Some(Ownership::Owner),

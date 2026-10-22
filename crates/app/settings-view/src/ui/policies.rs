@@ -501,6 +501,7 @@ fn party_id(party: &Party) -> String {
     match party {
         Party::Account(number) => number.to_string(),
         Party::Program(program) => format!("program-{program}"),
+        Party::Foreign(foreign) => words::foreign_id(foreign),
     }
 }
 

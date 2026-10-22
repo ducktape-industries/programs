@@ -37,7 +37,8 @@ pub(crate) async fn roots(
 }
 
 pub(crate) async fn roster(host: Host) -> Result<Names, Error> {
-    ::chat::view::roster(move |ask| host.query(ask)).await
+    let foreigners = host.clone();
+    ::chat::view::roster(move |ask| host.query(ask), move |ask| foreigners.query(ask)).await
 }
 
 pub(crate) async fn ownerships(host: Host) -> Result<BTreeMap<u64, Ownership>, Error> {
