@@ -21,6 +21,7 @@ pub(crate) const RUNS: Map<u64, RunRow> = Map::new("r/");
 pub(crate) const PODS: Map<u64, PodRow> = Map::new("p/");
 pub(crate) const WAITING: Set<u64> = Set::new("w/");
 pub(crate) const MAKING: Set<u64> = Set::new("m/");
+pub(crate) const FULL: Set<u64> = Set::new("full/");
 pub(crate) const CONCURRENT: Item<u64> = Item::new("concurrent");
 pub(crate) const ADOPTING: Map<u64, Adopting> = Map::new("a/");
 pub(crate) const SWEEP_AT: Item<u64> = Item::new("sweep-at");
@@ -76,6 +77,7 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
     };
     OFFERED.remove(&ctx, &check);
     WAITING.remove(&ctx, &check);
+    FULL.remove(&ctx, &check);
     let row = match check_row(&ctx, check) {
         Ok(row) => row,
         Err(refused) => {
@@ -114,6 +116,9 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
         Made::Pod(pod) => pod,
         Made::Full => {
             WAITING.insert(&ctx, &check);
+            FULL.insert(&ctx, &check);
+            retry_waiting_next_block(&ctx).await;
+            book_sweep(&ctx).await;
             return Ok(());
         }
         Made::Unmade => {
@@ -167,7 +172,7 @@ pub(crate) async fn set_concurrent(ctx: Ctx, most: u64) -> Result<(), Error> {
         ));
     }
     CONCURRENT.put(&ctx, &most);
-    retry_waiting_next_block(&ctx).await;
+    room_changed(&ctx).await;
     Ok(())
 }
 
@@ -215,6 +220,7 @@ fn waiting_ahead_of(ctx: &Ctx, check: &CheckRow) -> Result<Vec<u64>, Error> {
     Ok(queued
         .iter()
         .filter(|other| place(other) < own)
+        .filter(|other| !FULL.has(ctx, &other.id))
         .map(|other| other.id)
         .collect())
 }
@@ -320,7 +326,7 @@ pub(crate) fn still_waiting(ctx: &QueryCtx) -> Result<Vec<u64>, Error> {
 
 pub(crate) async fn sweep(ctx: Ctx) -> Result<(), Error> {
     settle(&ctx).await?;
-    retry_waiting_next_block(&ctx).await;
+    room_changed(&ctx).await;
     Ok(())
 }
 
@@ -331,7 +337,7 @@ async fn settle(ctx: &Ctx) -> Result<(), Error> {
         freed |= swept(ctx, check, &held, now).await;
     }
     if freed {
-        retry_waiting_next_block(ctx).await;
+        room_changed(ctx).await;
     }
     Ok(())
 }
@@ -448,6 +454,15 @@ async fn finish_pod_and_retry_waiting(
     PODS.remove(ctx, &check);
     RUNS.put(ctx, &check, &kept);
     report(ctx, check, ending).await;
+    room_changed(ctx).await;
+}
+
+async fn room_changed(ctx: &Ctx) {
+    if let Ok(full) = FULL.all(ctx) {
+        for check in full {
+            FULL.remove(ctx, &check);
+        }
+    }
     retry_waiting_next_block(ctx).await;
 }
 
@@ -458,7 +473,9 @@ async fn retry_waiting_next_block(ctx: &Ctx) {
     let own = ctx.env().program.clone();
     let (at, time) = (ctx.env().height + 1, ctx.env().time);
     for check in waiting {
-        if OFFERED.has(ctx, &check) {
+        let booked_or_owed_only_when_room_changes =
+            OFFERED.has(ctx, &check) || FULL.has(ctx, &check);
+        if booked_or_owed_only_when_room_changes {
             continue;
         }
         if ctx

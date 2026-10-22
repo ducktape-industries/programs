@@ -975,6 +975,71 @@ fn a_quota_with_no_room_leaves_the_check_queued_until_a_pod_of_this_runner_ends(
 }
 
 #[test]
+fn a_check_the_quota_has_no_room_for_lets_a_later_check_take_the_free_room() {
+    let mut node = node();
+    node.held_by_owner();
+    node.concurrent(2).unwrap();
+    waiting_on_its_pod(&mut node);
+    node.offer(SIXTEEN).unwrap();
+    node.offer(8).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 403, json!({"error": FULL}));
+    assert_eq!(node.waiting(), [SIXTEEN], "check 8 is booked to run again");
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    assert_eq!(node.held(), [1, 8], "check 8 fits where check 4 did not");
+    assert_eq!(node.waiting(), [SIXTEEN]);
+    assert!(node.reports().is_empty(), "a full quota reports nothing");
+}
+
+#[test]
+fn a_check_the_quota_has_no_room_for_is_tried_again_a_whole_egress_wait_later() {
+    let mut node = node();
+    node.offer(1).unwrap();
+    node.after(2_000);
+    node.after(0);
+    node.answer(500, 403, json!({"error": FULL}));
+    assert!(node.idle());
+    assert_eq!(node.waiting(), [1]);
+    for _ in 0..=DEFAULT_WAIT {
+        node.after(1_000);
+    }
+    node.after(0);
+    let made = node.pending();
+    assert_eq!(
+        aimed(&made),
+        sent("POST", "/v1/pods"),
+        "a Sweep tried it again"
+    );
+}
+
+#[test]
+fn a_full_check_offered_again_that_waits_for_room_is_tried_again_when_room_frees() {
+    let mut node = node();
+    node.held_by_owner();
+    node.concurrent(2).unwrap();
+    waiting_on_its_pod(&mut node);
+    node.offer(SIXTEEN).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 403, json!({"error": FULL}));
+    node.offer(REFUSED).unwrap();
+    node.offer(SIXTEEN).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    let deleted = json!({"deleted": "duckpond-8"});
+    node.answer_to(1_000, "DELETE", "/v1/pods/duckpond-8", 200, deleted);
+    node.after(1_000);
+    node.after(0);
+    let made = node.pending_to("POST", "/v1/pods");
+    let memory = &node.body(&made)["resources"]["requests"]["memory"];
+    assert_eq!(memory, "40Gi", "check 4 is tried again");
+}
+
+#[test]
 fn a_pod_that_asks_more_than_the_whole_quota_errs_its_check() {
     let mut node = node();
     node.offer(1).unwrap();
