@@ -7,6 +7,9 @@ mod commit;
 pub(crate) use changes::{ChangeClose, ChangeComment, ChangeOpen};
 pub(crate) use commit::Commit;
 
+use std::cmp::Ordering;
+use std::collections::VecDeque;
+
 use ::program::{Error, ExecCtx, invalid, not_found};
 use forge::{ChangeFilter, ChangeState, Content, EntryKind, Query, Reply, Revision};
 use serde::Deserialize;
@@ -764,13 +767,63 @@ pub(crate) struct GrepArgs {
     rev: Option<String>,
     pattern: String,
     prefix: Option<String>,
+    cursor: Option<String>,
 }
 
 pub(crate) struct Grep;
 
+const GREP_BYTES: u64 = ::files::CHUNK_SIZE;
+
+#[derive(Clone, Copy)]
+struct Place {
+    offset: u64,
+    line: Option<u64>,
+}
+
+const START: Place = Place {
+    offset: 0,
+    line: Some(1),
+};
+
+struct Resume {
+    commit: String,
+    path: String,
+    place: Place,
+}
+
+fn resumed(cursor: &Option<String>) -> Result<Option<Resume>, Error> {
+    let Some(after) = page(cursor)?.after else {
+        return Ok(None);
+    };
+    let unread = || invalid("a forge_grep cursor is the `next` of a forge_grep page");
+    let text = String::from_utf8(after).map_err(|_| unread())?;
+    let parts: Vec<&str> = text.split('\0').collect();
+    let [commit, path, offset, line] = parts[..] else {
+        return Err(unread());
+    };
+    if !is_oid(commit) {
+        return Err(unread());
+    }
+    let line = match line {
+        "" => None,
+        line => Some(line.parse().map_err(|_| unread())?),
+    };
+    let offset = offset.parse().map_err(|_| unread())?;
+    Ok(Some(Resume {
+        commit: commit.into(),
+        path: path.into(),
+        place: Place { offset, line },
+    }))
+}
+
+fn cursor(commit: &str, path: &str, place: Place) -> Vec<u8> {
+    let line = place.line.map(|line| line.to_string()).unwrap_or_default();
+    format!("{commit}\0{path}\0{}\0{line}", place.offset).into_bytes()
+}
+
 impl Tool for Grep {
     const NAME: &'static str = "forge_grep";
-    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are listed as skipped; a hit after such a range gives its byte offset in place of a line number. It reads every file under the prefix, so narrow the prefix in a large repository.";
+    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are listed as skipped; a hit after such a range gives its byte offset in place of a line number. It reads the blobs under the prefix, at most 1 MiB of them a page, so a page may hold few hits or none and still have next: go on with cursor while next is there, and every page reads the commit the first one named. A narrow prefix reads less; a prefix no path starts with is refused.";
     type Args = GrepArgs;
 
     fn schema() -> Value {
@@ -780,6 +833,7 @@ impl Tool for Grep {
                 "rev": rev_schema(),
                 "pattern": { "type": "string", "description": "the literal text to find; a newline in it matches across lines" },
                 "prefix": prefix_schema(),
+                "cursor": cursor_schema(),
             }),
             &["repo", "pattern"],
         )
@@ -789,66 +843,179 @@ impl Tool for Grep {
         if args.pattern.is_empty() {
             return Err(invalid("forge_grep looks for a pattern that is not empty"));
         }
-        let rev = chosen(ctx, &args.repo, &args.rev)?;
-        let at = commit_of(ctx, &args.repo, rev)?;
+        let resume = resumed(&args.cursor)?;
+        let at = match &resume {
+            Some(resume) => resume.commit.clone(),
+            None => {
+                let rev = chosen(ctx, &args.repo, &args.rev)?;
+                commit_of(ctx, &args.repo, rev)?
+            }
+        };
         let prefix = args.prefix.unwrap_or_default();
+        let prefix = prefix.trim_start_matches('/');
+        let dir = prefix.rsplit_once('/').map_or("", |(dir, _)| dir);
         let mut search = Search {
             ctx,
             repo: &args.repo,
+            at: &at,
+            prefix,
             spans: ::files::grep::Spans::new(&args.pattern),
+            kept: args.pattern.split('\n').count() - 1,
+            from: resume.map(|resume| (resume.path, resume.place)),
             served: None,
+            read: 0,
             hits: Vec::new(),
             skipped: Vec::new(),
+            next: None,
+            named: false,
         };
-        for (path, kind, id) in under_prefix(ctx, &args.repo, &at, &prefix)? {
-            if matches!(kind, EntryKind::File | EntryKind::Executable) {
-                search.file(&path, &id)?;
-            }
+        let top = match listed(ctx, &args.repo, &at, dir) {
+            Err(missing) if missing.code == ::program::code::NOT_FOUND => Vec::new(),
+            listing => listing?,
+        };
+        search.entries(dir, top)?;
+        let unnamed = search.from.is_none() && !search.named && !prefix.is_empty();
+        if unnamed {
+            let rev = args.rev.as_deref().unwrap_or(&at);
+            return Err(not_found(format!("no such path at {rev}: {prefix}")));
         }
-        Ok(Run::Done(
-            json!({ "commit": at, "hits": search.hits, "skipped": search.skipped }),
-        ))
+        Ok(Run::Done(json!({
+            "commit": at,
+            "hits": search.hits,
+            "skipped": search.skipped,
+            "next": next(&search.next),
+        })))
     }
 }
 
 struct Search<'a> {
     ctx: &'a ExecCtx,
     repo: &'a str,
+    at: &'a str,
+    prefix: &'a str,
     spans: ::files::grep::Spans<'a, (Option<u64>, u64)>,
+    kept: usize,
+    from: Option<(String, Place)>,
     served: Option<u64>,
+    read: u64,
     hits: Vec<Value>,
     skipped: Vec<String>,
+    next: Option<Vec<u8>>,
+    named: bool,
 }
 
 impl Search<'_> {
-    fn file(&mut self, path: &str, id: &str) -> Result<(), Error> {
+    fn entries(
+        &mut self,
+        dir: &str,
+        entries: Vec<(String, EntryKind, String)>,
+    ) -> Result<(), Error> {
+        for (name, kind, id) in entries {
+            if self.next.is_some() {
+                return Ok(());
+            }
+            let path = match dir {
+                "" => name,
+                dir => format!("{dir}/{name}"),
+            };
+            let matches = path.starts_with(self.prefix);
+            self.named |= matches;
+            match kind {
+                EntryKind::File | EntryKind::Executable if matches => {
+                    if let Some(from) = self.start_of(&path) {
+                        self.file(&path, &id, from)?;
+                    }
+                }
+                EntryKind::Directory => {
+                    let inside = matches || self.prefix.starts_with(&format!("{path}/"));
+                    let descends = inside && self.reaches(&path);
+                    if descends {
+                        let below = listed(self.ctx, self.repo, self.at, &path)?;
+                        self.entries(&path, below)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn start_of(&self, path: &str) -> Option<Place> {
+        let Some((after, place)) = &self.from else {
+            return Some(START);
+        };
+        match path.cmp(after.as_str()) {
+            Ordering::Less => None,
+            Ordering::Equal => Some(*place),
+            Ordering::Greater => Some(START),
+        }
+    }
+
+    fn reaches(&self, dir: &str) -> bool {
+        let Some((after, _)) = &self.from else {
+            return true;
+        };
+        let inside = format!("{dir}/");
+        after.starts_with(&inside) || inside.as_str() > after.as_str()
+    }
+
+    fn stops_at(&mut self, path: &str, place: Place) -> bool {
+        let moved = match &self.from {
+            Some((after, from)) if after == path => place.offset > from.offset,
+            _ => true,
+        };
+        let spent = self.read >= GREP_BYTES && moved;
+        if spent {
+            self.next = Some(cursor(self.at, path, place));
+        }
+        self.next.is_some()
+    }
+
+    fn file(&mut self, path: &str, id: &str, from: Place) -> Result<(), Error> {
+        if self.stops_at(path, from) {
+            return Ok(());
+        }
         self.spans.gap();
         let blob = blob_of(self.ctx, self.repo, id, None)?;
         match blob.content {
             Content::Text => {
+                self.read += blob.size;
                 let text = String::from_utf8_lossy(&blob.bytes);
                 for (index, line) in text.lines().enumerate() {
                     self.hit(path, Some(index as u64 + 1), 0, line);
                 }
-                Ok(())
             }
-            Content::Oversize => self.ranges(path, id, blob.size),
+            Content::Oversize => self.ranges(path, id, blob.size, from)?,
             Content::Binary | Content::Gitlink => {
+                self.read += blob.size;
                 self.skipped.push(path.into());
-                Ok(())
             }
         }
+        Ok(())
     }
 
-    fn ranges(&mut self, path: &str, id: &str, size: u64) -> Result<(), Error> {
+    fn ranges(&mut self, path: &str, id: &str, size: u64, from: Place) -> Result<(), Error> {
         let most = match self.served {
             Some(most) => most,
             None => served(self.ctx, self.repo)?,
         };
         self.served = Some(most);
         let mut carried: Vec<u8> = Vec::new();
-        let (mut start, mut line, mut at) = (0u64, Some(1u64), 0u64);
+        let mut recent: VecDeque<Place> = VecDeque::new();
+        let Place {
+            offset: mut start,
+            mut line,
+        } = from;
+        let mut at = from.offset;
         while at < size {
+            let partial = Place {
+                offset: start,
+                line,
+            };
+            let resume = recent.front().copied().unwrap_or(partial);
+            if self.stops_at(path, resume) {
+                return Ok(());
+            }
             let range = forge::ByteRange {
                 offset: at,
                 len: most,
@@ -857,12 +1024,14 @@ impl Search<'_> {
             if part.range.len == 0 {
                 break;
             }
+            self.read += part.range.len;
             at += part.range.len;
             if part.content != Content::Text {
                 let from = at - part.range.len;
                 let skipped = format!("{path} bytes {from}..{at}: binary in this range");
                 self.skipped.push(skipped);
                 carried.clear();
+                recent.clear();
                 self.spans.gap();
                 (start, line) = (at, None);
                 continue;
@@ -875,6 +1044,15 @@ impl Search<'_> {
             };
             let rest = carried.split_off(whole);
             for piece in carried.split_inclusive(|byte| *byte == b'\n') {
+                if self.kept > 0 {
+                    recent.push_back(Place {
+                        offset: start,
+                        line,
+                    });
+                    if recent.len() > self.kept {
+                        recent.pop_front();
+                    }
+                }
                 let text = String::from_utf8_lossy(piece);
                 let text = text.strip_suffix('\n').unwrap_or(&text);
                 self.hit(path, line, start, text.strip_suffix('\r').unwrap_or(text));

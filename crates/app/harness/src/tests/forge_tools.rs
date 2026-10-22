@@ -286,6 +286,7 @@ fn narrow(blob_bytes: u64) -> World {
     seated.chain.seat::<forge::Forge>(forge::PROGRAM);
     let bounds = forge::Bounds {
         blob_bytes,
+        max_object_size: 4 << 20,
         ..super::forge_commit::bounds(10_000)
     };
     seated.chain.init(forge::PROGRAM, &bounds).unwrap();
@@ -442,4 +443,115 @@ fn a_pattern_holding_a_newline_finds_a_call_split_across_lines_and_ranges() {
     assert_eq!(answered(chain, thread, "g1")["hits"], json!([call, crlf]));
     let row = json!({ "path": "rows.txt", "line": 10, "text": "row 10\nrow 11" });
     assert_eq!(answered(chain, thread, "g2")["hits"], json!([row]));
+}
+
+#[test]
+fn a_rare_pattern_over_more_bytes_than_a_page_reads_answers_partial_pages_that_resume_inside_a_file_at_one_commit()
+ {
+    let world = narrow(256 << 10);
+    let chain = &world.chain;
+    let thread = world.opened("m1", "wide grep", Some(WINDOW));
+    let hay = "hay hay hay hay\n";
+    let lines_a_page = ::files::CHUNK_SIZE as usize / hay.len();
+    let mut big = hay.repeat(lines_a_page - 2);
+    big.push_str(&format!("{:>31}\n", "alpha"));
+    big.push_str("beta\n");
+    big.push_str(&hay.repeat(1000));
+    big.push_str("a needle past the first page\n");
+    big.push_str(&hay.repeat(lines_a_page));
+    big.push_str("needle\n");
+    let small = "one needle\n".to_owned();
+    let mut last = hay.repeat(lines_a_page + 7);
+    last.push_str("the needle at the end");
+    let written = [("big/a", &big), ("big/b", &small), ("big/c", &last)];
+    let content: Vec<Value> = written
+        .iter()
+        .map(|(path, text)| json!({ "path": path, "content": text }))
+        .collect();
+    let start = json!({ "repo": "wide", "files": content, "message": "big files" });
+    turn(chain, 3, &[("c1", "forge_commit", start)]);
+    answered(chain, thread, "c1");
+    let mut height = 5;
+    for pattern in ["needle", "alpha\nbeta"] {
+        let span = pattern.split('\n').count();
+        let mut expected = Vec::new();
+        for (path, text) in written {
+            let lines: Vec<&str> = text.split('\n').collect();
+            for (index, window) in lines.windows(span).enumerate() {
+                let joined = window.join("\n");
+                if joined.contains(pattern) {
+                    expected.push((json!(path), json!(index + 1), json!(joined)));
+                }
+            }
+        }
+        let (mut found, mut pages, mut commits) = (Vec::new(), Vec::new(), Vec::new());
+        let mut cursor = Value::Null;
+        loop {
+            let call = format!("g{height}");
+            let asked = json!({ "repo": "wide", "pattern": pattern, "cursor": cursor });
+            turn(chain, height, &[(call.as_str(), "forge_grep", asked)]);
+            let said = answered(chain, thread, &call);
+            height += 2;
+            let moves = pages.is_empty() && pattern == "needle";
+            if moves {
+                let file = json!({ "path": "big/b", "content": "a needle pushed between pages\n" });
+                let moved = json!({ "repo": "wide", "files": [file], "message": "moved" });
+                let commit = format!("c{height}");
+                turn(chain, height, &[(commit.as_str(), "forge_commit", moved)]);
+                answered(chain, thread, &commit);
+                height += 2;
+            }
+            let hits = said["hits"].as_array().unwrap();
+            pages.push(hits.len());
+            commits.push(said["commit"].clone());
+            found.extend(hits.iter().map(|hit| {
+                (
+                    hit["path"].clone(),
+                    hit["line"].clone(),
+                    hit["text"].clone(),
+                )
+            }));
+            cursor = said["next"].clone();
+            if cursor.is_null() {
+                break;
+            }
+        }
+        assert!(
+            pages.len() > 2 && pages[0] < expected.len(),
+            "{pattern:?}: pages of {pages:?} hits"
+        );
+        let pinned = commits.iter().all(|commit| *commit == commits[0]);
+        assert!(pinned, "{pattern:?}: pages read commits {commits:?}");
+        assert_eq!(found, expected, "{pattern:?}");
+    }
+}
+
+#[test]
+fn a_grep_under_a_prefix_no_path_starts_with_is_refused_naming_the_rev() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "no such path", Some(WINDOW));
+    seeded(&world, thread);
+    let no_dir = json!({ "repo": "notes", "rev": "dev", "pattern": "fn", "prefix": "nowhere/" });
+    let no_name = json!({ "repo": "notes", "rev": "dev", "pattern": "fn", "prefix": "src/zz" });
+    let no_hit = json!({ "repo": "notes", "rev": "dev", "pattern": "not here", "prefix": "src/" });
+    turn(
+        chain,
+        7,
+        &[
+            ("g1", "forge_grep", no_dir),
+            ("g2", "forge_grep", no_name),
+            ("g3", "forge_grep", no_hit),
+        ],
+    );
+    for (call, prefix) in [("g1", "nowhere/"), ("g2", "src/zz")] {
+        let text = refusal(chain, thread, call);
+        let said = format!("no such path at dev: {prefix}");
+        assert!(text.contains(&said), "{call}: {text}");
+    }
+    let said = answered(chain, thread, "g3");
+    assert_eq!(
+        (said["hits"].clone(), said["next"].clone()),
+        (json!([]), Value::Null)
+    );
 }
