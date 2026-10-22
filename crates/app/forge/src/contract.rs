@@ -66,7 +66,7 @@ pub struct Repo {
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
 #[tool_about(
-    "Git repositories on the network: refs, commits, trees and blobs to read, pushes, changes (pull requests) with reviews, squash merges, rebases, required checks and merge queues. Refs, paths and git names are bytes: write them as hex or {\"utf8\": text}; oids are full lowercase hex. Clone and push with git over duck:// as well."
+    "Git repositories on the network: refs, commits, trees and blobs to read, pushes, changes (pull requests) with reviews, squash merges, rebases, required checks and merge queues. Refs, paths and git names are bytes: write them as hex or {\"utf8\": text}; oids are full hex, never a short prefix. A field whose schema says Revision takes {\"ref\": bytes} or {\"oid\": hex}, so a branch there is {\"ref\": {\"utf8\": \"refs/heads/dev\"}}. Check the field's schema: into is bytes in Merge, SquashMerge and ChangeOpen, but a Revision in Compare and Compares. Clone and push with git over duck:// as well."
 )]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
@@ -82,7 +82,7 @@ pub enum Op {
         pack: Option<BlobId>,
     } = 4,
     /// The client publishes immutable objects first. Consensus only checks both heads.
-    #[tool_op(description = "Move into to a result commit you built and published, with both heads checked against expected_into and expected_from, and mark change merged when one is named. Whoever the repository's policy admits; review verdicts are not enforced. Returns Merged.", returns = OpReply, example = crate::examples::merge)]
+    #[tool_op(description = "Move into (a full ref name, like refs/heads/main) to a result commit you built and published, with both heads checked against expected_into and expected_from, and mark change merged when one is named. from is a revision, a ref or an oid; expected_into, expected_from and result are full oids. Whoever the repository's policy admits; review verdicts are not enforced. Returns Merged.", returns = OpReply, example = crate::examples::merge)]
     Merge {
         repo: String,
         into: Vec<u8>,
@@ -120,7 +120,7 @@ pub enum Op {
     #[tool_op(description = "Store a pack's objects without moving a ref, for a Merge result. Whoever the repository's policy admits.", example = crate::examples::stage)]
     Stage { repo: String, pack: BlobId },
     // forge builds the merge itself: one squash commit on `into`'s head, under `Merge`'s CAS.
-    #[tool_op(description = "forge builds one squash commit of from onto into's head and moves into to it, both heads checked, and marks change merged; message null takes the change's title. Whoever the repository's policy admits. A text conflict is refused naming each path. Returns Merged.", returns = OpReply, example = crate::examples::squash)]
+    #[tool_op(description = "forge builds one squash commit of from onto into's head and moves into to it, both heads checked, and marks change merged. into is a full ref name, from a revision (a ref or an oid), and expected_into and expected_from full oids; message null takes the change's title. Whoever the repository's policy admits. A text conflict is refused naming each path. Returns Merged.", returns = OpReply, example = crate::examples::squash)]
     SquashMerge {
         repo: String,
         into: Vec<u8>,
@@ -132,7 +132,7 @@ pub enum Op {
     },
     // forge rebuilds change `n` on `onto` as one squash commit, and the change's source moves
     // to it, under a CAS on `expected_head`.
-    #[tool_op(description = "Rebuild change n as one commit on onto and move the change's own branch there, while its head is still expected_head. A conflict is refused naming the paths. Whoever both the change's and the repository's policies admit. Returns Rebased.", returns = OpReply, example = crate::examples::rebase)]
+    #[tool_op(description = "Rebuild change n as one commit on onto (a revision, a ref or an oid) and move the change's own branch there, while its head is still expected_head, a full oid. A conflict is refused naming the paths. Whoever both the change's and the repository's policies admit. Returns Rebased.", returns = OpReply, example = crate::examples::rebase)]
     Rebase {
         repo: String,
         n: u64,
@@ -147,7 +147,7 @@ pub enum Op {
         from: Revision,
     },
     // A branch still at `expected`, that no protection covers and no open change names, goes.
-    #[tool_op(description = "Delete a branch still at expected, that no protection covers and no open change names. Whoever the repository's policy admits.", example = crate::examples::delete_branch)]
+    #[tool_op(description = "Delete a branch (its full ref name, like refs/heads/old) still at expected (a full oid), that no protection covers and no open change names. This is how a branch goes when the repository's settings refuse a delete by push. Whoever the repository's policy admits.", example = crate::examples::delete_branch)]
     DeleteBranch {
         repo: String,
         branch: Vec<u8>,
