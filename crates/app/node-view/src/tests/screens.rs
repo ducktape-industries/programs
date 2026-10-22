@@ -65,6 +65,7 @@ fn sheet_valset(cx: &TestAppContext) {
         })
         .collect();
     serve_set(cx, (0..VALIDATORS).map(key).collect(), members);
+    serve_identity(cx, Vec::new(), Vec::new());
 }
 
 const SYNCED: [Option<u64>; VALIDATORS] = [
@@ -183,6 +184,7 @@ fn screen(state: &str) -> TestAppContext {
                     .refuse::<Query<Valset>>("unavailable", "valset is not running here"),
                 _ => serve_set(&cx, Vec::new(), Vec::new()),
             }
+            serve_identity(&cx, Vec::new(), Vec::new());
             cx.open::<Nodes>();
             cx.run_until_parked();
             cx
