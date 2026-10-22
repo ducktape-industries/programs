@@ -38,7 +38,7 @@ use crate::{
 /// How deep messages nest in one frame: a submission runs at depth 0 and
 /// each message, or reply, one deeper than the run that emitted it. The
 /// kernel's `MAX_DEPTH` (`crates/kernel/host/src/lib.rs`).
-pub const MAX_DEPTH: u32 = 8;
+pub const MAX_DEPTH: u32 = 11;
 
 type Entry<Ctx> = Rc<dyn Fn(Ctx, &[u8]) -> Result<(), Error>>;
 type Execute = Rc<dyn Fn(ExecCtx, &[u8]) -> Step>;

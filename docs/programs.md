@@ -553,7 +553,7 @@ feature off) for its types. The sibling's refusal is your `Err`.
 
 **An emit is a write** the target runs in this frame, as a message from
 this program, once your handler returns Ok; messages run in emit order,
-each before the next, depth first, at most 8 deep. `ctx.emit(target, &op,
+each before the next, depth first, at most 11 deep (the kernel's `MAX_DEPTH`; duckpond and sealpond nest 8 deep until a roll announces the height they switch at). `ctx.emit(target, &op,
 reply)` names the target's `Op` and answers a `MessageId` (this program and
 the message's number, which no other message on the network shares). What
 the target's refusal does is `reply`:
