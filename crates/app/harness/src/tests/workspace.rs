@@ -573,3 +573,88 @@ fn a_read_by_heading_answers_its_section_and_one_way_of_cutting_the_file_is_take
         assert!(failed && text.contains(says), "{call}: {text}");
     }
 }
+
+#[test]
+fn a_read_naming_no_slice_answers_a_long_file_as_its_headings_and_whole_reads_it_whole() {
+    let world = world();
+    let chain = &world.chain;
+    let bound = crate::tools::WHOLE_UP_TO as usize;
+    let filler = "word ".repeat(bound / 5 + 1);
+    let text =
+        format!("# Plan\n{filler}\n## Step 1\none\n```sh\n# not a heading\n```\n## Step 2\ntwo\n");
+    put(chain, "/shared/long.md", &text, false, &[]);
+    let script = format!(
+        "#!/bin/sh\n# usage: run it\n{}",
+        "echo hi\n".repeat(bound / 8 + 1)
+    );
+    put(chain, "/shared/long.sh", &script, false, &[]);
+    let edge = "z".repeat(bound);
+    let head = put(chain, "/shared/edge.md", &edge, false, &[]);
+    let thread = world.opened("m1", "read whole", Some(WINDOW));
+    let long = |more: Value| {
+        let mut asked = json!({ "path": "/shared/long.md" });
+        asked
+            .as_object_mut()
+            .unwrap()
+            .extend(more.as_object().unwrap().clone());
+        asked
+    };
+    turn(
+        chain,
+        3,
+        &[
+            ("c1", "files_read", long(json!({}))),
+            ("c2", "files_read", long(json!({ "whole": true }))),
+            ("c3", "files_read", json!({ "path": "/shared/edge.md" })),
+            (
+                "c4",
+                "files_read",
+                long(json!({ "whole": true, "lines": [1, 2] })),
+            ),
+            ("c5", "files_read", json!({ "path": "/shared/long.sh" })),
+        ],
+    );
+    let outlined = said_by(chain, thread, "c1");
+    let headings = json!([
+        { "heading": "# Plan", "line": 1 },
+        { "heading": "## Step 1", "line": 3 },
+        { "heading": "## Step 2", "line": 8 },
+    ]);
+    assert_eq!(
+        outlined["headings"], headings,
+        "a fenced line is no heading"
+    );
+    assert_eq!(outlined["total_lines"], json!(9));
+    assert_eq!(outlined["size"], json!(text.len()));
+    assert_eq!(
+        outlined["snapshot"],
+        json!(abi::hex(head.digest())),
+        "the head it read"
+    );
+    assert_eq!(
+        outlined["text"],
+        Value::Null,
+        "a long file's text is left out"
+    );
+    assert_eq!(said_by(chain, thread, "c2")["text"], json!(text));
+    assert_eq!(
+        said_by(chain, thread, "c3")["text"],
+        json!(edge),
+        "a file at the bound reads whole"
+    );
+    let plain = said_by(chain, thread, "c5");
+    assert_eq!(
+        (plain["headings"].clone(), plain["text"].clone()),
+        (Value::Null, Value::Null),
+        "a long file that is no markdown answers no headings, its comments included"
+    );
+    assert_eq!(
+        plain["total_lines"],
+        json!(script.split_inclusive('\n').count())
+    );
+    let (refused, failed) = result_of(chain, thread, "c4");
+    assert!(
+        failed && refused.contains("whole reads the file whole"),
+        "{refused}"
+    );
+}

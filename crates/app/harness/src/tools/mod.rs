@@ -311,6 +311,8 @@ pub(crate) fn object(properties: Value, required: &[&str]) -> Value {
 
 pub(crate) const LISTED: u64 = 20;
 
+pub(crate) const WHOLE_UP_TO: u64 = 4096;
+
 pub(crate) fn ahead(ctx: &ExecCtx, blocks: u64) -> Result<u64, Error> {
     let now = ctx.env().height;
     now.checked_add(blocks).ok_or_else(|| {

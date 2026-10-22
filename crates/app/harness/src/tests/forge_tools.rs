@@ -349,8 +349,11 @@ fn a_file_over_what_forge_serves_at_once_is_read_and_searched_a_range_at_a_time(
     let said = answered(chain, thread, "g1");
     let row = json!({ "path": "rows.txt", "line": 11, "text": "row 11" });
     assert_eq!(said["hits"], json!([row]));
-    let skipped = json!(["mixed.txt bytes 64..128: binary in this range"]);
-    assert_eq!(said["skipped"], skipped);
+    assert_eq!(
+        said["skipped"],
+        json!(1),
+        "a binary range is counted, not listed"
+    );
     let first = json!({ "path": "mixed.txt", "line": 1, "text": "find me" });
     let after = json!({ "path": "mixed.txt", "line": null, "offset": 128, "text": "find me" });
     assert_eq!(answered(chain, thread, "g2")["hits"], json!([first, after]));
@@ -553,5 +556,84 @@ fn a_grep_under_a_prefix_no_path_starts_with_is_refused_naming_the_rev() {
     assert_eq!(
         (said["hits"].clone(), said["next"].clone()),
         (json!([]), Value::Null)
+    );
+}
+
+fn outlined_id(chain: &MockChain, thread: u64) -> String {
+    answered(chain, thread, "r1")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn a_forge_read_naming_no_slice_answers_a_long_file_as_its_outline_and_whole_reads_it_whole() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "long reads", Some(WINDOW));
+    let bound = crate::tools::WHOLE_UP_TO as usize;
+    let body = "    let x = 1;\n".repeat(bound / 15 + 1);
+    let rust = format!("fn first() {{\n{body}}}\n\npub struct Second;\n");
+    let edge = "y".repeat(bound);
+    let files = json!({
+        "repo": "long",
+        "files": [
+            { "path": "src/lib.rs", "content": rust },
+            { "path": "edge.txt", "content": edge },
+        ],
+        "message": "long files",
+    });
+    turn(chain, 3, &[("b1", "forge_commit", files)]);
+    answered(chain, thread, "b1");
+    let read = |path: &str| json!({ "repo": "long", "path": path });
+    let whole = json!({ "repo": "long", "path": "src/lib.rs", "whole": true });
+    let sliced = json!({ "repo": "long", "path": "src/lib.rs", "whole": true, "lines": [1, 2] });
+    turn(
+        chain,
+        5,
+        &[
+            ("r1", "forge_read", read("src/lib.rs")),
+            ("r2", "forge_read", whole),
+            ("r3", "forge_read", read("edge.txt")),
+            ("r4", "forge_read", sliced),
+        ],
+    );
+    let outlined = answered(chain, thread, "r1");
+    let names: Vec<&str> = outlined["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["first", "Second"]);
+    assert_eq!(
+        outlined["total_lines"],
+        json!(rust.split_inclusive('\n').count())
+    );
+    assert_eq!(outlined["size"], json!(rust.len()));
+    assert_eq!(
+        outlined["text"],
+        Value::Null,
+        "a long file's text is left out"
+    );
+    assert_eq!(answered(chain, thread, "r2")["text"], json!(rust));
+    assert_eq!(
+        answered(chain, thread, "r3")["text"],
+        json!(edge),
+        "a file at the bound reads whole"
+    );
+    let (text, failed) = result_of(chain, thread, "r4");
+    assert!(failed && text.contains("each go alone"), "{text}");
+    let id = outlined_id(chain, thread);
+    turn(
+        chain,
+        7,
+        &[("r5", "forge_read", json!({ "repo": "long", "id": id }))],
+    );
+    let by_id = answered(chain, thread, "r5");
+    assert_eq!(
+        by_id["symbols"].as_array().map(Vec::len),
+        Some(2),
+        "read by id, a long file is outlined as Rust"
     );
 }

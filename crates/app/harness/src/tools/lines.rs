@@ -1,6 +1,10 @@
 //! Lines of a text, as `files_read` and `forge_read` take them: a range counted from 1, or the
-//! section a markdown heading opens, up to the next heading of its level or a higher one.
+//! section a markdown heading opens, up to the next heading of its level or a higher one; and the
+//! outline those reads answer in place of a text longer than they answer whole.
 use ::program::{Error, invalid, not_found};
+use serde_json::{Value, json};
+
+use super::{WHOLE_UP_TO, symbols};
 
 #[derive(Debug)]
 pub(crate) struct Picked {
@@ -70,6 +74,51 @@ fn headings(all: &[&str]) -> Vec<(usize, usize)> {
         }
     }
     found
+}
+
+pub(crate) enum Outline {
+    Items,
+    Headings,
+    Plain,
+}
+
+impl Outline {
+    pub(crate) fn of(path: Option<&str>) -> Outline {
+        let Some(path) = path else {
+            return Outline::Items;
+        };
+        match path.rsplit_once('.').map(|(_, extension)| extension) {
+            Some("rs") => Outline::Items,
+            Some("md") => Outline::Headings,
+            _ => Outline::Plain,
+        }
+    }
+}
+
+pub(crate) fn outline(text: &str, kind: Outline, slices: &str) -> Value {
+    let all: Vec<&str> = text.split_inclusive('\n').collect();
+    let mut value = json!({
+        "total_lines": all.len(),
+        "left_out": format!("the text is over {WHOLE_UP_TO} bytes, so this is its outline: read it {slices}, or ask whole: true for all of it"),
+    });
+    match kind {
+        Outline::Items => {
+            let items: Vec<Value> = symbols::items(text)
+                .into_iter()
+                .map(|item| json!({ "name": item.name, "lines": [item.first, item.last] }))
+                .collect();
+            value["symbols"] = json!(items);
+        }
+        Outline::Headings => {
+            let found: Vec<Value> = headings(&all)
+                .into_iter()
+                .map(|(index, _)| json!({ "heading": all[index].trim_end(), "line": index + 1 }))
+                .collect();
+            value["headings"] = json!(found);
+        }
+        Outline::Plain => {}
+    }
+    value
 }
 
 pub(crate) fn section(text: &str, heading: &str) -> Result<Picked, Error> {

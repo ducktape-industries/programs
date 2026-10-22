@@ -405,13 +405,14 @@ pub(crate) struct ReadArgs {
     symbol: Option<String>,
     symbols: Option<bool>,
     heading: Option<String>,
+    whole: Option<bool>,
 }
 
 pub(crate) struct Read;
 
 impl Tool for Read {
     const NAME: &'static str = "forge_read";
-    const DESCRIPTION: &'static str = "Read a file of a repository as text, by its path at a branch or commit, or by its object id (from forge_tree): the whole file, some of its lines, one Rust item by name (symbol: a fn, struct, enum, union, trait, type, const, static, mod, macro_rules! or impl, at the top, in an inline mod or in an impl or trait, like main, Config::new or impl Display for Config, generics left out, from its attributes and doc comment to its end; found by a token scan, so an item a macro makes or one inside a fn body is not), the file's Rust items with their lines (symbols), the section a markdown heading opens, or a byte range of it. A name several items share is refused naming each with its lines; a name no item has is refused naming the items whose last part it is, or, when there are none, pointing to symbols. Forge refuses a range longer than it serves at once; a file larger than that reads by lines or by ranges, and as oversize whole. Such a file's range is judged on its own bytes: \"binary in this range\".";
+    const DESCRIPTION: &'static str = "Read a file of a repository as text, by its path at a branch or commit, or by its object id (from forge_tree): the whole file (one longer than harness answers whole comes back as its size, line count and outline, a Rust file's items or a markdown file's headings with their lines, the answer naming the bound; whole: true reads it whole), some of its lines, one Rust item by name (symbol: a fn, struct, enum, union, trait, type, const, static, mod, macro_rules! or impl, at the top, in an inline mod or in an impl or trait, like main, Config::new or impl Display for Config, generics left out, from its attributes and doc comment to its end; found by a token scan, so an item a macro makes or one inside a fn body is not), the file's Rust items with their lines (symbols), the section a markdown heading opens, or a byte range of it. A name several items share is refused naming each with its lines; a name no item has is refused naming the items whose last part it is, or, when there are none, pointing to symbols. Forge refuses a range longer than it serves at once; a file larger than that reads by lines or by ranges, and as oversize whole. Such a file's range is judged on its own bytes: \"binary in this range\".";
     type Args = ReadArgs;
 
     fn schema() -> Value {
@@ -427,6 +428,7 @@ impl Tool for Read {
                 "symbol": { "type": "string", "description": "instead of lines: one Rust item by name, like main, Config::new or impl Display for Config" },
                 "symbols": { "type": "boolean", "description": "instead of the text: each Rust item of the file, by the name symbol takes, with its lines" },
                 "heading": { "type": "string", "description": "instead of lines: a markdown heading line of the file, like \"## Step 2\"; reads from it to the next heading of its level or a higher one, fenced code skipped" },
+                "whole": { "type": "boolean", "description": "read a long file whole rather than its outline; alone, without lines, symbol, symbols, heading or a byte range" },
             }),
             &["repo"],
         )
@@ -453,16 +455,22 @@ impl Tool for Read {
         };
         let shown = path.clone().unwrap_or_else(|| id.clone());
         let outline = args.symbols.unwrap_or(false);
-        let alone = [args.symbol.is_some(), args.heading.is_some(), outline];
+        let whole = args.whole.unwrap_or(false);
+        let alone = [
+            args.symbol.is_some(),
+            args.heading.is_some(),
+            outline,
+            whole,
+        ];
         let picks = alone.into_iter().filter(|&on| on).count();
         let narrowed = args.lines.is_some() || args.offset.is_some() || args.length.is_some();
         let not_alone = picks > 1 || (picks == 1 && narrowed);
         if not_alone {
             return Err(invalid(
-                "symbol, symbols and heading each go alone, without lines or a byte range",
+                "symbol, symbols, heading and whole each go alone, without lines or a byte range",
             ));
         }
-        let rust = path.as_deref().is_none_or(|path| path.ends_with(".rs"));
+        let rust = matches!(lines::Outline::of(path.as_deref()), lines::Outline::Items);
         let rust_asked = args.symbol.is_some() || outline;
         let rust_asked_of_other = rust_asked && !rust;
         if rust_asked_of_other {
@@ -515,12 +523,29 @@ impl Tool for Read {
             })));
         }
         let asked = Query::Blob {
-            repo: args.repo,
-            oid: id,
+            repo: args.repo.clone(),
+            oid: id.clone(),
             range: range(args.offset, args.length)?,
         };
         match ask(ctx, asked)? {
             Reply::Blob { blob, .. } => {
+                let is_text = matches!(blob.content, Content::Text | Content::Oversize);
+                let outlined = !ranged && !whole && is_text && blob.size > super::WHOLE_UP_TO;
+                if outlined {
+                    let served_whole = blob.content == Content::Text;
+                    let text = if served_whole {
+                        String::from_utf8_lossy(&blob.bytes).into_owned()
+                    } else {
+                        text()?
+                    };
+                    let slices = "by lines, symbol or heading, or by offset and length";
+                    let mut value =
+                        lines::outline(&text, lines::Outline::of(path.as_deref()), slices);
+                    value["id"] = json!(blob.oid);
+                    value["path"] = json!(path);
+                    value["size"] = json!(blob.size);
+                    return Ok(Run::Done(value));
+                }
                 let content = match blob.content {
                     Content::Binary if blob.range.len > 0 => "binary in this range".to_owned(),
                     content => format!("{content:?}").to_lowercase(),
@@ -823,7 +848,7 @@ fn cursor(commit: &str, path: &str, place: Place) -> Vec<u8> {
 
 impl Tool for Grep {
     const NAME: &'static str = "forge_grep";
-    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are listed as skipped; a hit after such a range gives its byte offset in place of a line number. It reads the blobs under the prefix, at most 1 MiB of them a page, so a page may hold few hits or none and still have next: go on with cursor while next is there, and every page reads the commit the first one named. A narrow prefix reads less; a prefix no path starts with is refused.";
+    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are counted in skipped; a hit after such a range gives its byte offset in place of a line number. It reads the blobs under the prefix, at most 1 MiB of them a page, so a page may hold few hits or none and still have next: go on with cursor while next is there, and every page reads the commit the first one named. A narrow prefix reads less; a prefix no path starts with is refused.";
     type Args = GrepArgs;
 
     fn schema() -> Value {
@@ -865,7 +890,7 @@ impl Tool for Grep {
             served: None,
             read: 0,
             hits: Vec::new(),
-            skipped: Vec::new(),
+            skipped: 0,
             next: None,
             named: false,
         };
@@ -899,7 +924,7 @@ struct Search<'a> {
     served: Option<u64>,
     read: u64,
     hits: Vec<Value>,
-    skipped: Vec<String>,
+    skipped: u64,
     next: Option<Vec<u8>>,
     named: bool,
 }
@@ -988,7 +1013,7 @@ impl Search<'_> {
             Content::Oversize => self.ranges(path, id, blob.size, from)?,
             Content::Binary | Content::Gitlink => {
                 self.read += blob.size;
-                self.skipped.push(path.into());
+                self.skipped += 1;
             }
         }
         Ok(())
@@ -1027,9 +1052,7 @@ impl Search<'_> {
             self.read += part.range.len;
             at += part.range.len;
             if part.content != Content::Text {
-                let from = at - part.range.len;
-                let skipped = format!("{path} bytes {from}..{at}: binary in this range");
-                self.skipped.push(skipped);
+                self.skipped += 1;
                 carried.clear();
                 recent.clear();
                 self.spans.gap();

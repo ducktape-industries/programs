@@ -192,6 +192,7 @@ pub(crate) struct ReadArgs {
     length: Option<u64>,
     lines: Option<(u64, u64)>,
     heading: Option<String>,
+    whole: Option<bool>,
 }
 
 fn by_lines(
@@ -221,7 +222,7 @@ pub(crate) struct Read;
 
 impl Tool for Read {
     const NAME: &'static str = "files_read";
-    const DESCRIPTION: &'static str = "Read a file of the network's filesystem as text: from an offset, as much as files answers in one read; some of its lines; or the section under a markdown heading. `eof` says whether the file goes on, and a read by lines or heading names the lines it answered and how many the file has. The answer names the snapshot it read, which an edit can pass as its base.";
+    const DESCRIPTION: &'static str = "Read a file of the network's filesystem as text: from an offset, as much as files answers in one read; some of its lines; or the section under a markdown heading. Asked with none of these, a file longer than harness answers whole comes back as its size, line count and outline (a markdown file's headings or a Rust file's items, each with its lines), the answer naming the bound; whole: true reads it whole. `eof` says whether the file goes on, and a read by lines or heading names the lines it answered and how many the file has. The answer names the snapshot it read, which an edit can pass as its base.";
     type Args = ReadArgs;
 
     fn schema() -> Value {
@@ -233,6 +234,7 @@ impl Tool for Read {
                 "length": { "type": "integer", "minimum": 1, "description": "how many bytes; the rest of the file if omitted" },
                 "lines": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2, "description": "instead of offset and length: [from, to], these lines only, counted from 1, both included" },
                 "heading": { "type": "string", "description": "instead of offset and length, or lines: a markdown heading line of the file, like \"## Step 2\"; reads from it to the next heading of its level or a higher one, fenced code skipped" },
+                "whole": { "type": "boolean", "description": "read a long file whole rather than its outline; alone, without lines, a heading or a byte range" },
             }),
             &["path"],
         )
@@ -241,6 +243,14 @@ impl Tool for Read {
     fn run(ctx: &ExecCtx, _: &Seat, args: ReadArgs) -> Result<Run, Error> {
         let at = snapshot(&args.snapshot)?;
         let ranged = args.offset.is_some() || args.length.is_some();
+        let whole = args.whole.unwrap_or(false);
+        let whole_with_a_slice =
+            whole && (ranged || args.lines.is_some() || args.heading.is_some());
+        if whole_with_a_slice {
+            return Err(invalid(
+                "whole reads the file whole: give it without lines, a heading or a byte range",
+            ));
+        }
         match (args.lines, args.heading) {
             (None, None) => {}
             (Some(_), Some(_)) => return Err(invalid("lines or a heading, not both")),
@@ -253,7 +263,7 @@ impl Tool for Read {
             }
         }
         let query = Query::Read {
-            path: args.path,
+            path: args.path.clone(),
             at,
             offset: args.offset.unwrap_or(0),
             len: args.length.unwrap_or(u64::MAX),
@@ -261,6 +271,21 @@ impl Tool for Read {
         let Reply::Contents(contents) = ask(ctx, query)? else {
             return Err(invalid("files answered a read with something else"));
         };
+        let outlined = !ranged && !whole && contents.size > super::WHOLE_UP_TO;
+        if outlined {
+            let bytes = if contents.eof {
+                contents.bytes.clone()
+            } else {
+                read_all(ctx, &args.path, Some(&contents.snapshot))?
+            };
+            if let Ok(text) = String::from_utf8(bytes) {
+                let slices = "by lines, by heading, or by offset and length";
+                let mut value = lines::outline(&text, lines::Outline::of(Some(&args.path)), slices);
+                value["snapshot"] = json!(blob(&contents.snapshot));
+                value["size"] = json!(contents.size);
+                return Ok(Run::Done(value));
+            }
+        }
         let mut value = json!({
             "snapshot": blob(&contents.snapshot),
             "size": contents.size,
