@@ -8,6 +8,7 @@ default-run = "founding"
 toml = "0.9"
 
 [dev-dependencies]
+gitcore = { path = "../../lib/gitcore" }
 tempfile = { workspace = true }
 toml = "0.9"
 
@@ -17,6 +18,7 @@ blob = { workspace = true }
 borsh = { workspace = true }
 borsh-json = { path = "../../lib/borsh-json" }
 program = { path = "../program" }
+serde_json = { workspace = true }
 wasm-encoder = "0.251"
 wasmparser = "0.251"
 access = { path = "../../system/access" }

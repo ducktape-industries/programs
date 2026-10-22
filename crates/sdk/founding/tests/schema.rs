@@ -18,7 +18,7 @@ fn the_committed_interfaces_are_the_built_ones() {
         .collect();
     let mut stale = Vec::new();
     for program in &every {
-        let built = borsh::to_vec(&founding::schema(program).unwrap()).unwrap();
+        let built = founding::baseline(&founding::schema(program).unwrap()).unwrap();
         let path = dir.join(format!("{program}.schema"));
         if write {
             std::fs::create_dir_all(&dir).unwrap();
@@ -69,6 +69,26 @@ fn every_founded_program_has_a_valid_schema_of_its_op_query_and_reply() {
             .iter()
             .all(|declaration| schema.get_definition(*declaration).is_some());
         assert!(rooted, "{program}");
+    }
+}
+
+#[test]
+fn every_baseline_reads_back_as_the_interface_its_program_builds() {
+    for program in programs() {
+        let schema = founding::schema(program).unwrap();
+        let baseline = founding::baseline(&schema).unwrap();
+        assert!(std::str::from_utf8(&baseline).is_ok(), "{program}");
+        assert_eq!(
+            founding::interface(&baseline).unwrap().schema,
+            schema,
+            "{program}"
+        );
+        let packed = borsh::to_vec(&schema).unwrap();
+        assert_eq!(
+            founding::interface(&packed).unwrap().schema,
+            schema,
+            "{program}"
+        );
     }
 }
 

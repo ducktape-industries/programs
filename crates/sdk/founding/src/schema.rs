@@ -4,8 +4,8 @@
 use std::fs;
 use std::path::Path;
 
-use borsh::BorshSchema;
 use borsh::schema::BorshSchemaContainer;
+use borsh::{BorshDeserialize, BorshSchema};
 use program::Program;
 use program::tools::Tools;
 
@@ -13,6 +13,24 @@ use crate::Result;
 
 pub fn schema(program: &str) -> Option<BorshSchemaContainer> {
     interface(program).map(|(schema, _)| schema)
+}
+
+pub fn baseline(schema: &BorshSchemaContainer) -> Result<Vec<u8>> {
+    let container = BorshSchemaContainer::for_type::<BorshSchemaContainer>();
+    let bytes = borsh::to_vec(schema)?;
+    let json = borsh_json::decode(&container, container.declaration(), "interface", &bytes)
+        .map_err(|fault| format!("the interface reads as no baseline: {fault}"))?;
+    let mut text = serde_json::to_vec_pretty(&json)?;
+    text.push(b'\n');
+    Ok(text)
+}
+
+pub(crate) fn from_baseline(text: &[u8]) -> Result<BorshSchemaContainer> {
+    let container = BorshSchemaContainer::for_type::<BorshSchemaContainer>();
+    let json: serde_json::Value = serde_json::from_slice(text)?;
+    let bytes = borsh_json::encode(&container, container.declaration(), "baseline", &json)
+        .map_err(|fault| format!("the baseline names no interface: {fault}"))?;
+    Ok(BorshSchemaContainer::try_from_slice(&bytes)?)
 }
 
 pub fn tools(program: &str) -> Option<Tools> {

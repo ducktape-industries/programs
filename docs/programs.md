@@ -208,7 +208,10 @@ renamed, retyped or dropped from the end, or a tag taken again, in `Op`,
 with its tag kept is marked `-` and passes. founding's
 `the_committed_interfaces_are_the_built_ones` holds the files to the
 crates: a change that grows an interface writes them again with
-`INTERFACES_WRITE=1 cargo test -p founding --test schema`.
+`INTERFACES_WRITE=1 cargo test -p founding --test schema`. Each file is its
+interface's Borsh schema as JSON text, one item a line, so forge and git
+merge two changes that grow different parts of one interface. Two appends
+at one enum's end still conflict, since both take the same tag.
 
 **Each query names its reply.** `#[derive(program::Ask)]` with
 `#[ask(Poll)]` (the program) and, on each variant, the reply that answers

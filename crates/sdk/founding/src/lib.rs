@@ -20,7 +20,7 @@ use wasmparser::{Encoding, Parser, Payload, Validator};
 
 pub use diff::{Change, Difference, differences};
 pub use program::source::Source;
-pub use schema::{schema, tools, write_schemas};
+pub use schema::{baseline, schema, tools, write_schemas};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -303,6 +303,13 @@ pub struct Interface {
 }
 
 pub fn interface(bytes: &[u8]) -> Result<Interface> {
+    if bytes.starts_with(b"{") {
+        return Ok(Interface {
+            schema: schema::from_baseline(bytes)?,
+            code: false,
+            source: None,
+        });
+    }
     if !bytes.starts_with(b"\0asm") {
         let schema = BorshSchemaContainer::try_from_slice(bytes)?;
         return Ok(Interface {
