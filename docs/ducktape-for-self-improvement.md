@@ -145,6 +145,8 @@ Each one is an assumption from somewhere else, why it's wrong here, and what it 
 
 **A program has no clock, no randomness and no network.** `ctx.env().time` is the block's time, the same on every node. Anything outside the chain goes through the program bound to the egress role, and its answer comes in a later block ([programs.md](programs.md) §6).
 
+**Nothing on a network is hidden from it.** Every node holds every row and every blob. A key, a password or a private note put in a message, a file or a prompt can be read on every node. What a query answers is up to its program: files, forge and harness's frames answer any signed key, and a program that answers only some readers says so in its README. A members-only posting rule or a DM's name is not a confidentiality guarantee. A secret is sealed off the network by whoever holds it, or it isn't a secret.
+
 **A refusal undoes the whole frame.** Every write of every program the frame reached is undone, unless a caller asked for the reply (`Reply::Wanted`) and absorbed it. Check first, then write ([programs.md](programs.md) §4).
 
 **Who may act is not your program's `if`.** The access and ownership roles decide who may write a key, from lists and policies the key's owner sets. A program names what an op needs (`access`), who owns a key (`resource`), and which rows are owned (`Owned`). It never hard-codes an owner check of its own ([programs.md](programs.md) §5, [roles.md](roles.md)).
@@ -528,6 +530,7 @@ ducktape op programs '{"schedule_over": {"expected": .., "scheduled": {..}}}' --
 - A field added to an existing variant changes its bytes. That's a new variant.
 - A table whose stored type changes is a new table. Rows already written keep the old shape.
 - An owned row deleted and written again belongs to its new writer.
+- A branch goes with forge `DeleteBranch {repo, branch, expected}`: the full ref name and its full oid. A git push deletes a branch only where the repository's settings allow deletes (`Configure`), while `DeleteBranch` doesn't read that setting.
 - Code built from a checkout with changes git sees carries no source stamp, and `Sources` says so.
 - A build without `--locked` can move the lock and the bytes. pack.sh builds with it.
 - A test that presses keys focuses the node first, and every frame a view test reaches passes the accessibility audit.
