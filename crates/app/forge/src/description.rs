@@ -206,6 +206,23 @@ pub fn describe(op: &Op) -> Description {
             };
             (verb, repo, fields)
         }
+        Op::SetTrain {
+            repo,
+            branch,
+            train,
+        } => {
+            let mut fields = vec![field("branch", text(branch))];
+            if let Some(train) = train {
+                fields.push(field("length", Value::count(train.length)));
+                let tip = train.tip.iter().map(Value::text).collect();
+                fields.push(field("tip", Value::List(tip)));
+            }
+            let verb = match train {
+                Some(_) => "Set merge train",
+                None => "Drop merge train",
+            };
+            (verb, repo, fields)
+        }
         Op::Enqueue {
             repo,
             n,

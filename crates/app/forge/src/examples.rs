@@ -198,6 +198,18 @@ pub(crate) fn dequeue() -> Op {
     Op::Dequeue { repo: repo(), n: 1 }
 }
 
+pub(crate) fn set_train() -> Op {
+    let train = Train {
+        length: 4,
+        tip: vec!["ci/test".into()],
+    };
+    Op::SetTrain {
+        repo: repo(),
+        branch: main(),
+        train: Some(train),
+    }
+}
+
 pub(crate) fn adopt() -> Op {
     Op::AdoptOwners {
         kind: "forge.change".into(),
@@ -397,6 +409,13 @@ pub(crate) fn queue() -> Query {
         repo: repo(),
         branch: main(),
         page: page(),
+    }
+}
+
+pub(crate) fn train() -> Query {
+    Query::Train {
+        repo: repo(),
+        branch: main(),
     }
 }
 

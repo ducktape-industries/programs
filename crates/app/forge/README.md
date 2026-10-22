@@ -29,9 +29,9 @@ only.
   pack, a branch deleted, the merge queue, a rebase, and closing someone else's change)
   writes it, while the shared record (`p/`) takes every op's activity. Its settings are a
   second owned row (`f/`, kind `forge.settings`), its creator's from `Create`:
-  `Configure`, `Protect`, `RequireChecks` and `Archive` write that row, so the settings'
-  own policy decides them. A repository created before the settings row has none, and
-  those four write its custody row as the other ops do.
+  `Configure`, `Protect`, `RequireChecks`, `SetTrain` and `Archive` write that row, so the
+  settings' own policy decides them. A repository created before the settings row has none,
+  and those five write its custody row as the other ops do.
   A repository's number counter allocates the shared future issue/change number space.
 - Every table is declared once in `src/state.rs` as a typed `store::Map`/`Set`/`Item`:
   records (repos, refs, changes, reviews), the indexes over them (activity,
@@ -122,6 +122,7 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Statuses { repo: r, commit: c, page }` | `page<CommitStatus>`: every status of `c`, by reporter then context, each with its state, url and height |
 | `Required { repo: r, page }` | `page<RequiredBranch>`: the branches with required checks, in byte-name order, each with its reporter and contexts |
 | `Queue { repo: r, branch: b"refs/heads/dev".to_vec(), page }` | `page<QueueEntry>`: the branch's merge queue, first in line first, each with its head when it joined and who queued it |
+| `Train { repo: r, branch: b"refs/heads/dev".to_vec() }` | `Option<Train>` and `Option<Formed>`: the branch's train, and the changes it formed, each with its Preview's commit, whether the front went on alone, and the block it formed in |
 | `Archived { repo: r }` | `archived`: whether the repository is archived (`Archive`) |
 | `ArchivedRepos { page }` | `page<RepoInfo>`: the archived repositories, which `Repos` leaves out, in name order |
 
@@ -234,7 +235,7 @@ A repository's writers are whoever its list in the access program allows, at
 (`access::Op::Set`). A repository created before forge kept that default (it has no row in
 `REPOS_DEFAULTING_TO_OWNER`, `d/`) takes anyone's writes until its owner sets a list. `Push`, `Merge`, `SquashMerge`, `Stage`, `DeleteBranch` and
 a `ChangeClose` by anyone but the change's author need that key; `Configure`,
-`Protect`, `RequireChecks` and `Archive` need `forge::settings_key(repo)`: its owner alone unless
+`Protect`, `RequireChecks`, `SetTrain` and `Archive` need `forge::settings_key(repo)`: its owner alone unless
 the owner sets a list there; on a repository from before the default it follows the
 repository's list unless the owner sets one of its own. While the ownership role is bound
 beside access, a write needs both: the access list and the policy of the owned row it writes (the
@@ -267,6 +268,7 @@ Closing is terminal; there is no reopen operation.
 | `RequireChecks { repo: r, branch: b"refs/heads/dev".to_vec(), required: Some(Required { reporter, contexts }) }` | the branch moves only by a gated merge (`None` drops it); empty output |
 | `Enqueue { repo: r, n: 1, expected_head: b }` | change 1 joins its target's merge queue; empty output |
 | `Dequeue { repo: r, n: 1 }` | change 1 leaves its queue; empty output |
+| `SetTrain { repo: r, branch: b"refs/heads/dev".to_vec(), train: Some(Train { length: 4, tip }) }` | the queue lands up to 4 changes at once, judged on the last one's Preview in each `tip` context (`None` drops it); empty output |
 | `Archive { repo: r, archived: true }` | archives the repository (`false`: restores it); empty output |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
@@ -374,7 +376,30 @@ the new head. An entry leaves the queue, with a `left queue` notice in its chang
 whoever queued it, when a required context goes `Failed` or `Errored`, when its Preview
 is refused (a conflict names its paths), or when its head moves; a change that merged or
 closed otherwise just leaves. Each op that moves a ref, ends or re-points a change,
-reports a status or changes what a branch requires moves the repository's queues on.
+reports a status or changes what a branch requires, or its train, moves the repository's
+queues on.
+
+`SetTrain { branch, train: Some(Train { length, tip }) }` lets a queue land up to `length`
+changes at once. The front is previewed on the branch's head and each of the next `length - 1`
+in line on the Preview ahead of it, all in the one op that settles the queue, so the last
+one's Preview (the train's tip) holds them all. Each of those Previews is told to watchers from
+that one frame, side by side, so what a watcher reports on them arrives at the same depth
+whatever the train's length. A change joins while its own Preview is Passed in every required
+context `tip` doesn't name; the train ends at the first change that isn't, or whose squash on
+the one ahead conflicts, and that change keeps its place until it reaches the front. When the
+tip is Passed in every `tip` context, the branch moves to the tip and each change in the train
+is merged, one squash commit each, so the branch stays linear. A red tip sends the front on
+alone, judged on its own Preview as without a train: green lands it, red takes it out of the
+queue. Each change behind it is then judged the same way as it reaches the front, on the same
+Previews, so a red caused by the change at place `j` costs `j - 1` extra runs, each landing one
+change, before that change leaves. A train takes every change eligible by the end of the block
+it forms in, then holds its members until its verdict, so a later review neither grows it nor
+moves its tip; a member that leaves, moves or goes red re-forms it from the changes eligible
+then. The queue is the only writer of the Previews of the first `length` in line: `Preview` of
+one of them answers the Preview the queue made and builds nothing. `Query::Train` answers the
+setting and the train formed. `tip` names only required contexts and `length` is at least 1;
+`None`, or `RequireChecks` with `required: None`, drops the train. `SetTrain` needs what
+`RequireChecks` needs.
 
 `Dispatch { event_type, payload, at }` tells every watcher (`Watched::Dispatched`) that a
 writer dispatched `event_type` at the commit `at` resolves to: a branch ref goes to its head,

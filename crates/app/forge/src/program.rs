@@ -68,6 +68,7 @@ impl Program for Forge {
                 | Op::ChangeClose { .. }
                 | Op::Status { .. }
                 | Op::RequireChecks { .. }
+                | Op::SetTrain { .. }
         );
         let actor = &Principal::Account(ctx.sender_account()?);
         let governed = crate::ops::governed(ctx, &op).map(str::to_owned);
@@ -207,6 +208,11 @@ impl Program for Forge {
                 expected_head,
             } => enqueue(ctx, actor, &repo, n, &expected_head).map(|()| None),
             Op::Dequeue { repo, n } => dequeue(ctx, &repo, n).map(|()| None),
+            Op::SetTrain {
+                repo,
+                branch,
+                train,
+            } => crate::queue::set_train(ctx, &repo, &branch, train).map(|()| None),
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(ctx, &kind, after, limit).map(|()| None)
             }
@@ -391,6 +397,14 @@ impl Program for Forge {
                 height,
                 page: crate::queries::archived_repos(ctx, &listing(page)?)?,
             },
+            Query::Train { repo, branch } => {
+                let (train, formed) = crate::queue::train(ctx, repo, branch)?;
+                Reply::Train {
+                    height,
+                    train,
+                    formed,
+                }
+            }
         })
     }
 }

@@ -1330,3 +1330,124 @@ fn a_merge_leaves_a_change_with_a_required_context_unpassed_as_it_was() {
     assert_eq!(world.preview_of(2), Some(before));
     assert!(world.wanted(LANE_ACCOUNT).is_empty());
 }
+
+const TRAIN_LENGTH: u64 = 6;
+
+fn train_files(changed: Option<u64>) -> Vec<(String, String)> {
+    (0..2 * TRAIN_LENGTH)
+        .map(|i| {
+            let text = match changed == Some(i) {
+                true => format!("{i}"),
+                false => "0".into(),
+            };
+            (format!("t{i}"), text)
+        })
+        .collect()
+}
+
+fn train_commit(world: &mut World, parents: &[Oid], changed: Option<u64>) -> Oid {
+    let files = train_files(changed);
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(path, text)| (path.as_str(), text.as_str()))
+        .collect();
+    world.commit(parents, &files)
+}
+
+fn train_formed(world: &World) -> Vec<u64> {
+    let asked = forge::Query::Train {
+        repo: REPO.into(),
+        branch: b"refs/heads/main".to_vec(),
+    };
+    let reply = world.chain.query(forge::PROGRAM, &asked).unwrap();
+    let forge::Reply::Train { formed, .. } = reply else {
+        panic!("a train answers Train: {reply:?}");
+    };
+    formed
+        .map(|formed| formed.members.iter().map(|member| member.n).collect())
+        .unwrap_or_default()
+}
+
+fn train_change_state(world: &World, n: u64) -> forge::ChangeState {
+    let asked = forge::Query::Change {
+        repo: REPO.into(),
+        n,
+        page: PageRequest::first(1),
+    };
+    let reply = world.chain.query(forge::PROGRAM, &asked).unwrap();
+    let forge::Reply::Change { change, .. } = reply else {
+        panic!("a change answers Change: {reply:?}");
+    };
+    change.state
+}
+
+#[test]
+fn a_train_that_forms_inside_a_landing_takes_every_member_whatever_its_length() {
+    let mut world = world();
+    let base = train_commit(&mut world, &[], None);
+    world.push(None, base, "main");
+    let mut heads = Vec::new();
+    for i in 0..2 * TRAIN_LENGTH {
+        let head = train_commit(&mut world, &[base], Some(i));
+        let branch = format!("t{i}");
+        world.push(None, head, &branch);
+        world.open_from(&branch);
+        heads.push(head);
+    }
+    world.require();
+    let train = forge::Op::SetTrain {
+        repo: REPO.into(),
+        branch: b"refs/heads/main".to_vec(),
+        train: Some(forge::Train {
+            length: TRAIN_LENGTH,
+            tip: vec![lane_context()],
+        }),
+    };
+    world.forge(&train).unwrap();
+    for (i, head) in heads.iter().enumerate() {
+        let reach = format!("t{i}");
+        world
+            .say(
+                REVIEWER,
+                *head,
+                REVIEW,
+                CheckState::Passed,
+                &[reach.as_str()],
+            )
+            .unwrap();
+    }
+    for (i, head) in heads.iter().enumerate() {
+        let enqueue = forge::Op::Enqueue {
+            repo: REPO.into(),
+            n: i as u64 + 1,
+            expected_head: head.to_hex(),
+        };
+        world.forge(&enqueue).unwrap();
+    }
+    let first: Vec<u64> = (1..=TRAIN_LENGTH).collect();
+    assert_eq!(train_formed(&world), first);
+    let tip = world
+        .preview_of(TRAIN_LENGTH)
+        .expect("the tip has a Preview");
+    let tip = Oid::from_hex(Hash::Sha1, &tip).unwrap();
+    let everything: Vec<String> = (0..2 * TRAIN_LENGTH).map(|i| format!("t{i}")).collect();
+    let reach: Vec<&str> = everything.iter().map(String::as_str).collect();
+    world.report(tip, &reach, Some(TRAIN_LENGTH)).unwrap();
+    for n in first {
+        assert_eq!(train_change_state(&world, n), forge::ChangeState::Merged);
+    }
+    let second: Vec<u64> = (TRAIN_LENGTH + 1..=2 * TRAIN_LENGTH).collect();
+    assert_eq!(
+        train_formed(&world),
+        second,
+        "the next train forms whole inside the frame that landed the first"
+    );
+    for n in second {
+        let merge = world.preview_of(n).expect("each member has a Preview");
+        let merge = Oid::from_hex(Hash::Sha1, &merge).unwrap();
+        let reviewed = world.statuses(merge).iter().any(|(context, state, _)| {
+            *context == review_context() && *state == CheckState::Passed
+        });
+        assert!(reviewed, "forge-reach heard member {n}'s Preview");
+    }
+}

@@ -486,7 +486,11 @@ pub(crate) fn preview(
     repo: &str,
     n: u64,
 ) -> Result<OpReply, Error> {
-    let made = previewed(ctx, require_named(actor)?, repo, n)?;
+    let committer = require_named(actor)?;
+    let made = match crate::queue::kept_preview(ctx, repo, n)? {
+        Some(made) => made,
+        None => previewed(ctx, committer, repo, n, None)?,
+    };
     Ok(OpReply::Previewed {
         height: ctx.env().height,
         n,
@@ -499,6 +503,7 @@ pub(crate) fn previewed(
     committer: AccountNumber,
     repo: &str,
     n: u64,
+    onto: Option<Oid>,
 ) -> Result<PreviewInfo, Error> {
     let env = ctx.env();
     let mut record = load_repo(ctx, repo)?;
@@ -506,7 +511,10 @@ pub(crate) fn previewed(
     let change = load_change(ctx, repo, n)?;
     require_open(&change)?;
     let from = resolve(ctx, repo, &change.from, hash)?;
-    let into = resolve(ctx, repo, &Revision::Ref(change.into.clone()), hash)?;
+    let into = match onto {
+        Some(onto) => onto,
+        None => resolve(ctx, repo, &Revision::Ref(change.into.clone()), hash)?,
+    };
     let key = (repo.to_owned(), n);
     if let Some(made) = crate::state::PREVIEWS.get(ctx, &key)?
         && made.into_head == into.to_hex()

@@ -12,7 +12,7 @@ use store::{Item, Kind, Map, Owned, Set};
 
 use crate::contract::{
     Bounds, Change, ChangeState, CommitStatus, PreviewInfo, Principal, QueueEntry, Repo, Required,
-    Review, Revision, Watched, valid_repo_name,
+    Review, Revision, Train, Watched, valid_repo_name,
 };
 use crate::objects::hash_of;
 
@@ -78,6 +78,8 @@ pub const QUEUE: Map<(String, Vec<u8>, u64), QueueEntry> = Map::new("e/");
 pub const QUEUED: Map<(String, u64), (Vec<u8>, u64)> = Map::new("g/");
 // The last place a queue gave out.
 pub const QUEUE_SEQ: Item<u64> = Item::new("queue-seq");
+pub const TRAINS: Map<(String, Vec<u8>), Train> = Map::new("y/");
+pub const FORMED: Map<(String, Vec<u8>), HeldTrain> = Map::new("z/");
 // The archived repositories, by name. `ACTIVITY` holds none of them, so `Repos` lists none.
 pub const ARCHIVED: Set<String> = Set::new("h/");
 pub const REPOS_DEFAULTING_TO_OWNER: Set<String> = Set::new("d/");
@@ -394,6 +396,20 @@ pub struct Authorship {
 
 impl Kind for Authorship {
     const KIND: &'static str = "forge.change";
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct HeldTrain {
+    pub members: Vec<HeldMember>,
+    pub alone: bool,
+    pub height: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct HeldMember {
+    pub seq: u64,
+    pub n: u64,
+    pub merge: String,
 }
 
 // The authorship of change `n` of `repo`, written again: a no-op for a change that has none.

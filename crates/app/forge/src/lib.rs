@@ -55,9 +55,10 @@ pub use program::Forge;
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ACTIVITY, ARCHIVED, ARCHIVING, AUTHORED, AUTHORSHIP, BOUNDS, CHANGES, CUSTODY, INVOLVED,
-        LOGGING, MESSAGES, NUMBERS, PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS,
-        REPOS_DEFAULTING_TO_OWNER, REQUIRED, REVIEWS, SETTINGS_CUSTODY, STATUSES, WATCHERS, WRITES,
+        ACTIVITY, ARCHIVED, ARCHIVING, AUTHORED, AUTHORSHIP, BOUNDS, CHANGES, CUSTODY, FORMED,
+        INVOLVED, LOGGING, MESSAGES, NUMBERS, PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS,
+        REPOS_DEFAULTING_TO_OWNER, REQUIRED, REVIEWS, SETTINGS_CUSTODY, STATUSES, TRAINS, WATCHERS,
+        WRITES,
     };
 }
 
@@ -94,6 +95,7 @@ fn op_variants_only_append() {
             "Dispatch",
             "-",
             "Migrate",
+            "SetTrain",
         ]
     );
 }

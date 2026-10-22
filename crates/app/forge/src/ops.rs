@@ -122,7 +122,11 @@ pub(crate) fn writable(ctx: &QueryCtx, op: &Op) -> Result<(), Error> {
 pub(crate) fn changes_settings(op: &Op) -> bool {
     matches!(
         op,
-        Op::Configure { .. } | Op::Protect { .. } | Op::RequireChecks { .. } | Op::Archive { .. }
+        Op::Configure { .. }
+            | Op::Protect { .. }
+            | Op::RequireChecks { .. }
+            | Op::SetTrain { .. }
+            | Op::Archive { .. }
     )
 }
 
@@ -131,6 +135,7 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
         Op::Configure { repo, .. }
         | Op::Protect { repo, .. }
         | Op::RequireChecks { repo, .. }
+        | Op::SetTrain { repo, .. }
         | Op::Push { repo, .. }
         | Op::Merge { repo, .. }
         | Op::Stage { repo, .. }
@@ -165,6 +170,7 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         Op::Configure { repo, .. }
         | Op::Protect { repo, .. }
         | Op::RequireChecks { repo, .. }
+        | Op::SetTrain { repo, .. }
         | Op::Archive { repo, .. } => {
             vec![Need::write(settings_key(repo))]
         }

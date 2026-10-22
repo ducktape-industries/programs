@@ -3,8 +3,8 @@ use ::program::{BlobId, HashKind};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 use crate::state::{
-    ACTIVITY, ARCHIVED, AUTHORED, CHANGES, INVOLVED, PREVIEWS, PROTECTED, QUEUE, REFS, REPOS,
-    REQUIRED, REVIEWS, STATUSES,
+    ACTIVITY, ARCHIVED, AUTHORED, CHANGES, FORMED, INVOLVED, PREVIEWS, PROTECTED, QUEUE, REFS,
+    REPOS, REQUIRED, REVIEWS, STATUSES, TRAINS,
 };
 
 pub use crate::read_contract::*;
@@ -163,7 +163,7 @@ pub enum Op {
     Watch { deliver: Vec<u8> },
     // forge builds change `n`'s squash on its target's head, as `SquashMerge` would land it, and
     // points `refs/changes/<n>/merge` at it: the commit a gated merge's checks run on.
-    #[tool_op(description = "Build, without moving the target, the squash change n would land on its target's current head, and point refs/changes/<n>/merge at it: the commit required checks run on. Anyone may. Returns the preview.", returns = OpReply, example = crate::examples::preview)]
+    #[tool_op(description = "Build, without moving the target, the squash change n would land on its target's current head, and point refs/changes/<n>/merge at it: the commit required checks run on. A change among the first length of a merge train's queue answers the Preview the queue made on the change ahead, and builds nothing. Anyone may. Returns the preview.", returns = OpReply, example = crate::examples::preview)]
     Preview { repo: String, n: u64 } = 18,
     /// The sender's status of a commit in one context (e.g. `ci/test`).
     #[tool_op(description = "Report your status of a commit in one context (such as ci/test): Pending, Passed, Failed or Errored, with an optional url. Recorded as yours; anyone may report.", example = crate::examples::status)]
@@ -215,6 +215,12 @@ pub enum Op {
         first: Option<::program::ProgramId>,
         last: Option<::program::ProgramId>,
     } = 27,
+    #[tool_op(description = "Set branch's merge train: its queue previews up to length changes stacked, each squashed onto the one ahead, and lands them together once the last one's Preview is Passed in every context tip names and each change's own Preview is Passed in every other required context; a red tip sends the front on alone. Every change in the train's reach is previewed in one frame, so a train of any length forms at the same depth. A train takes the changes eligible by the end of the block it forms in, then holds them until its verdict. null drops it, back to one change at a time. Whoever the repository's policy admits.", example = crate::examples::set_train)]
+    SetTrain {
+        repo: String,
+        branch: Vec<u8>,
+        train: Option<Train>,
+    },
 }
 
 impl Op {
@@ -237,6 +243,7 @@ impl Op {
             | Op::Preview { repo, .. }
             | Op::Status { repo, .. }
             | Op::RequireChecks { repo, .. }
+            | Op::SetTrain { repo, .. }
             | Op::Enqueue { repo, .. }
             | Op::Dequeue { repo, .. }
             | Op::Archive { repo, .. }
@@ -472,6 +479,10 @@ pub enum Query {
         principal: Principal,
         page: PageRequest,
     },
+    #[reads(TRAINS, FORMED)]
+    #[ask(Reply::Train { height: u64, train: Option<Train>, formed: Option<Formed> })]
+    #[tool_query(description = "A branch's merge train: its length and tip contexts, and the changes it formed, first in line first, each with its Preview's commit (the last is the train's tip), whether a red tip sent the front on alone, and the block it formed in.", example = crate::examples::train)]
+    Train { repo: String, branch: Vec<u8> },
 }
 
 impl Query {
@@ -513,7 +524,8 @@ impl Query {
             | Query::Archived { .. }
             | Query::History { .. }
             | Query::Shallow { .. }
-            | Query::Compares { .. } => None,
+            | Query::Compares { .. }
+            | Query::Train { .. } => None,
         }
     }
 
@@ -545,7 +557,8 @@ impl Query {
             | Query::Archived { .. }
             | Query::History { .. }
             | Query::Shallow { .. }
-            | Query::Compares { .. } => None,
+            | Query::Compares { .. }
+            | Query::Train { .. } => None,
         }
     }
 }
@@ -700,6 +713,11 @@ pub enum Reply {
     ReviewRequests {
         height: u64,
         page: PageResponse<ChangeSummary>,
+    },
+    Train {
+        height: u64,
+        train: Option<Train>,
+        formed: Option<Formed>,
     },
 }
 
@@ -1051,6 +1069,25 @@ pub struct QueueEntry {
     pub head: String,
     pub by: Principal,
     pub height: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Train {
+    pub length: u64,
+    pub tip: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Formed {
+    pub members: Vec<TrainMember>,
+    pub alone: bool,
+    pub height: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct TrainMember {
+    pub n: u64,
+    pub merge: String,
 }
 
 pub const PACK_KIND: &str = "pack";

@@ -8,7 +8,8 @@ use crate::contract::{
     CheckState, CommitStatus, PageResponse, PreviewInfo, Principal, Required, RequiredBranch,
 };
 use crate::state::{
-    PREVIEWS, REQUIRED, STATUSES, load_bounds, load_repo, parse_oid, ref_key, repo_hash,
+    FORMED, PREVIEWS, REQUIRED, STATUSES, TRAINS, load_bounds, load_repo, parse_oid, ref_key,
+    repo_hash,
 };
 
 pub(crate) struct Report {
@@ -66,7 +67,11 @@ pub(crate) fn require(
             }
             REQUIRED.put(ctx, &key, &required);
         }
-        None => REQUIRED.remove(ctx, &key),
+        None => {
+            REQUIRED.remove(ctx, &key);
+            TRAINS.remove(ctx, &key);
+            FORMED.remove(ctx, &key);
+        }
     }
     Ok(())
 }

@@ -998,6 +998,29 @@
       }
     ],
     [
+      "Formed",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "members",
+                "Vec<TrainMember>"
+              ],
+              [
+                "alone",
+                "bool"
+              ],
+              [
+                "height",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "GitSignature",
       {
         "struct": {
@@ -1469,6 +1492,11 @@
               27,
               "Migrate",
               "Op__Migrate"
+            ],
+            [
+              28,
+              "SetTrain",
+              "Op__SetTrain"
             ]
           ]
         }
@@ -2101,6 +2129,29 @@
       }
     ],
     [
+      "Op__SetTrain",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "repo",
+                "String"
+              ],
+              [
+                "branch",
+                "Vec<u8>"
+              ],
+              [
+                "train",
+                "Option<Train>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Op__SquashMerge",
       {
         "struct": {
@@ -2285,6 +2336,26 @@
       }
     ],
     [
+      "Option<Formed>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Formed"
+            ]
+          ]
+        }
+      }
+    ],
+    [
       "Option<MergedHeads>",
       {
         "enum": {
@@ -2399,6 +2470,26 @@
               1,
               "Some",
               "String"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Train>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Train"
             ]
           ]
         }
@@ -3048,6 +3139,11 @@
               27,
               "ReviewRequests",
               "Query__ReviewRequests"
+            ],
+            [
+              28,
+              "Train",
+              "Query__Train"
             ]
           ]
         }
@@ -3554,6 +3650,25 @@
       }
     ],
     [
+      "Query__Train",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "repo",
+                "String"
+              ],
+              [
+                "branch",
+                "Vec<u8>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Query__Tree",
       {
         "struct": {
@@ -3807,6 +3922,11 @@
               24,
               "ReviewRequests",
               "Reply__ReviewRequests"
+            ],
+            [
+              25,
+              "Train",
+              "Reply__Train"
             ]
           ]
         }
@@ -4295,6 +4415,29 @@
       }
     ],
     [
+      "Reply__Train",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "train",
+                "Option<Train>"
+              ],
+              [
+                "formed",
+                "Option<Formed>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Reply__Tree",
       {
         "struct": {
@@ -4742,6 +4885,44 @@
       }
     ],
     [
+      "Train",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "length",
+                "u64"
+              ],
+              [
+                "tip",
+                "Vec<String>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "TrainMember",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "n",
+                "u64"
+              ],
+              [
+                "merge",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "TreeInfo",
       {
         "struct": {
@@ -5042,6 +5223,19 @@
       {
         "sequence": {
           "elements": "String",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<TrainMember>",
+      {
+        "sequence": {
+          "elements": "TrainMember",
           "length_range": {
             "end": 4294967295,
             "start": 0
