@@ -27,6 +27,7 @@ mod properties;
 mod reactions;
 mod readers;
 mod rooms;
+mod sealed;
 mod tags;
 
 const ADA: Principal = Principal::Account(1);

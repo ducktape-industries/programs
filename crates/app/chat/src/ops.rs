@@ -281,7 +281,7 @@ pub(crate) fn notify_with(
     Ok(())
 }
 
-fn write(
+pub(crate) fn write(
     ctx: &ExecCtx,
     sender: &Principal,
     channel_id: String,
@@ -439,6 +439,7 @@ pub(crate) fn delete(
         deleted: true,
         ..old.clone()
     };
+    crate::state::SEALED_BODIES.remove(ctx, &(channel_id.to_owned(), seq));
     put_message(ctx, &tombstone)?;
     report(ctx, sender, Some(&old), &tombstone)?;
     crate::linked::deleted(ctx, sender, &old)

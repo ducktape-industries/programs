@@ -337,6 +337,60 @@
       }
     ],
     [
+      "DeviceKey",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "account",
+                "u64"
+              ],
+              [
+                "key",
+                "[u8; 32]"
+              ],
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "signer",
+                "Vec<u8>"
+              ],
+              [
+                "scheme",
+                "Scheme"
+              ],
+              [
+                "sig",
+                "Vec<u8>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "DeviceWrap",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "device",
+                "[u8; 32]"
+              ],
+              [
+                "wrapped",
+                "Vec<u8>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Draft",
       {
         "struct": {
@@ -365,6 +419,29 @@
               [
                 "text",
                 "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "EpochWrap",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "epoch",
+                "u64"
+              ],
+              [
+                "device",
+                "[u8; 32]"
+              ],
+              [
+                "wrapped",
+                "Vec<u8>"
               ]
             ]
           }
@@ -1009,6 +1086,41 @@
               35,
               "NotifyWith",
               "Op__NotifyWith"
+            ],
+            [
+              36,
+              "PublishDeviceKey",
+              "Op__PublishDeviceKey"
+            ],
+            [
+              37,
+              "RetireDeviceKey",
+              "Op__RetireDeviceKey"
+            ],
+            [
+              38,
+              "Seal",
+              "Op__Seal"
+            ],
+            [
+              39,
+              "PostSealed",
+              "Op__PostSealed"
+            ],
+            [
+              40,
+              "Rekey",
+              "Op__Rekey"
+            ],
+            [
+              41,
+              "Wrap",
+              "Op__Wrap"
+            ],
+            [
+              42,
+              "Unopenable",
+              "Op__Unopenable"
             ]
           ]
         }
@@ -1426,6 +1538,83 @@
       }
     ],
     [
+      "Op__PostSealed",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel_id",
+                "String"
+              ],
+              [
+                "message_id",
+                "String"
+              ],
+              [
+                "thread",
+                "Option<u64>"
+              ],
+              [
+                "epoch",
+                "u64"
+              ],
+              [
+                "nonce",
+                "[u8; 24]"
+              ],
+              [
+                "ct",
+                "Vec<u8>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__PublishDeviceKey",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "key",
+                "[u8; 32]"
+              ],
+              [
+                "sig",
+                "Vec<u8>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Rekey",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel_id",
+                "String"
+              ],
+              [
+                "epoch",
+                "u64"
+              ],
+              [
+                "wraps",
+                "Vec<DeviceWrap>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Op__Release",
       {
         "struct": {
@@ -1499,6 +1688,40 @@
               [
                 "name",
                 "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__RetireDeviceKey",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "key",
+                "[u8; 32]"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Seal",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel_id",
+                "String"
+              ],
+              [
+                "wraps",
+                "Vec<DeviceWrap>"
               ]
             ]
           }
@@ -1643,6 +1866,29 @@
       }
     ],
     [
+      "Op__Unopenable",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel_id",
+                "String"
+              ],
+              [
+                "epoch",
+                "u64"
+              ],
+              [
+                "device",
+                "[u8; 32]"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Op__Watch",
       {
         "struct": {
@@ -1670,6 +1916,25 @@
               [
                 "deliver",
                 "Vec<u8>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Wrap",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel_id",
+                "String"
+              ],
+              [
+                "wraps",
+                "Vec<EpochWrap>"
               ]
             ]
           }
@@ -2595,6 +2860,26 @@
               32,
               "As",
               "Query__As"
+            ],
+            [
+              33,
+              "DeviceKeys",
+              "Query__DeviceKeys"
+            ],
+            [
+              34,
+              "Sealing",
+              "Query__Sealing"
+            ],
+            [
+              35,
+              "Wraps",
+              "Query__Wraps"
+            ],
+            [
+              36,
+              "Sealed",
+              "Query__Sealed"
             ]
           ]
         }
@@ -2737,6 +3022,21 @@
               ],
               [
                 "seqs",
+                "Vec<u64>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__DeviceKeys",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "accounts",
                 "Vec<u64>"
               ]
             ]
@@ -3030,6 +3330,40 @@
       }
     ],
     [
+      "Query__Sealed",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel_id",
+                "String"
+              ],
+              [
+                "seqs",
+                "Vec<u64>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Sealing",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel_ids",
+                "Vec<String>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Query__Seated",
       {
         "struct": {
@@ -3180,6 +3514,25 @@
               [
                 "page",
                 "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Wraps",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel_id",
+                "String"
+              ],
+              [
+                "devices",
+                "Vec<[u8; 32]>"
               ]
             ]
           }
@@ -3382,6 +3735,26 @@
               31,
               "Foreigners",
               "Reply__Foreigners"
+            ],
+            [
+              32,
+              "DeviceKeys",
+              "Reply__DeviceKeys"
+            ],
+            [
+              33,
+              "Sealing",
+              "Reply__Sealing"
+            ],
+            [
+              34,
+              "Wraps",
+              "Reply__Wraps"
+            ],
+            [
+              35,
+              "Sealed",
+              "Reply__Sealed"
             ]
           ]
         }
@@ -3485,6 +3858,18 @@
           "fields": {
             "unnamed_fields": [
               "Vec<(u64, Option<String>)>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__DeviceKeys",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Vec<DeviceKey>"
             ]
           }
         }
@@ -3671,6 +4056,30 @@
       }
     ],
     [
+      "Reply__Sealed",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Vec<SealedRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Sealing",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Vec<(String, u64)>"
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Reply__Seated",
       {
         "struct": {
@@ -3750,6 +4159,18 @@
       }
     ],
     [
+      "Reply__Wraps",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Vec<WrapRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Returns<Op>",
       {
         "struct": {
@@ -3761,6 +4182,68 @@
               ]
             ]
           }
+        }
+      }
+    ],
+    [
+      "Scheme",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Ed25519",
+              "Scheme__Ed25519"
+            ],
+            [
+              1,
+              "Secp256k1",
+              "Scheme__Secp256k1"
+            ],
+            [
+              2,
+              "Secp256r1",
+              "Scheme__Secp256r1"
+            ],
+            [
+              3,
+              "Bls12381",
+              "Scheme__Bls12381"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Scheme__Bls12381",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Scheme__Ed25519",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Scheme__Secp256k1",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Scheme__Secp256r1",
+      {
+        "struct": {
+          "fields": "empty"
         }
       }
     ],
@@ -3777,6 +4260,41 @@
               [
                 "config",
                 "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "SealedRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "seq",
+                "u64"
+              ],
+              [
+                "message_id",
+                "String"
+              ],
+              [
+                "author",
+                "Principal"
+              ],
+              [
+                "epoch",
+                "u64"
+              ],
+              [
+                "nonce",
+                "[u8; 24]"
+              ],
+              [
+                "ct",
+                "Vec<u8>"
               ]
             ]
           }
@@ -4067,10 +4585,49 @@
       }
     ],
     [
+      "Vec<DeviceKey>",
+      {
+        "sequence": {
+          "elements": "DeviceKey",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<DeviceWrap>",
+      {
+        "sequence": {
+          "elements": "DeviceWrap",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
       "Vec<Draft>",
       {
         "sequence": {
           "elements": "Draft",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<EpochWrap>",
+      {
+        "sequence": {
+          "elements": "EpochWrap",
           "length_range": {
             "end": 4294967295,
             "start": 0
@@ -4197,6 +4754,19 @@
       }
     ],
     [
+      "Vec<SealedRow>",
+      {
+        "sequence": {
+          "elements": "SealedRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
       "Vec<Span>",
       {
         "sequence": {
@@ -4236,6 +4806,32 @@
       }
     ],
     [
+      "Vec<WrapRow>",
+      {
+        "sequence": {
+          "elements": "WrapRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<[u8; 32]>",
+      {
+        "sequence": {
+          "elements": "[u8; 32]",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
       "Vec<u64>",
       {
         "sequence": {
@@ -4258,6 +4854,46 @@
             "start": 0
           },
           "length_width": 4
+        }
+      }
+    ],
+    [
+      "WrapRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "device",
+                "[u8; 32]"
+              ],
+              [
+                "epoch",
+                "u64"
+              ],
+              [
+                "wrapped",
+                "Vec<u8>"
+              ],
+              [
+                "unopenable",
+                "bool"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "[u8; 24]",
+      {
+        "sequence": {
+          "elements": "u8",
+          "length_range": {
+            "end": 24,
+            "start": 24
+          },
+          "length_width": 0
         }
       }
     ],

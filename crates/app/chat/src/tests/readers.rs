@@ -109,6 +109,14 @@ fn reads_of(id: &str) -> Vec<Query> {
             channel_id: room(),
             roots: vec![1],
         },
+        Query::Wraps {
+            channel_id: room(),
+            devices: vec![[1; 32]],
+        },
+        Query::Sealed {
+            channel_id: room(),
+            seqs: vec![1],
+        },
         Query::TextSearch {
             text: "plan".into(),
             viewer: vec![],

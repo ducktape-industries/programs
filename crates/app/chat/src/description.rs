@@ -289,6 +289,67 @@ pub fn describe(op: &Op) -> Description {
             ),
             None => ("Unlink channel", channel_id, vec![]),
         },
+        Op::PublishDeviceKey { key, .. } => {
+            return Description {
+                title: "Publish a device key".into(),
+                fields: vec![field("key", Value::text(hex(key)))],
+            };
+        }
+        Op::RetireDeviceKey { key } => {
+            return Description {
+                title: "Retire a device key".into(),
+                fields: vec![field("key", Value::text(hex(key)))],
+            };
+        }
+        Op::Seal { channel_id, wraps } => (
+            "Seal conversation",
+            channel_id,
+            vec![field("devices", Value::text(wraps.len().to_string()))],
+        ),
+        Op::PostSealed {
+            channel_id,
+            message_id,
+            thread,
+            epoch,
+            ..
+        } => (
+            "Sealed message",
+            channel_id,
+            vec![
+                field("message", Value::text(message_id)),
+                field("epoch", Value::text(epoch.to_string())),
+                under(*thread),
+            ],
+        ),
+        Op::Rekey {
+            channel_id,
+            epoch,
+            wraps,
+        } => (
+            "Rekey conversation",
+            channel_id,
+            vec![
+                field("epoch", Value::text(epoch.to_string())),
+                field("devices", Value::text(wraps.len().to_string())),
+            ],
+        ),
+        Op::Wrap { channel_id, wraps } => (
+            "Give devices the key",
+            channel_id,
+            vec![field("wraps", Value::text(wraps.len().to_string()))],
+        ),
+        Op::Unopenable {
+            channel_id,
+            epoch,
+            device,
+        } => (
+            "Key did not open",
+            channel_id,
+            vec![
+                field("epoch", Value::text(epoch.to_string())),
+                field("device", Value::text(hex(device))),
+            ],
+        ),
         Op::FromPeer { channel_id, write } => {
             let (title, fields) = from_peer(write);
             (title, channel_id, fields)

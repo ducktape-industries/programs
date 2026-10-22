@@ -34,6 +34,7 @@ impl Program for Chat {
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         let sender = ctx.sender()?;
         crate::linked::admitted(ctx, &sender, &op)?;
+        crate::sealed::admitted(ctx, &op)?;
         crate::linked::heard(ctx, &sender);
         match op {
             Op::CreateChannel {
@@ -163,6 +164,31 @@ impl Program for Chat {
             Op::FromPeer { channel_id, write } => {
                 crate::linked::from_peer(ctx, &sender, channel_id, write)
             }
+            Op::PublishDeviceKey { key, sig } => crate::sealed::publish(ctx, key, sig),
+            Op::RetireDeviceKey { key } => crate::sealed::retire(ctx, key),
+            Op::Seal { channel_id, wraps } => crate::sealed::seal(ctx, &sender, &channel_id, wraps),
+            Op::PostSealed {
+                channel_id,
+                message_id,
+                thread,
+                epoch,
+                nonce,
+                ct,
+            } => {
+                let body = crate::state::Body { epoch, nonce, ct };
+                crate::sealed::post_sealed(ctx, &sender, channel_id, message_id, thread, body)
+            }
+            Op::Rekey {
+                channel_id,
+                epoch,
+                wraps,
+            } => crate::sealed::rekey(ctx, &sender, &channel_id, epoch, wraps),
+            Op::Wrap { channel_id, wraps } => crate::sealed::wrap(ctx, &sender, &channel_id, wraps),
+            Op::Unopenable {
+                channel_id,
+                epoch,
+                device,
+            } => crate::sealed::unopenable(ctx, &channel_id, epoch, device),
         }
     }
 
@@ -351,6 +377,27 @@ fn answer(ctx: &QueryCtx, reader: &Reader, query: Query) -> Result<Reply, Error>
             Reply::Foreigners(crate::linked::foreigners(ctx, &page)?),
             vec![],
         ),
+        Query::DeviceKeys { accounts } => (
+            Reply::DeviceKeys(crate::sealed::device_keys(ctx, &accounts)?),
+            vec![],
+        ),
+        Query::Sealing { channel_ids } => (
+            Reply::Sealing(crate::sealed::sealing(ctx, &channel_ids)?),
+            vec![],
+        ),
+        Query::Wraps {
+            channel_id,
+            devices,
+        } => {
+            reader.room(ctx, &channel_id)?;
+            let wraps = crate::sealed::wraps(ctx, &channel_id, &devices)?;
+            (Reply::Wraps(wraps), vec![])
+        }
+        Query::Sealed { channel_id, seqs } => {
+            reader.room(ctx, &channel_id)?;
+            let sealed = crate::sealed::sealed(ctx, &channel_id, &seqs)?;
+            (Reply::Sealed(sealed), vec![])
+        }
         Query::As { .. } => {
             return Err(invalid(
                 "an As inside an As is refused: a proxy names one reader",

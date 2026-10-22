@@ -236,6 +236,9 @@ fn newest(
             .collect(),
         None => HEADS.all(ctx)?,
     };
+    let heads = heads
+        .into_iter()
+        .filter(|(channel_id, _)| !crate::sealed::is_sealed(ctx, channel_id));
     let mut found = Vec::new();
     for (channel_id, head) in heads {
         if !reader.may_read(ctx, &channel_id)? {
@@ -378,7 +381,11 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::Seated(_)
         | Reply::Repliers(_)
         | Reply::Peer(_)
-        | Reply::Foreigners(_) => vec![],
+        | Reply::Foreigners(_)
+        | Reply::DeviceKeys(_)
+        | Reply::Sealing(_)
+        | Reply::Wraps(_)
+        | Reply::Sealed(_) => vec![],
     }
 }
 

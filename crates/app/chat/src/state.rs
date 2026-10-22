@@ -71,6 +71,14 @@ pub const LEASES: Map<(ChannelId, Option<Seq>), Lease> = Map::new("lease/");
 pub const PLACE_WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("place-watcher/");
 pub const PEERS: Map<ChannelId, Peer> = Map::new("peer/");
 pub const FOREIGNERS: Set<(NetworkId, AccountNumber)> = Set::new("foreigner/");
+pub const DEVICES: Map<[u8; 32], Device> = Map::new("device/");
+pub const ACCOUNT_DEVICES: Set<(AccountNumber, [u8; 32])> = Set::new("account-device/");
+pub const DEVICE_COUNTS: Map<AccountNumber, u64> = Map::new("device-count/");
+pub const ROOM_EPOCHS: Map<ChannelId, u64> = Map::new("room-epoch/");
+pub const WRAPS: Map<(ChannelId, [u8; 32], u64), Wrapping> = Map::new("wrap/");
+pub const WRAPS_BY_EPOCH: Map<(ChannelId, u64, [u8; 32]), AccountNumber> =
+    Map::new("wrap-by-epoch/");
+pub const SEALED_BODIES: Map<(ChannelId, Seq), Body> = Map::new("sealed-body/");
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the
@@ -264,4 +272,27 @@ pub struct Drafted {
 pub struct Lease {
     pub(crate) holder: Principal,
     pub(crate) height: u64,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct Device {
+    pub(crate) account: AccountNumber,
+    pub(crate) signer: Vec<u8>,
+    pub(crate) scheme: ::program::Scheme,
+    pub(crate) sig: Vec<u8>,
+    pub(crate) height: u64,
+    pub(crate) retired: bool,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct Wrapping {
+    pub(crate) wrapped: Vec<u8>,
+    pub(crate) unopenable: bool,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct Body {
+    pub(crate) epoch: u64,
+    pub(crate) nonce: [u8; 24],
+    pub(crate) ct: Vec<u8>,
 }

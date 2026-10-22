@@ -7,6 +7,7 @@ use crate::{
     Block, Mark, Notice, Notices, Op, PageRequest, Peer, PeerMessage, PeerWrite, PostPolicy,
     Principal, Query, Span,
 };
+use crate::{DeviceWrap, EpochWrap};
 
 const ROOM: &str = "design";
 
@@ -488,4 +489,100 @@ pub(crate) fn peer() -> Query {
 
 pub(crate) fn foreigners() -> Query {
     Query::Foreigners { page: twenty() }
+}
+
+fn device() -> [u8; 32] {
+    [0x5e; 32]
+}
+
+fn sealed_room() -> String {
+    "dm-15-21".into()
+}
+
+pub(crate) fn publish_device_key() -> Op {
+    Op::PublishDeviceKey {
+        key: device(),
+        sig: vec![0x51; 64],
+    }
+}
+
+pub(crate) fn retire_device_key() -> Op {
+    Op::RetireDeviceKey { key: device() }
+}
+
+pub(crate) fn seal() -> Op {
+    Op::Seal {
+        channel_id: sealed_room(),
+        wraps: vec![DeviceWrap {
+            device: device(),
+            wrapped: vec![0; 80],
+        }],
+    }
+}
+
+pub(crate) fn post_sealed() -> Op {
+    Op::PostSealed {
+        channel_id: sealed_room(),
+        message_id: "hello-2".into(),
+        thread: None,
+        epoch: 0,
+        nonce: [0; 24],
+        ct: vec![0; 40],
+    }
+}
+
+pub(crate) fn rekey() -> Op {
+    Op::Rekey {
+        channel_id: sealed_room(),
+        epoch: 1,
+        wraps: vec![DeviceWrap {
+            device: device(),
+            wrapped: vec![0; 80],
+        }],
+    }
+}
+
+pub(crate) fn wrap() -> Op {
+    Op::Wrap {
+        channel_id: sealed_room(),
+        wraps: vec![EpochWrap {
+            epoch: 0,
+            device: device(),
+            wrapped: vec![0; 80],
+        }],
+    }
+}
+
+pub(crate) fn unopenable() -> Op {
+    Op::Unopenable {
+        channel_id: sealed_room(),
+        epoch: 0,
+        device: device(),
+    }
+}
+
+pub(crate) fn device_keys() -> Query {
+    Query::DeviceKeys {
+        accounts: vec![15, 21],
+    }
+}
+
+pub(crate) fn sealing() -> Query {
+    Query::Sealing {
+        channel_ids: vec![sealed_room()],
+    }
+}
+
+pub(crate) fn wraps() -> Query {
+    Query::Wraps {
+        channel_id: sealed_room(),
+        devices: vec![device()],
+    }
+}
+
+pub(crate) fn sealed() -> Query {
+    Query::Sealed {
+        channel_id: sealed_room(),
+        seqs: vec![1, 2],
+    }
 }

@@ -43,7 +43,14 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::NotifyWith { .. }
         | Op::Take { .. }
         | Op::Release { .. }
-        | Op::WatchPlaces { .. } => Vec::new(),
+        | Op::WatchPlaces { .. }
+        | Op::PublishDeviceKey { .. }
+        | Op::RetireDeviceKey { .. }
+        | Op::Seal { .. }
+        | Op::PostSealed { .. }
+        | Op::Rekey { .. }
+        | Op::Wrap { .. }
+        | Op::Unopenable { .. } => Vec::new(),
     })
 }
 

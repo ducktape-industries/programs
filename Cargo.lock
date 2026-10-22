@@ -726,6 +726,7 @@ dependencies = [
  "describe",
  "design",
  "ducklink",
+ "identity",
  "ownership",
  "program",
  "programs",

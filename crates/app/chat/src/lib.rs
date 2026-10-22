@@ -27,6 +27,7 @@ mod adopt;
 pub mod asking;
 pub mod attributed;
 mod description;
+mod emoji;
 mod examples;
 mod gate;
 mod leases;
@@ -42,6 +43,7 @@ mod program;
 mod queries;
 mod reader;
 mod rules;
+mod sealed;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -71,9 +73,10 @@ pub use text::{
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, FOREIGNERS, HEADS, LEASES,
-        LISTENERS, LISTENING, MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS,
-        PEERS, PLACE_WATCHERS, POSTED, POSTED_IN, REACTIONS, REPLIES, ROOTS,
+        ACCOUNT_DEVICES, ANSWERED, CHANNEL_META, CHANNELS, DEVICE_COUNTS, DEVICES, DRAFT_PIECES,
+        DRAFTS, FOREIGNERS, HEADS, LEASES, LISTENERS, LISTENING, MEMBERS, MENTIONED, MESSAGE_IDS,
+        MESSAGES, NOTICES, PARTICIPANTS, PEERS, PLACE_WATCHERS, POSTED, POSTED_IN, REACTIONS,
+        REPLIES, ROOM_EPOCHS, ROOTS, SEALED_BODIES, WRAPS, WRAPS_BY_EPOCH,
     };
 }
 
@@ -89,6 +92,23 @@ pub const RULES: &str = "rules";
 pub const LISTED: &str = "listed";
 
 pub const INVOLVED: &str = "involved";
+
+pub const SEALED: &str = "🔒 Sealed message";
+
+pub const VIEW_SIGN: &str = "ducktape/view-sign/v1";
+
+pub const DEVICE_VIEW: &str = "chat-view";
+
+pub const DEVICE_PURPOSE: &str = "seal-device/v1";
+
+pub fn device_message(chain_id: &[u8], account: AccountNumber, key: &[u8; 32]) -> Vec<u8> {
+    abi::encode(&(chain_id.to_vec(), account, *key))
+}
+
+pub fn device_statement(chain_id: &[u8], account: AccountNumber, key: &[u8; 32]) -> Vec<u8> {
+    let message = device_message(chain_id, account, key);
+    abi::encode(&(DEVICE_VIEW.to_owned(), DEVICE_PURPOSE.to_owned(), message))
+}
 
 /// A write. The enum only grows at its end (see `op_variants_only_append`).
 #[derive(
@@ -266,6 +286,41 @@ pub enum Op {
         by: Option<Principal>,
         text: Option<String>,
     } = 35,
+    #[tool_op(description = "Publish a device's X25519 public key for sealed rooms, under the key that signs this frame, which must act as your account in identity; only a person publishes. sig is that key's signature, in the scheme identity holds for it, under VIEW_SIGN (ducktape/view-sign/v1) over device_statement: borsh of chat-view, seal-device/v1 and borsh(chain id, account, key). One that signs another account, network or key is refused. A key names one device: one already published is refused. It stays live while identity maps its signing key to your account.", example = examples::publish_device_key)]
+    PublishDeviceKey { key: [u8; 32], sig: Vec<u8> },
+    #[tool_op(description = "Retire one of your device keys: it takes no more wraps, and a sealed room it holds the key of rekeys before its next post.", example = examples::retire_device_key)]
+    RetireDeviceKey { key: [u8; 32] },
+    #[tool_op(description = "Seal a direct room between two people for good: wraps hold the room's first key sealed to exactly the members' live device keys (DeviceKeys), each once. From then on it takes PostSealed and the ops that carry no text.", example = examples::seal)]
+    Seal {
+        channel_id: String,
+        wraps: Vec<DeviceWrap>,
+    },
+    #[tool_op(description = "Post in a sealed room: ct is the message's blocks sealed under the room's current epoch key (the seal crate) with the 24-byte nonce. epoch must be the current one; while a device holding it is gone, it is refused 'rekey first'. message_id and thread are as PostMessage's.", example = examples::post_sealed)]
+    PostSealed {
+        channel_id: String,
+        message_id: String,
+        thread: Option<u64>,
+        epoch: u64,
+        nonce: [u8; 24],
+        ct: Vec<u8>,
+    },
+    #[tool_op(description = "Install a sealed room's next epoch (current + 1), wrapped to exactly the live devices that hold the current one.", example = examples::rekey)]
+    Rekey {
+        channel_id: String,
+        epoch: u64,
+        wraps: Vec<DeviceWrap>,
+    },
+    #[tool_op(description = "Give live member devices the key of epochs the room has reached: your own devices, or the other member's once none of theirs holds a good key. A later wrap replaces an earlier one; a device's first wrap posts a notice that it can read the room's history.", example = examples::wrap)]
+    Wrap {
+        channel_id: String,
+        wraps: Vec<EpochWrap>,
+    },
+    #[tool_op(description = "Mark a device's wrap at an epoch as one that does not open, signed by the key that published the device, so another may replace it.", example = examples::unopenable)]
+    Unopenable {
+        channel_id: String,
+        epoch: u64,
+        device: [u8; 32],
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -518,6 +573,25 @@ pub enum Query {
     Foreigners { page: PageRequest },
     #[tool_query(description = "One chat query, given as its borsh bytes, asked for reader. From a program chat's params list as a proxy (a borsh Vec of program ids), a direct room reads as if reader asked; from any other program it reads as that program's own account, and from a signed key as that key's account. It answers what the query inside answers. An As inside an As is refused.", example = examples::as_reader)]
     As { reader: Principal, query: Vec<u8> } = 32,
+    #[ask(Reply::DeviceKeys(Vec<DeviceKey>))]
+    #[reads(state::DEVICES, state::ACCOUNT_DEVICES)]
+    #[tool_query(description = "The live device keys of accounts, in the order asked. Derived from identity as it is read, so a removed signing key's devices drop out with no chat write: ask it fresh before sealing, rekeying or wrapping.", example = examples::device_keys)]
+    DeviceKeys { accounts: Vec<AccountNumber> },
+    #[ask(Reply::Sealing(Vec<(String, u64)>))]
+    #[reads(state::ROOM_EPOCHS)]
+    #[tool_query(description = "Which of channel_ids are sealed, each with its current epoch, in the order asked; an unsealed one is left out.", example = examples::sealing)]
+    Sealing { channel_ids: Vec<String> },
+    #[ask(Reply::Wraps(Vec<WrapRow>))]
+    #[reads(state::WRAPS)]
+    #[tool_query(description = "Every wrap a sealed room holds for each of devices, by device then epoch, with whether it was marked unopenable.", example = examples::wraps)]
+    Wraps {
+        channel_id: String,
+        devices: Vec<[u8; 32]>,
+    },
+    #[ask(Reply::Sealed(Vec<SealedRow>))]
+    #[reads(state::SEALED_BODIES, state::MESSAGES)]
+    #[tool_query(description = "The sealed bodies of the posts at seqs, in the order asked: author, message_id, epoch, nonce and ciphertext; a seq with none is left out.", example = examples::sealed)]
+    Sealed { channel_id: String, seqs: Vec<u64> },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -559,6 +633,10 @@ pub enum Reply {
     Repliers(Vec<(u64, Vec<MsgRow>)>),
     Peer(Option<Peer>),
     Foreigners(PageResponse<ForeignName>),
+    DeviceKeys(Vec<DeviceKey>),
+    Sealing(Vec<(String, u64)>),
+    Wraps(Vec<WrapRow>),
+    Sealed(Vec<SealedRow>),
 }
 
 // One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for
@@ -987,6 +1065,87 @@ impl ForeignName {
     }
 }
 
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct DeviceWrap {
+    pub device: [u8; 32],
+    pub wrapped: Vec<u8>,
+}
+
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct EpochWrap {
+    pub epoch: u64,
+    pub device: [u8; 32],
+    pub wrapped: Vec<u8>,
+}
+
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
+pub struct DeviceKey {
+    pub account: AccountNumber,
+    pub key: [u8; 32],
+    pub height: u64,
+    pub signer: Vec<u8>,
+    pub scheme: ::program::Scheme,
+    pub sig: Vec<u8>,
+}
+
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct WrapRow {
+    pub device: [u8; 32],
+    pub epoch: u64,
+    pub wrapped: Vec<u8>,
+    pub unopenable: bool,
+}
+
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct SealedRow {
+    pub seq: u64,
+    pub message_id: String,
+    pub author: Principal,
+    pub epoch: u64,
+    pub nonce: [u8; 24],
+    pub ct: Vec<u8>,
+}
+
 /// The room two accounts share: `dm-<lower>-<higher>`.
 pub fn dm_channel_id(a: AccountNumber, b: AccountNumber) -> String {
     format!("dm-{}-{}", a.min(b), a.max(b))
@@ -1071,6 +1230,13 @@ fn op_variants_only_append() {
             "Link",
             "FromPeer",
             "NotifyWith",
+            "PublishDeviceKey",
+            "RetireDeviceKey",
+            "Seal",
+            "PostSealed",
+            "Rekey",
+            "Wrap",
+            "Unopenable",
         ]
     );
 }

@@ -25,6 +25,7 @@ design = { path = "../../sdk/design" }
 ducklink = { path = "../../sdk/ducklink" }
 attribution = { path = "../attribution" }
 describe = { path = "../../sdk/describe" }
+identity = { path = "../../system/identity" }
 borsh = { workspace = true }
 program = { path = "../../sdk/program", features = ["serde"] }
 # `#[derive(program::Ask)]` on `Query`
