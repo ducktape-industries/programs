@@ -858,6 +858,11 @@ async fn kept_out(ctx: &Ctx, check: &CheckRow, pod: &str) -> (Option<String>, Op
         Ok(listed) => listed,
         Err(why) => return (None, Some(format!("/out was not listed: {why}"))),
     };
+    if listed["exit_code"].as_i64() != Some(0) {
+        let stderr = listed["stderr"].as_str().unwrap_or_default().trim();
+        let why = format!("find exited {}: {stderr}", listed["exit_code"]);
+        return (None, Some(format!("/out was not listed: {why}")));
+    }
     let files: Vec<&str> = listed["stdout"]
         .as_str()
         .unwrap_or_default()

@@ -1408,3 +1408,21 @@ fn a_newer_check_that_deferred_to_an_older_one_runs_once_that_one_drops_out_befo
     assert_eq!(node.held(), [8], "the room check 2 never took is check 8's");
     assert!(node.waiting().is_empty());
 }
+
+#[test]
+fn a_pod_whose_out_cannot_be_listed_says_why_its_check_kept_no_log() {
+    let mut node = node();
+    let wait = waiting_on_its_pod(&mut node);
+    node.ended(&wait, 0, json!(255));
+    let unreached = "error: unable to upgrade connection: container not found (\"out\")";
+    let listed = json!({"exit_code": 1, "stdout": "", "stderr": format!("{unreached}\n")});
+    let find = node.answer(1_000, 200, listed);
+    assert_eq!(find, sent("POST", "/v1/pods/duckpond-7/exec"));
+    let deleted = node.answer(1_000, 200, json!({"deleted": "duckpond-7"}));
+    assert_eq!(deleted, sent("DELETE", "/v1/pods/duckpond-7"));
+    assert!(node.idle());
+    let line = format!(
+        "pod duckpond-7 ended: exit code 0 (Completed); /out was not listed: find exited 1: {unreached}"
+    );
+    assert_eq!(node.reports(), [(1, State::Failed, line, None)]);
+}
