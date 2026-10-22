@@ -409,7 +409,7 @@ review's card finds its notice by `Review.message_id`, and replies hang under it
 
 | event | group | status | detail | concerns |
 |---|---|---|---|---|
-| `ChangeOpen` | `opened <repo> <n>` | Running | `opened` | the reviewers, or the repository's owner when none is asked |
+| `ChangeOpen` | `opened <repo> <n>` | Running | `opened, review requested`, or `opened` when no reviewer is asked | the reviewers, or the repository's owner when none is asked |
 | a new head: a push or a merge moving its source branch, `Rebase`, `ChangeRepoint` to another commit | `head <repo> <n>` | Running | `new head <oid>` | the reviewers |
 | `ChangeEdit` asking reviewers | `requested <repo> <n>` | Running | `review requested` | the reviewers it adds |
 | `ReviewSubmit` | `review <id> <repo> <n>` | Passed (approve), Failed (request changes), Note (comment) | `review <id>: approved`, `changes requested` or `commented` | the author and the reviewers |

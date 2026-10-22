@@ -87,7 +87,8 @@ impl Event {
 
     fn detail(&self, change: &Change) -> String {
         match self {
-            Event::Opened => "opened".into(),
+            Event::Opened if change.reviewers.is_empty() => "opened".into(),
+            Event::Opened => "opened, review requested".into(),
             Event::Closed => "closed".into(),
             Event::Merged => format!("merged into {}", branch(&change.into)),
             Event::Reviewed { id, verdict, .. } => {

@@ -157,7 +157,7 @@ fn a_reviewer_hears_forges_request_and_each_new_head_once_it_answers_forge() {
     let (tip, pack) = step(Some(feature), "fourth");
     push(&world, pack, feature, tip, "feature");
     let heard = posts(&world);
-    let open = format!("{REPO} #{n}: Teach other running — opened");
+    let open = format!("{REPO} #{n}: Teach other running — opened, review requested");
     let head = format!("{REPO} #{unheard}: Teach feature running — new head {tip}");
     let told = |words: &str| {
         heard

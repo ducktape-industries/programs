@@ -118,6 +118,27 @@ fn asking_a_review_of_an_open_change_tells_the_reviewers_it_adds() {
 }
 
 #[test]
+fn opening_a_change_with_reviewers_tells_them_a_review_is_requested() {
+    let mut rig = Rig::start(bounds(), HashKind::Sha1);
+    Story::pushed(&mut rig);
+    let n = opened(&mut rig, vec![Principal::Account(2), Principal::Account(4)]);
+    let told = (vec![2, 4], "opened, review requested".to_owned());
+    assert_eq!(notices(&rig, n, "opened"), [told]);
+}
+
+#[test]
+fn opening_a_change_with_no_reviewer_says_only_that_it_opened() {
+    let mut rig = Rig::start(bounds(), HashKind::Sha1);
+    Story::pushed(&mut rig);
+    let n = opened(&mut rig, Vec::new());
+    let details: Vec<String> = notices(&rig, n, "opened")
+        .into_iter()
+        .map(|(_, detail)| detail)
+        .collect();
+    assert_eq!(details, ["opened"]);
+}
+
+#[test]
 fn a_head_or_a_request_that_concerns_no_one_but_its_actor_posts_nothing() {
     let mut rig = Rig::start(bounds(), HashKind::Sha1);
     let mut story = Story::pushed(&mut rig);
