@@ -593,7 +593,7 @@ fn admitted(ctx: &QueryCtx, id: u64, account: AccountNumber) -> Result<bool, Err
     };
     let at = CLAIMS.key(&id);
     let record = ownership::Query::Record {
-        program: crate::PROGRAM.into(),
+        program: ctx.env().program.clone(),
         key: at.clone(),
     };
     let asked = ctx.query::<ownership::Query, ownership::Reply>(guardian.clone(), &record)?;
@@ -604,7 +604,7 @@ fn admitted(ctx: &QueryCtx, id: u64, account: AccountNumber) -> Result<bool, Err
         return Ok(true);
     }
     let effective = ownership::Query::Effective {
-        program: crate::PROGRAM.into(),
+        program: ctx.env().program.clone(),
         key: at,
     };
     let asked = ctx.query::<ownership::Query, ownership::Reply>(guardian, &effective)?;

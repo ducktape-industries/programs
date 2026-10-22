@@ -1,5 +1,7 @@
 # fleet
 
+It runs as `ducktape-industries/fleet` (`fleet::PROGRAM`): a new program's id names its owner. harness's `fleet_run`, the `ducktape machine` CLI and the pods service each name it by that id.
+
 The network's default way to run workloads (J-129). A program keeps the canonical part: what someone asked to run, which machine took each run, its state and its result. Machines run the work. A machine is an account with a key, running `ducktape machine`, either as a node's child or on its own. It says it is ready, claims what fleet assigns it, beats while it runs, and reports how each run ended. Logs and outputs are files the machine writes. fleet keeps only their folder and snapshot.
 
 ## Rows

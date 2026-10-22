@@ -19,7 +19,7 @@ use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 use crate::state::{HOLDS, MACHINES, PIECES, QUEUED, RUNS, WORKLOADS};
 
-pub const PROGRAM: &str = "fleet";
+pub const PROGRAM: &str = "ducktape-industries/fleet";
 
 // A machine: the account whose key runs it, and its name among that account's machines.
 #[derive(
