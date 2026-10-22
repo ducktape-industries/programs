@@ -1,7 +1,7 @@
 //! The words both trees read a screen by: a state, a place, a conversation, an agent's setup,
 //! a context and its usage. Each takes what the reads hold and gives a sentence or a few words;
 //! the screens decide where they go.
-use harness::{AccountBudget, Awaited, BudgetFact, BudgetReport, WHOLE_WINDOW, WindowOutlook};
+use harness::{AccountBudget, Awaited, BudgetFact, BudgetReport, WindowOutlook};
 use harness::{
     AgentSetup, Asking, Body, CallRow, CallState, Configured, Flow, Frame, Partial, ServerTool,
     Spoken, Stop, Thinking, ThreadRow, Usage, Window,
@@ -1008,34 +1008,24 @@ pub(crate) fn budget_percent(window: &WindowOutlook, now: u64) -> String {
     format!("{}%", shown_used(window, now) / 10_000)
 }
 
-pub(crate) fn span(millis: u64) -> String {
-    let minutes = millis / 60_000;
-    let (days, hours, minutes) = (minutes / 1_440, minutes / 60 % 24, minutes % 60);
-    match (days, hours) {
-        (0, 0) => format!("{minutes}m"),
-        (0, hours) => format!("{hours}h {minutes}m"),
-        (days, hours) => format!("{days}d {hours}h"),
+fn resets_at(now: u64, then: u64) -> String {
+    let (today, day) = (design::day(now), design::day(then));
+    if today == day {
+        return design::clock(then);
     }
+    let year = today.rsplit_once(' ').map_or("", |(_, year)| year);
+    let date = day.strip_suffix(year).map_or(day.as_str(), str::trim_end);
+    format!("{date}, {}", design::clock(then))
 }
 
-pub(crate) fn budget_left(window: &WindowOutlook, now: u64) -> String {
+pub(crate) fn budget_resets(window: &WindowOutlook, now: u64) -> String {
     match ended(window, now) {
         true => "reset".to_owned(),
-        false => span(window.reset.saturating_mul(1000) - now),
+        false => {
+            let at = resets_at(now, window.reset.saturating_mul(1000));
+            format!("resets {}", at.replace(' ', "\u{a0}"))
+        }
     }
-}
-
-pub(crate) fn budget_runs_out(window: &WindowOutlook, now: u64) -> Option<String> {
-    let settled = ended(window, now) || window.used >= WHOLE_WINDOW;
-    if settled {
-        return None;
-    }
-    let reset = window.reset.saturating_mul(1000);
-    let out = window.runs_out.filter(|out| *out < reset)?;
-    Some(match out > now {
-        true => format!("out in {}", span(out - now)),
-        false => "out now".to_owned(),
-    })
 }
 
 pub(crate) fn failing_words(failing: &harness::FinalError) -> String {

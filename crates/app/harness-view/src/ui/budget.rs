@@ -1,6 +1,6 @@
 //! The model budget atop the agents: one row per model account from its freshest read, grouped by its
 //! provider (learned, else its service's route), with the login its gate names, a bar per usage
-//! window (amber from 80%, red from 95%) with the time to its reset, and whether it can answer.
+//! window (amber from 80%, red from 95%) with when it resets, and whether it can answer.
 use harness::{AccountBudget, BudgetFact, ProviderRouteRow, WHOLE_WINDOW, WindowOutlook};
 use view::design::{Ladder, space, text};
 use view::prelude::*;
@@ -9,8 +9,8 @@ use view::{Div, FontWeight, Stateful};
 use super::caption;
 use crate::Agents;
 use crate::words::{
-    budget_calls, budget_left, budget_name, budget_percent, budget_provider, budget_runs_out,
-    budget_swapped, budget_via, budget_window_label,
+    budget_calls, budget_name, budget_percent, budget_provider, budget_resets, budget_swapped,
+    budget_via, budget_window_label,
 };
 
 const NAME: f32 = 200.;
@@ -349,18 +349,7 @@ fn bar(key: &str, window: &WindowOutlook, now: u64, theme: &Theme) -> Div {
                 .child(budget_window_label(&window.name)),
         )
         .child(div().flex_none().child(budget_percent(window, now)));
-    let below = div()
-        .flex()
-        .flex_wrap()
-        .justify_between()
-        .gap(space::XS)
-        .child(caption(budget_left(window, now), theme))
-        .children(budget_runs_out(window, now).map(|words| {
-            div()
-                .text_size(text::CAPTION)
-                .text_color(theme.warning)
-                .child(words)
-        }));
+    let below = caption(budget_resets(window, now), theme);
     div()
         .flex_1()
         .min_w_0()

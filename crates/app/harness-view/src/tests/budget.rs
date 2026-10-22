@@ -1,5 +1,5 @@
 //! The budget strip: one row per account from its freshest read, grouped by provider with its gate's
-//! login, each window's bar with its share and time to reset, the account's state, and the budget
+//! login, each window's bar with its share and when it resets, the account's state, and the budget
 //! read again on every budget write.
 use super::*;
 use harness::{AccountBudget, BudgetFact, BudgetReport, ServicePace, WindowOutlook};
@@ -7,7 +7,7 @@ use harness::{AccountBudget, BudgetFact, BudgetReport, ServicePace, WindowOutloo
 use crate::ui::budget::{
     AccountState, Level, account_state, answering, freshest, grouped, level, provider_of,
 };
-use crate::words::span;
+use crate::words::budget_resets;
 
 const MINUTE: u64 = 60_000;
 
@@ -84,21 +84,34 @@ fn a_window_turns_amber_at_80_and_red_at_95() {
 }
 
 #[test]
-fn a_time_to_reset_reads_in_its_two_largest_units() {
+fn a_reset_reads_as_the_readers_clock_with_its_day_when_not_today() {
+    let new_year = 1_767_225_600_000;
     let read = [
-        (0, "0m"),
-        (59_999, "0m"),
-        (12 * MINUTE, "12m"),
-        (217 * MINUTE, "3h 37m"),
-        ((4 * 24 * 60 + 14 * 60 + 5) * MINUTE, "4d 14h"),
+        (NOW, at(217), "resets 12:35 PM"),
+        (NOW, at(15 * 60 + 2), "resets 10 Oct, 12:00 AM"),
+        (NOW, at(6_600), "resets 13 Oct, 10:58 PM"),
+        (
+            new_year - 60 * MINUTE,
+            (new_year + 180 * MINUTE) / 1000,
+            "resets 1 Jan 2026, 3:00 AM",
+        ),
+        (NOW, NOW / 1000 - 60, "reset"),
     ];
-    for (millis, shown) in read {
-        assert_eq!(span(millis), shown, "{millis}");
+    for (now, reset, shown) in read {
+        let words = budget_resets(&outlook("5h", 0, reset, None), now);
+        assert_eq!(words, kept(shown), "{reset}");
+    }
+}
+
+fn kept(words: &str) -> String {
+    match words.strip_prefix("resets ") {
+        Some(at) => format!("resets {}", at.replace(' ', "\u{a0}")),
+        None => words.to_owned(),
     }
 }
 
 #[test]
-fn each_window_shows_its_share_its_time_to_reset_and_a_short_run_out() {
+fn each_window_shows_its_share_and_when_it_resets_and_never_a_run_out() {
     let net = Net {
         budget: one(vec![
             outlook("5h", 530_000, at(217), Some(NOW + 30 * MINUTE)),
@@ -116,25 +129,24 @@ fn each_window_shows_its_share_its_time_to_reset_and_a_short_run_out() {
         "via models",
         "session",
         "53%",
-        "3h 37m",
-        "out in 30m",
+        "resets 12:35 PM",
         "weekly",
         "85%",
-        "4d 14h",
+        "resets 13 Oct, 10:58 PM",
         "Fable",
         "96%",
-        "1h 0m",
+        "resets 9:58 AM",
         "2d",
         "0%",
         "reset",
     ] {
-        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+        assert!(cx.has_text(&kept(text)), "{text}: {:?}", cx.texts());
     }
-    let out_after_reset = cx.texts().iter().filter(|t| t.starts_with("out ")).count();
+    let run_out = cx.texts().iter().filter(|t| t.starts_with("out ")).count();
     assert_eq!(
-        out_after_reset,
-        1,
-        "only the 5h runs out first: {:?}",
+        run_out,
+        0,
+        "harness's run-out estimate stays unshown: {:?}",
         cx.texts()
     );
     let theme = view::Theme::default();
