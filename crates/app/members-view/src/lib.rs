@@ -393,6 +393,15 @@ impl View for Members {
             Err(refusal) => cx.log_refused("the session", &refusal),
         })
         .detach();
+        cx.follow::<HostRoute>((), |view, route, cx| match route {
+            Ok(route) => {
+                if let Ok(number) = route.parse::<u64>() {
+                    view.select(number, cx);
+                }
+            }
+            Err(refusal) => cx.log_refused("the link", &refusal),
+        })
+        .detach();
         // the roster joins two programs: a block of either re-reads it
         cx.follow::<Changes<Identity>>((), |view, bump, cx| match bump {
             Ok(_) => view.read(cx),

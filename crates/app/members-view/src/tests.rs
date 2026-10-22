@@ -258,6 +258,19 @@ fn the_list_groups_people_then_agents_then_programs_and_chooses_no_one() {
 }
 
 #[test]
+fn a_link_to_an_account_shows_that_member() {
+    let (mut cx, _) = ready();
+    cx.host()
+        .stream::<view::methods::HostRoute>()
+        .send("7".into());
+    cx.run_until_parked();
+    for text in ["account 7", "eddy's bio", "Devices", "laptop"] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+    assert!(!cx.has_text("Choose a member"));
+}
+
+#[test]
 fn choosing_a_person_shows_their_devices_the_agents_they_manage_and_their_activity() {
     let (mut cx, _) = ready();
     cx.simulate_click("members-row-7");
