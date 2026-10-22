@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use ::program::{BlobId, Error, ExecCtx, HashKind, invalid};
 use abi::role::identity::AccountNumber;
-use files::{Change, Content, EntryInfo, Node, Ownership, Party, Query, Reply};
+use files::{Change, Content, EntryInfo, Fold, Node, Ownership, Party, Query, Reply};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use store::PageRequest;
@@ -340,45 +340,112 @@ impl Tool for Find {
 
 #[derive(Deserialize)]
 pub(crate) struct GrepArgs {
-    pattern: String,
+    pattern: Option<String>,
+    patterns: Option<Vec<String>>,
+    ignore_case: Option<bool>,
     prefix: Option<String>,
     snapshot: Option<String>,
     cursor: Option<String>,
+}
+
+pub(super) struct Sought {
+    pub(super) patterns: Vec<String>,
+    pub(super) fold: Fold,
+    pub(super) named: bool,
+}
+
+pub(super) fn sought(
+    tool: &str,
+    pattern: Option<String>,
+    patterns: Option<Vec<String>>,
+    ignore_case: Option<bool>,
+) -> Result<Sought, Error> {
+    let named = patterns.is_some();
+    let patterns: Vec<String> = pattern
+        .into_iter()
+        .chain(patterns.into_iter().flatten())
+        .collect();
+    if patterns.is_empty() {
+        return Err(invalid(format!("{tool} looks for a pattern or patterns")));
+    }
+    if patterns.iter().any(String::is_empty) {
+        return Err(invalid(format!(
+            "{tool} looks for a pattern that is not empty"
+        )));
+    }
+    let fold = match ignore_case.unwrap_or(false) {
+        true => Fold::Ascii,
+        false => Fold::Exact,
+    };
+    Ok(Sought {
+        patterns,
+        fold,
+        named,
+    })
+}
+
+pub(super) fn named(patterns: &[String], indices: &[u32]) -> Value {
+    let names: Vec<&String> = indices
+        .iter()
+        .filter_map(|index| patterns.get(*index as usize))
+        .collect();
+    json!(names)
+}
+
+pub(super) fn patterns_schema() -> Value {
+    json!({ "type": "array", "items": { "type": "string" }, "description": "instead of pattern or beside it: several literal texts to find in one read; each hit then names the ones its line holds" })
+}
+
+pub(super) fn ignore_case_schema() -> Value {
+    json!({ "type": "boolean", "description": "match ASCII letters in either case, A-Z as a-z; every other character matches only as written; false if omitted" })
 }
 
 pub(crate) struct Grep;
 
 impl Tool for Grep {
     const NAME: &'static str = "files_grep";
-    const DESCRIPTION: &'static str = "Search the text of the network's files for a literal string: each matching line with its path and line number. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. It reads the files under prefix, at most 1 MiB of them a page, so a page may hold few hits or none and still have next: go on with cursor while next is there. A narrow prefix reads less.";
+    const DESCRIPTION: &'static str = "Search the text of the network's files for literal strings: each matching line with its path and line number. Give pattern, or patterns to find several in one read (each hit then names the ones its line holds), and ignore_case to match ASCII letters in either case. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. It reads the files under prefix, at most 1 MiB of them a page, so a page may hold few hits or none and still have next: go on with cursor while next is there. A narrow prefix reads less.";
     type Args = GrepArgs;
 
     fn schema() -> Value {
         object(
             json!({
                 "pattern": { "type": "string", "description": "the literal text to find; a newline in it matches across lines" },
+                "patterns": patterns_schema(),
+                "ignore_case": ignore_case_schema(),
                 "prefix": { "type": "string", "description": "search only paths starting with this; / if omitted" },
                 "snapshot": snapshot_schema(),
                 "cursor": cursor_schema(),
             }),
-            &["pattern"],
+            &[],
         )
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: GrepArgs) -> Result<Run, Error> {
-        let query = Query::Grep {
-            pattern: args.pattern,
-            prefix: args.prefix.unwrap_or_else(|| "/".into()),
-            at: snapshot(&args.snapshot)?,
-            page: page(&args.cursor)?,
+        let sought = sought(Self::NAME, args.pattern, args.patterns, args.ignore_case)?;
+        let prefix = args.prefix.unwrap_or_else(|| "/".into());
+        let at = snapshot(&args.snapshot)?;
+        let page = page(&args.cursor)?;
+        let query = Query::GrepAny {
+            patterns: sought.patterns.clone(),
+            fold: sought.fold,
+            prefix,
+            at,
+            page,
         };
-        let Reply::Hits { snapshot, hits } = ask(ctx, query)? else {
+        let Reply::Found { snapshot, hits } = ask(ctx, query)? else {
             return Err(invalid("files answered a grep with something else"));
         };
         let found: Vec<Value> = hits
             .items
             .iter()
-            .map(|hit| json!({ "path": hit.path, "line": hit.line, "text": hit.text }))
+            .map(|hit| {
+                let mut found = json!({ "path": hit.path, "line": hit.line, "text": hit.text });
+                if sought.named {
+                    found["patterns"] = named(&sought.patterns, &hit.patterns);
+                }
+                found
+            })
             .collect();
         Ok(Run::Done(json!({
             "snapshot": snapshot.as_ref().map(blob),

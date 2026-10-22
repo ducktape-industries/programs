@@ -196,6 +196,20 @@ pub struct Hit {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Fold {
+    Exact,
+    Ascii,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct PatternHit {
+    pub path: String,
+    pub line: u64,
+    pub text: String,
+    pub patterns: Vec<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum DiffKind {
     Added,
     Removed,
@@ -295,6 +309,16 @@ pub enum Query {
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
     #[tool_query(description = "Who owns path by files' rule, and so alone may guard it: the account that made it, for a namespace root's folders the account or program files' params name; null where nothing owns it.", example = examples::owner)]
     Owner { path: String },
+    #[ask(Reply::Found { snapshot: Option<BlobId>, hits: PageResponse<PatternHit> })]
+    #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "Each line holding any of patterns as literal text, under prefix, with its path, its line number and patterns: the indices of the patterns it holds. fold exact matches as written; ascii also matches ASCII letters in the other case (A-Z as a-z), and every other character only as written. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans, and patterns spanning different numbers of lines that match at one line give a hit each. Hits come in path and line order. A page ends once it holds its limit of hits or has read files' chunk size (1 MiB) of file bytes, and next goes on from there, inside a file if need be.", example = examples::grep_any)]
+    GrepAny {
+        patterns: Vec<String>,
+        fold: Fold,
+        prefix: String,
+        at: Option<BlobId>,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -320,6 +344,10 @@ pub enum Reply {
     Pin(Option<PinRow>),
     Guarded(Option<String>),
     Owner(Option<Party>),
+    Found {
+        snapshot: Option<BlobId>,
+        hits: PageResponse<PatternHit>,
+    },
 }
 
 pub fn describe(op: &Op) -> describe::Description {

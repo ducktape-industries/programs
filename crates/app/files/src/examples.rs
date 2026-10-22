@@ -2,7 +2,7 @@
 //! what an agent edits rather than build one from the schema.
 use std::collections::BTreeMap;
 
-use crate::{BlobId, Change, Content, Op, PageRequest, Query};
+use crate::{BlobId, Change, Content, Fold, Op, PageRequest, Query};
 
 fn id() -> BlobId {
     BlobId::Sha256([0; 32])
@@ -103,6 +103,16 @@ pub(crate) fn find() -> Query {
 pub(crate) fn grep() -> Query {
     Query::Grep {
         pattern: "release".into(),
+        prefix: "/docs/".into(),
+        at: None,
+        page: every(),
+    }
+}
+
+pub(crate) fn grep_any() -> Query {
+    Query::GrepAny {
+        patterns: vec!["release".into(), "Deploy".into()],
+        fold: Fold::Ascii,
         prefix: "/docs/".into(),
         at: None,
         page: every(),

@@ -37,6 +37,8 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             vec![
                 json!({ "pattern": PROSE, "prefix": "/shared/", "cursor": "0a0b" }),
                 json!({ "pattern": "{\"Repo\":", "prefix": null }),
+                json!({ "patterns": ["fn main", PROSE], "ignore_case": true, "prefix": "/shared/" }),
+                json!({ "pattern": "x", "patterns": null, "ignore_case": null }),
             ],
         ),
         ("files_history", vec![json!({}), json!({ "cursor": null })]),
@@ -158,6 +160,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             "forge_grep",
             vec![
                 json!({ "repo": "programs", "rev": "dev", "pattern": "fn \"main\"('x')\\n", "prefix": null }),
+                json!({ "repo": "programs", "patterns": ["Spans", "fn \"main\""], "ignore_case": false, "cursor": null }),
             ],
         ),
         (

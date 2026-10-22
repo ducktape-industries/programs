@@ -637,3 +637,102 @@ fn a_forge_read_naming_no_slice_answers_a_long_file_as_its_outline_and_whole_rea
         "read by id, a long file is outlined as Rust"
     );
 }
+
+#[test]
+fn a_forge_grep_for_several_patterns_names_each_hit_s_patterns_and_folds_ascii_case_on_ask() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "several patterns", Some(WINDOW));
+    seeded(&world, thread);
+    let patterns = json!(["FN ONE", "mod b"]);
+    let folded = json!({ "repo": "notes", "rev": "dev", "patterns": patterns.clone(), "ignore_case": true, "prefix": "src/" });
+    let exact = json!({ "repo": "notes", "rev": "dev", "patterns": patterns, "prefix": "src/" });
+    let one = json!({ "repo": "notes", "rev": "dev", "pattern": "FN TWO", "ignore_case": true });
+    let none = json!({ "repo": "notes", "rev": "dev", "patterns": [] });
+    turn(
+        chain,
+        7,
+        &[
+            ("g1", "forge_grep", folded),
+            ("g2", "forge_grep", exact),
+            ("g3", "forge_grep", one),
+            ("g4", "forge_grep", none),
+        ],
+    );
+    let b = json!({ "path": "src/lib.rs", "line": 2, "text": "pub mod b;", "patterns": ["mod b"] });
+    let one =
+        json!({ "path": "src/lib.rs", "line": 4, "text": "fn one() {}", "patterns": ["FN ONE"] });
+    assert_eq!(answered(chain, thread, "g1")["hits"], json!([b, one]));
+    assert_eq!(answered(chain, thread, "g2")["hits"], json!([b]));
+    let two = json!({ "path": "src/lib.rs", "line": 5, "text": "fn two() {}" });
+    assert_eq!(answered(chain, thread, "g3")["hits"], json!([two]));
+    let text = refusal(chain, thread, "g4");
+    assert!(
+        text.contains("forge_grep looks for a pattern or patterns"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_files_grep_for_several_patterns_names_each_hit_s_patterns_and_folds_ascii_case_on_ask() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "several patterns in files", Some(WINDOW));
+    commit(chain, ADA, "/shared/notes.md", "Alpha\nbeta GAMMA\n");
+    let folded =
+        json!({ "patterns": ["alpha", "gamma"], "ignore_case": true, "prefix": "/shared/" });
+    let exact = json!({ "patterns": ["alpha", "GAMMA"], "prefix": "/shared/" });
+    let one = json!({ "pattern": "ALPHA", "ignore_case": true, "prefix": "/shared/" });
+    let plain = json!({ "pattern": "Alpha", "prefix": "/shared/" });
+    turn(
+        chain,
+        3,
+        &[
+            ("f1", "files_grep", folded),
+            ("f2", "files_grep", exact),
+            ("f3", "files_grep", one),
+            ("f4", "files_grep", plain),
+        ],
+    );
+    let path = "/shared/notes.md";
+    let alpha = json!({ "path": path, "line": 1, "text": "Alpha", "patterns": ["alpha"] });
+    let gamma = json!({ "path": path, "line": 2, "text": "beta GAMMA", "patterns": ["gamma"] });
+    assert_eq!(answered(chain, thread, "f1")["hits"], json!([alpha, gamma]));
+    let upper = json!({ "path": path, "line": 2, "text": "beta GAMMA", "patterns": ["GAMMA"] });
+    assert_eq!(answered(chain, thread, "f2")["hits"], json!([upper]));
+    let bare = json!({ "path": path, "line": 1, "text": "Alpha" });
+    assert_eq!(answered(chain, thread, "f3")["hits"], json!([bare.clone()]));
+    assert_eq!(answered(chain, thread, "f4")["hits"], json!([bare]));
+}
+
+#[test]
+fn a_forge_grep_with_mixed_spans_judges_each_file_s_last_lines_in_that_file_alone() {
+    let world = narrow(64);
+    let chain = &world.chain;
+    let thread = world.opened("m1", "mixed spans", Some(WINDOW));
+    let big = format!(
+        "find me\none{}\n{}find me\nlast one\n",
+        "x".repeat(52),
+        "\0".repeat(64)
+    );
+    let files = json!({
+        "repo": "seams",
+        "files": [
+            { "path": "a.txt", "content": "x\nfirst one\n" },
+            { "path": "b.txt", "content": "second\n" },
+            { "path": "z.txt", "content": big },
+        ],
+        "message": "seams",
+    });
+    turn(chain, 3, &[("c1", "forge_commit", files)]);
+    answered(chain, thread, "c1");
+    let asked = json!({ "repo": "seams", "patterns": ["one", "first one\nsecond", "x\nfind me"] });
+    turn(chain, 5, &[("g1", "forge_grep", asked)]);
+    let said = answered(chain, thread, "g1");
+    let first = json!({ "path": "a.txt", "line": 2, "text": "first one", "patterns": ["one"] });
+    let text = format!("one{}", "x".repeat(52));
+    let before = json!({ "path": "z.txt", "line": 2, "text": text, "patterns": ["one"] });
+    let last = json!({ "path": "z.txt", "line": null, "offset": 136, "text": "last one", "patterns": ["one"] });
+    assert_eq!(said["hits"], json!([first, before, last]));
+    assert_eq!(said["skipped"], json!(1));
+}

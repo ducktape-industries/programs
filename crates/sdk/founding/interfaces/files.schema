@@ -386,6 +386,42 @@
       }
     ],
     [
+      "Fold",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Exact",
+              "Fold__Exact"
+            ],
+            [
+              1,
+              "Ascii",
+              "Fold__Ascii"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Fold__Ascii",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Fold__Exact",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
       "Foreign",
       {
         "struct": {
@@ -1073,6 +1109,29 @@
       }
     ],
     [
+      "PageResponse<PatternHit>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<PatternHit>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "PageResponse<PinRow>",
       {
         "struct": {
@@ -1174,6 +1233,33 @@
           "fields": {
             "unnamed_fields": [
               "String"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PatternHit",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "path",
+                "String"
+              ],
+              [
+                "line",
+                "u64"
+              ],
+              [
+                "text",
+                "String"
+              ],
+              [
+                "patterns",
+                "Vec<u32>"
+              ]
             ]
           }
         }
@@ -1333,6 +1419,11 @@
               12,
               "Owner",
               "Query__Owner"
+            ],
+            [
+              13,
+              "GrepAny",
+              "Query__GrepAny"
             ]
           ]
         }
@@ -1393,6 +1484,37 @@
               [
                 "pattern",
                 "String"
+              ],
+              [
+                "prefix",
+                "String"
+              ],
+              [
+                "at",
+                "Option<BlobId>"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__GrepAny",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "patterns",
+                "Vec<String>"
+              ],
+              [
+                "fold",
+                "Fold"
               ],
               [
                 "prefix",
@@ -1643,6 +1765,11 @@
               11,
               "Owner",
               "Reply__Owner"
+            ],
+            [
+              12,
+              "Found",
+              "Reply__Found"
             ]
           ]
         }
@@ -1667,6 +1794,25 @@
           "fields": {
             "unnamed_fields": [
               "Vec<DiffEntry>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Found",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "snapshot",
+                "Option<BlobId>"
+              ],
+              [
+                "hits",
+                "PageResponse<PatternHit>"
+              ]
             ]
           }
         }
@@ -1971,6 +2117,19 @@
       }
     ],
     [
+      "Vec<PatternHit>",
+      {
+        "sequence": {
+          "elements": "PatternHit",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
       "Vec<PinRow>",
       {
         "sequence": {
@@ -2001,6 +2160,19 @@
       {
         "sequence": {
           "elements": "String",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<u32>",
+      {
+        "sequence": {
+          "elements": "u32",
           "length_range": {
             "end": 4294967295,
             "start": 0
@@ -2052,6 +2224,12 @@
       "bool",
       {
         "primitive": 1
+      }
+    ],
+    [
+      "u32",
+      {
+        "primitive": 4
       }
     ],
     [

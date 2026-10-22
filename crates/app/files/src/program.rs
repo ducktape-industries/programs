@@ -116,6 +116,17 @@ impl Program for Files {
             Query::Pin { name } => Ok(Reply::Pin(queries::pin(ctx, &name)?)),
             Query::Guarded { path } => Ok(Reply::Guarded(crate::guards::guarded(ctx, &path)?)),
             Query::Owner { path } => Ok(Reply::Owner(crate::guards::owner(ctx, &path)?)),
+            Query::GrepAny {
+                patterns,
+                fold,
+                prefix,
+                at,
+                page,
+            } => {
+                let (snapshot, hits) =
+                    queries::grep_any(ctx, &patterns, fold, &prefix, at.as_ref(), &page)?;
+                Ok(Reply::Found { snapshot, hits })
+            }
         }
     }
 }

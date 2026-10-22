@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use store::{PageRequest, PageResponse};
 
+use super::files::{ignore_case_schema, named, patterns_schema, sought};
 use super::{
     Run, Seat, Tool, cursor_schema, lines, next, object, page, principal, symbols, unexpected,
 };
@@ -790,7 +791,9 @@ impl Tool for Find {
 pub(crate) struct GrepArgs {
     repo: String,
     rev: Option<String>,
-    pattern: String,
+    pattern: Option<String>,
+    patterns: Option<Vec<String>>,
+    ignore_case: Option<bool>,
     prefix: Option<String>,
     cursor: Option<String>,
 }
@@ -848,7 +851,7 @@ fn cursor(commit: &str, path: &str, place: Place) -> Vec<u8> {
 
 impl Tool for Grep {
     const NAME: &'static str = "forge_grep";
-    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are counted in skipped; a hit after such a range gives its byte offset in place of a line number. It reads the blobs under the prefix, at most 1 MiB of them a page, so a page may hold few hits or none and still have next: go on with cursor while next is there, and every page reads the commit the first one named. A narrow prefix reads less; a prefix no path starts with is refused.";
+    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for literal strings: each matching line with its path and line number, in path order. Give pattern, or patterns to find several in one read (each hit then names the ones its line holds), and ignore_case to match ASCII letters in either case. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are counted in skipped; a hit after such a range gives its byte offset in place of a line number. It reads the blobs under the prefix, at most 1 MiB of them a page, so a page may hold few hits or none and still have next: go on with cursor while next is there, and every page reads the commit the first one named. A narrow prefix reads less; a prefix no path starts with is refused.";
     type Args = GrepArgs;
 
     fn schema() -> Value {
@@ -857,17 +860,17 @@ impl Tool for Grep {
                 "repo": repo_schema(),
                 "rev": rev_schema(),
                 "pattern": { "type": "string", "description": "the literal text to find; a newline in it matches across lines" },
+                "patterns": patterns_schema(),
+                "ignore_case": ignore_case_schema(),
                 "prefix": prefix_schema(),
                 "cursor": cursor_schema(),
             }),
-            &["repo", "pattern"],
+            &["repo"],
         )
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: GrepArgs) -> Result<Run, Error> {
-        if args.pattern.is_empty() {
-            return Err(invalid("forge_grep looks for a pattern that is not empty"));
-        }
+        let sought = sought(Self::NAME, args.pattern, args.patterns, args.ignore_case)?;
         let resume = resumed(&args.cursor)?;
         let at = match &resume {
             Some(resume) => resume.commit.clone(),
@@ -879,13 +882,16 @@ impl Tool for Grep {
         let prefix = args.prefix.unwrap_or_default();
         let prefix = prefix.trim_start_matches('/');
         let dir = prefix.rsplit_once('/').map_or("", |(dir, _)| dir);
+        let spans = ::files::grep::Spans::new(&sought.patterns, sought.fold);
+        let kept = spans.kept();
         let mut search = Search {
             ctx,
             repo: &args.repo,
             at: &at,
             prefix,
-            spans: ::files::grep::Spans::new(&args.pattern),
-            kept: args.pattern.split('\n').count() - 1,
+            spans,
+            kept,
+            names: sought.named.then_some(sought.patterns.as_slice()),
             from: resume.map(|resume| (resume.path, resume.place)),
             served: None,
             read: 0,
@@ -918,8 +924,9 @@ struct Search<'a> {
     repo: &'a str,
     at: &'a str,
     prefix: &'a str,
-    spans: ::files::grep::Spans<'a, (Option<u64>, u64)>,
+    spans: ::files::grep::Spans<(Option<u64>, u64)>,
     kept: usize,
+    names: Option<&'a [String]>,
     from: Option<(String, Place)>,
     served: Option<u64>,
     read: u64,
@@ -1000,7 +1007,6 @@ impl Search<'_> {
         if self.stops_at(path, from) {
             return Ok(());
         }
-        self.spans.gap();
         let blob = blob_of(self.ctx, self.repo, id, None)?;
         match blob.content {
             Content::Text => {
@@ -1009,6 +1015,7 @@ impl Search<'_> {
                 for (index, line) in text.lines().enumerate() {
                     self.hit(path, Some(index as u64 + 1), 0, line);
                 }
+                self.flush(path);
             }
             Content::Oversize => self.ranges(path, id, blob.size, from)?,
             Content::Binary | Content::Gitlink => {
@@ -1055,7 +1062,7 @@ impl Search<'_> {
                 self.skipped += 1;
                 carried.clear();
                 recent.clear();
-                self.spans.gap();
+                self.flush(path);
                 (start, line) = (at, None);
                 continue;
             }
@@ -1084,17 +1091,31 @@ impl Search<'_> {
             }
             carried = rest;
         }
+        self.flush(path);
         Ok(())
     }
 
     fn hit(&mut self, path: &str, line: Option<u64>, offset: u64, text: &str) {
-        let Some(((line, offset), text)) = self.spans.line((line, offset), text) else {
-            return;
-        };
-        let mut hit = json!({ "path": path, "line": line, "text": text });
-        if line.is_none() {
-            hit["offset"] = json!(offset);
+        let found = self.spans.line((line, offset), text);
+        self.record(path, found);
+    }
+
+    fn flush(&mut self, path: &str) {
+        let found = self.spans.gap();
+        self.record(path, found);
+    }
+
+    fn record(&mut self, path: &str, found: Vec<::files::grep::Match<(Option<u64>, u64)>>) {
+        for each in found {
+            let (line, offset) = each.at;
+            let mut hit = json!({ "path": path, "line": line, "text": each.text });
+            if line.is_none() {
+                hit["offset"] = json!(offset);
+            }
+            if let Some(names) = self.names {
+                hit["patterns"] = named(names, &each.patterns);
+            }
+            self.hits.push(hit);
         }
-        self.hits.push(hit);
     }
 }

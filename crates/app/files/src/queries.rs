@@ -14,8 +14,8 @@ use crate::state::{
 };
 use crate::tree::node_at;
 use crate::{
-    CHUNK_SIZE, Contents, DiffEntry, DiffKind, EntryInfo, Hit, Node, PageRequest, PageResponse,
-    PinRow, SnapshotRow,
+    CHUNK_SIZE, Contents, DiffEntry, DiffKind, EntryInfo, Fold, Hit, Node, PageRequest,
+    PageResponse, PatternHit, PinRow, SnapshotRow,
 };
 
 pub(crate) fn head(ctx: &QueryCtx) -> Result<Option<SnapshotRow>, Error> {
@@ -288,13 +288,14 @@ struct Place {
 const START: Place = Place { offset: 0, line: 1 };
 
 struct Grepping<'a> {
-    pattern: &'a str,
+    patterns: &'a [String],
+    fold: Fold,
     prefix: &'a str,
     after: Option<&'a str>,
     inside: Option<Place>,
     limit: usize,
     at: At,
-    hits: Vec<Hit>,
+    hits: Vec<PatternHit>,
     read: u64,
     scanned: Option<String>,
     next: Option<String>,
@@ -347,18 +348,60 @@ pub(crate) fn grep(
     at: Option<&BlobId>,
     page: &PageRequest,
 ) -> Result<(Option<BlobId>, PageResponse<Hit>), Error> {
-    if pattern.is_empty() {
-        return Err(invalid("a pattern is not empty"));
-    }
+    let patterns = [pattern.to_owned()];
+    sought(&patterns)?;
     let row = resolve(ctx, at)?;
     let snapshot = row.as_ref().map(|row| row.id);
     let walk = Walk::open(ctx, page, &("grep", pattern, prefix, snapshot))?;
+    let hits = search(ctx, &patterns, Fold::Exact, prefix, row, &walk)?;
+    let hits = hits.map(|hit| Hit {
+        path: hit.path,
+        line: hit.line,
+        text: hit.text,
+    });
+    Ok((snapshot, hits))
+}
+
+pub(crate) fn grep_any(
+    ctx: &QueryCtx,
+    patterns: &[String],
+    fold: Fold,
+    prefix: &str,
+    at: Option<&BlobId>,
+    page: &PageRequest,
+) -> Result<(Option<BlobId>, PageResponse<PatternHit>), Error> {
+    sought(patterns)?;
+    let row = resolve(ctx, at)?;
+    let snapshot = row.as_ref().map(|row| row.id);
+    let walk = Walk::open(ctx, page, &("grep-any", patterns, fold, prefix, snapshot))?;
+    Ok((snapshot, search(ctx, patterns, fold, prefix, row, &walk)?))
+}
+
+fn sought(patterns: &[String]) -> Result<(), Error> {
+    if patterns.is_empty() {
+        return Err(invalid("a grep looks for at least one pattern"));
+    }
+    match patterns.iter().any(String::is_empty) {
+        true => Err(invalid("a pattern is not empty")),
+        false => Ok(()),
+    }
+}
+
+fn search(
+    ctx: &QueryCtx,
+    patterns: &[String],
+    fold: Fold,
+    prefix: &str,
+    row: Option<SnapshotRow>,
+    walk: &Walk,
+) -> Result<PageResponse<PatternHit>, Error> {
     let Some(row) = row else {
-        return Ok((snapshot, walk.page(Vec::new(), None)));
+        return Ok(walk.page(Vec::new(), None));
     };
     let (after, inside) = resumed(walk.after.as_deref())?;
     let mut grepping = Grepping {
-        pattern,
+        patterns,
+        fold,
         prefix,
         after,
         inside,
@@ -372,7 +415,7 @@ pub(crate) fn grep(
     };
     grep_in(ctx, &row.root, "", &mut grepping)?;
     let next = grepping.next.take();
-    Ok((snapshot, walk.page(grepping.hits, next)))
+    Ok(walk.page(grepping.hits, next))
 }
 
 fn grep_in(ctx: &QueryCtx, dir: &BlobId, base: &str, grepping: &mut Grepping) -> Result<(), Error> {
@@ -414,9 +457,10 @@ fn grep_file(
         return Ok(());
     }
     let file = file_at(ctx, id, grepping.at)?;
+    let spans = crate::grep::Spans::new(grepping.patterns, grepping.fold);
     let mut reading = Reading {
-        spans: crate::grep::Spans::new(grepping.pattern),
-        kept: grepping.pattern.split('\n').count() - 1,
+        kept: spans.kept(),
+        spans,
         recent: VecDeque::new(),
         carried: Vec::new(),
         line: from.line,
@@ -442,15 +486,15 @@ fn grep_file(
     Ok(())
 }
 
-struct Reading<'a> {
-    spans: crate::grep::Spans<'a, u64>,
+struct Reading {
+    spans: crate::grep::Spans<u64>,
     kept: usize,
     recent: VecDeque<Place>,
     carried: Vec<u8>,
     line: u64,
 }
 
-impl Reading<'_> {
+impl Reading {
     fn resume(&self, at: u64) -> Place {
         let partial = Place {
             offset: at - self.carried.len() as u64,
@@ -474,6 +518,8 @@ impl Reading<'_> {
     fn last(&mut self, path: &str, at: u64, grepping: &mut Grepping) {
         let carried = std::mem::take(&mut self.carried);
         self.see(path, at - carried.len() as u64, &carried, grepping);
+        let found = self.spans.gap();
+        record(path, found, grepping);
     }
 
     fn see(&mut self, path: &str, offset: u64, bytes: &[u8], grepping: &mut Grepping) {
@@ -489,13 +535,19 @@ impl Reading<'_> {
             }
         }
         let text = String::from_utf8_lossy(bytes);
-        if let Some((line, text)) = self.spans.line(place.line, &text) {
-            grepping.hits.push(Hit {
-                path: path.to_owned(),
-                line,
-                text,
-            });
-        }
+        let found = self.spans.line(place.line, &text);
+        record(path, found, grepping);
+    }
+}
+
+fn record(path: &str, found: Vec<crate::grep::Match<u64>>, grepping: &mut Grepping) {
+    for each in found {
+        grepping.hits.push(PatternHit {
+            path: path.to_owned(),
+            line: each.at,
+            text: each.text,
+            patterns: each.patterns,
+        });
     }
 }
 

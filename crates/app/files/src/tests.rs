@@ -8,6 +8,7 @@ use abi::role::identity::{Kind, Profile};
 
 use crate::*;
 
+mod grep;
 mod guards;
 mod lines;
 mod lists;
