@@ -1126,7 +1126,7 @@ pub enum Query {
     ProviderRoutes { page: PageRequest },
     #[ask(Reply::FinalErrors(PageResponse<FinalError>))]
     #[reads(state::FINAL_ERRORS)]
-    #[tool_query(description = "An agent's conversations whose inputs end in final errors, each with its newest error, that error's notice frame, the block the run of them began, and how many came in a row; a conversation leaves the list at its next answered turn or once it is closed.", example = examples::final_errors)]
+    #[tool_query(description = "An agent's conversations whose model asks go unanswered: each input that ends in a final error, and each busy retry once its backoff reaches egress's wait for one request, with its newest error, that error's notice frame, the block the run of them began, and how many came in a row; a conversation leaves the list at its next answered turn or once it is closed.", example = examples::final_errors)]
     FinalErrors {
         agent: AccountNumber,
         page: PageRequest,

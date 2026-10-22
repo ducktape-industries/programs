@@ -1,11 +1,17 @@
-//! A conversation's final errors in a row: each input that ends with no answer counts one, kept
-//! with its notice's frame and the block the run began, and the next answered turn or a close
-//! clears them; a busy answer asked again is none. `FinalErrors` reads them by agent.
+//! A conversation's unanswered asks in a row: each input that ends with no answer counts one, as
+//! does each busy retry from its backoff's ceiling on, kept with its notice's frame and the block
+//! the run began; the next answered turn or a close clears them. `FinalErrors` reads them by agent.
 use super::*;
 
 fn refused_for_good() -> Vec<u8> {
     let error = json!({ "type": "error", "error": { "type": "invalid_request_error", "message": "malformed request" } });
     response(400, error)
+}
+
+fn rate_limited() -> Vec<u8> {
+    let error =
+        json!({ "type": "error", "error": { "type": "rate_limit_error", "message": "Slow down" } });
+    response(429, error)
 }
 
 fn final_errors(world: &World) -> Vec<FinalError> {
@@ -132,6 +138,57 @@ fn a_busy_answer_asked_again_is_no_final_error() {
     answer(chain, request.id, Answer::Output(response(529, overloaded)));
     let none = final_errors(&world);
     assert!(none.is_empty(), "{none:?}");
+}
+
+#[test]
+fn a_model_that_429s_forever_is_listed_from_the_retry_ceiling_until_its_first_answer() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    let ceiling = egress::DEFAULT_WAIT.ilog2() + 1;
+    let first = 3;
+    let mut height = first;
+    chain.at(height, 0);
+    for attempt in 1..ceiling {
+        let (request, _) = open_request(chain);
+        answer(chain, request.id, Answer::Output(rate_limited()));
+        let listed = final_errors(&world);
+        assert!(
+            listed.is_empty(),
+            "attempt {attempt} still backs off: {listed:?}"
+        );
+        height += (1u64 << (attempt - 1)) + 1;
+        chain.at(height, 0);
+    }
+    for attempt in ceiling..=ceiling + 1 {
+        let (request, _) = open_request(chain);
+        answer(chain, request.id, Answer::Output(rate_limited()));
+        let listed = only(&world);
+        assert_eq!(
+            (listed.thread, listed.count, listed.since),
+            (thread, u64::from(attempt), first),
+            "{listed:?}"
+        );
+        assert!(listed.text.contains("rate_limit_error"), "{}", listed.text);
+        assert!(
+            listed.text.contains(&format!("(attempt {attempt})")),
+            "{}",
+            listed.text
+        );
+        assert_eq!(notice_at(chain, thread, listed.frame), listed.text);
+        height += egress::DEFAULT_WAIT + 1;
+        chain.at(height, 0);
+    }
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Back." }]),
+        "end_turn",
+    );
+    let cleared = final_errors(&world);
+    assert!(
+        cleared.is_empty(),
+        "its first answer takes it out: {cleared:?}"
+    );
 }
 
 #[test]

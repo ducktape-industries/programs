@@ -483,7 +483,9 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
         "{}; harness asks the model again {when} (attempt {attempt})",
         failure.text
     );
-    append(ctx, &mut row, Body::Notice { text });
+    append(ctx, &mut row, Body::Notice { text: text.clone() });
+    let ceiling = until.is_some() || gap == DEFAULT_WAIT;
+    crate::failures::retrying(ctx, &row, text, attempt, ceiling)?;
     THREADS.put(ctx, &id, &row);
     let first_lost = why == Again::Lost && attempt == 1;
     if first_lost {

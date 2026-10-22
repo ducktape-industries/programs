@@ -1033,11 +1033,11 @@ pub(crate) fn budget_resets(window: &WindowOutlook, now: u64) -> String {
 pub(crate) fn failing_words(failing: &harness::FinalError) -> String {
     match failing.count {
         1 => format!(
-            "Its last input ended in a final error at block {}: {}",
+            "Its last model ask got no answer at block {}: {}",
             failing.height, failing.text
         ),
         count => format!(
-            "Its last {count} inputs ended in final errors since block {}, the newest at block {}: {}",
+            "Its last {count} model asks got no answer since block {}, the newest at block {}: {}",
             failing.since, failing.height, failing.text
         ),
     }
