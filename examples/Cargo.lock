@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+duck://duckpond-725bcad1/forge/core?rev=08bb091599bf44088b44a6476a8090e6d1f9f8ec#08bb091599bf44088b44a6476a8090e6d1f9f8ec"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=0aec2176ac44c731f98413acc034eef89747704d#0aec2176ac44c731f98413acc034eef89747704d"
 dependencies = [
  "borsh",
 ]
@@ -234,7 +234,7 @@ dependencies = [
 [[package]]
 name = "blob"
 version = "0.1.0"
-source = "git+duck://duckpond-725bcad1/forge/core?rev=08bb091599bf44088b44a6476a8090e6d1f9f8ec#08bb091599bf44088b44a6476a8090e6d1f9f8ec"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=0aec2176ac44c731f98413acc034eef89747704d#0aec2176ac44c731f98413acc034eef89747704d"
 dependencies = [
  "abi",
  "borsh",
