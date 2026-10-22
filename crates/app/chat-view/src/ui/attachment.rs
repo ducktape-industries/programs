@@ -16,13 +16,19 @@ const PICTURE_H: Pixels = px(240.);
 const WHOLE: &str = "chat-picture";
 pub(crate) const WHOLE_OVERLAY: &str = "chat-picture-overlay";
 
-fn fitted(picture: &Picture, room: (f32, f32)) -> Img {
-    let (width, height) = view::picture::fit(picture.size, room);
-    img(picture.image.clone())
+fn fitted(image: Img, size: (u32, u32), room: (f32, f32)) -> Img {
+    let (width, height) = view::picture::fit(size, room);
+    image
         .w(px(width))
         .h(px(height))
         .flex_none()
         .object_fit(ObjectFit::Contain)
+}
+
+fn drawn(picture: &Picture, room: (f32, f32), name: String, theme: Theme) -> Img {
+    fitted(blob_img(picture.blobs.clone()), picture.size, room)
+        .with_loading(move || div().size_full().bg(theme.surface).into_any_element())
+        .with_fallback(move || design::quiet(name.clone(), &theme).into_any_element())
 }
 
 pub(crate) fn view(
@@ -66,9 +72,8 @@ pub(crate) fn view(
                 .justify_center()
                 .child(said)
         });
-        let picture = fitted(picture, (FILE_W.into(), PICTURE_H.into()))
+        let picture = drawn(picture, (FILE_W.into(), PICTURE_H.into()), name, theme)
             .max_w_full()
-            .with_fallback(move || design::quiet(name.clone(), &theme).into_any_element())
             .id(format!("{id}/picture"));
         return div()
             .id(id)
@@ -178,7 +183,7 @@ fn face(chat: &Chat, account: u64, name: &str, cx: &mut Context<Chat>) -> Option
     let size = view::picture::picture_size(image.bytes())?;
     let inset = 2. * f32::from(INSET);
     let (width, height) = chat.layout.viewport;
-    let picture = fitted(&Picture { image, size }, (width - inset, height - inset))
+    let picture = fitted(img(image), size, (width - inset, height - inset))
         .id(format!("{WHOLE}/image"))
         .role(Role::Image)
         .aria_label(name.to_owned());
@@ -221,7 +226,7 @@ fn whole(
         theme,
         open,
     );
-    let picture = fitted(picture, room)
+    let picture = drawn(picture, room, file.name.clone(), *theme)
         .id(format!("{WHOLE}/image"))
         .role(Role::Image)
         .aria_label(file.name.clone());

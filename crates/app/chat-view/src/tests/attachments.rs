@@ -606,6 +606,164 @@ fn a_picture_is_read_by_its_chunk_blobs_with_no_snapshot_a_commit_can_prune() {
     assert!(cx.host().requests::<BlobGet>().contains(&chunk));
 }
 
+fn many_object(seq: u64) -> [u8; 32] {
+    [0x40 + seq as u8; 32]
+}
+
+fn many_chunk(seq: u64, at: u8) -> [u8; 32] {
+    let mut id = many_object(seq);
+    id[31] = at;
+    id
+}
+
+fn many_name(id: [u8; 32]) -> String {
+    format!("sha256:{}", abi::hex(&id[..]))
+}
+
+fn many_seq(path: &str) -> u64 {
+    let folder = path.split('/').nth(3).unwrap_or_default();
+    folder.trim_start_matches('m').parse().unwrap_or_default()
+}
+
+fn many_blob(id: &str) -> Option<(u64, u8)> {
+    let hex = id.strip_prefix("sha256:")?;
+    let byte = |at: usize| u8::from_str_radix(hex.get(2 * at..2 * at + 2)?, 16).ok();
+    let seq = u64::from(byte(0)?.checked_sub(0x40)?);
+    Some((seq, byte(31)?))
+}
+
+fn encoded(node: &wire::Node) -> usize {
+    let own = matches!(
+        node,
+        wire::Node::Image {
+            data: Some(wire::ImageData::Encoded(_)),
+            ..
+        }
+    );
+    usize::from(own) + node.children().iter().map(encoded).sum::<usize>()
+}
+
+fn named_blobs(node: &wire::Node, into: &mut Vec<Vec<String>>) {
+    if let wire::Node::Image {
+        data: Some(wire::ImageData::Blobs(ids)),
+        ..
+    } = node
+    {
+        into.push(ids.clone());
+    }
+    for child in node.children() {
+        named_blobs(child, into);
+    }
+}
+
+#[test]
+fn many_pictures_are_read_by_their_first_chunk_alone_and_no_bytes_cross_in_a_frame() {
+    let pictures = 3..11u64;
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host().handle::<Ask<files::Files>>(|query| {
+        Ok(match query {
+            files::Query::Stat { path, .. } => {
+                let node = files::Node::File {
+                    file: BlobId::Sha256(many_object(many_seq(&path))),
+                    size: 3 << 20,
+                    exec: false,
+                };
+                files::Reply::Stat {
+                    snapshot: Some(BlobId::Sha256(SNAPSHOT)),
+                    entry: Some(files::EntryInfo {
+                        path,
+                        node,
+                        meta: Default::default(),
+                    }),
+                }
+            }
+            query => files_reply(query),
+        })
+    });
+    cx.host().handle::<BlobGet>(|id| {
+        let Some((seq, last)) = many_blob(&id) else {
+            return Ok(None);
+        };
+        Ok(Some(match last == many_object(seq)[31] {
+            true => abi::encode(&files::FileObj {
+                size: 3 << 20,
+                chunks: (0..3)
+                    .map(|at| BlobId::Sha256(many_chunk(seq, at)))
+                    .collect(),
+                meta: Default::default(),
+            }),
+            false => [png(96, 96), vec![last; 64]].concat(),
+        }))
+    });
+    let rows: Vec<MsgRow> = pictures
+        .clone()
+        .map(|seq| MsgRow {
+            blocks: vec![chat::Block::Attachment(chat::message::Attachment {
+                path: format!("/chat/general/m{seq}/tape.png"),
+                snapshot: SNAPSHOT,
+                name: "tape.png".into(),
+                size: 3 << 20,
+                content_type: "image/png".into(),
+            })],
+            ..row(seq, 8, "")
+        })
+        .collect();
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(rows.clone())),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    let asked = cx.host().requests::<BlobGet>();
+    let every =
+        |seq: u64| -> Vec<String> { (0..3).map(|at| many_name(many_chunk(seq, at))).collect() };
+    for seq in pictures.clone() {
+        let key = (format!("/chat/general/m{seq}/tape.png"), SNAPSHOT);
+        let named = view.read(|chat| {
+            let shown = chat.shown_files.get(&key);
+            shown.and_then(|shown| shown.picture.as_ref().map(|picture| picture.blobs.clone()))
+        });
+        assert_eq!(
+            named,
+            Some(every(seq)),
+            "m{seq} is drawn from all its chunks, in order"
+        );
+        let first = many_name(many_chunk(seq, 0));
+        assert!(asked.contains(&first), "m{seq}'s first chunk is read");
+        for at in 1..3 {
+            let later = many_name(many_chunk(seq, at));
+            assert!(!asked.contains(&later), "m{seq}'s chunk {at} is never read");
+        }
+    }
+    let on_screen = pictures.clone().any(|seq| {
+        cx.find(&format!("chat-message-m{seq}-block-0/picture"))
+            .is_some()
+    });
+    assert!(on_screen, "a picture is on screen");
+    let frame = cx.whole_frame();
+    let root = frame.root.as_ref().expect("a tree");
+    assert_eq!(encoded(root), 0, "no picture's bytes are in the frame");
+    let mut sent = Vec::new();
+    named_blobs(root, &mut sent);
+    assert!(
+        !sent.is_empty(),
+        "a picture is named by its blobs in the frame"
+    );
+    for ids in &sent {
+        let whole = pictures.clone().any(|seq| *ids == every(seq));
+        assert!(
+            whole,
+            "the frame names a picture by all its chunks, in order: {ids:?}"
+        );
+    }
+}
+
 fn read_once_restarted(
     answer_at_head: fn(files::Query) -> Result<files::Reply, view::host::Error>,
 ) -> (Option<crate::attach::Unread>, Vec<Option<BlobId>>) {

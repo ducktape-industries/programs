@@ -152,8 +152,11 @@ block). Every message, the reader's own as anyone else's, draws its files by the
 path and snapshot it names, read at that snapshot. A read there that answers
 `not_found` (files minted no such snapshot, as for a post that recorded the node's
 prediction, or this node pruned it) is read at files' newest instead, once. A
-picture's bytes are read by the chunk blobs its file object names, each a blob of
-its own, so no commit landing mid-read prunes them under it. A file files holds nothing at
+picture is named by the chunk blobs its file object names, each a blob of its
+own, so no commit landing mid-read prunes them under it. The view reads only the
+first chunk, for the width and height its header gives, and draws the picture
+with `blob_img` over the chunk ids: the host reads and decodes the rest, so no
+picture's bytes pass through the view. A file files holds nothing at
 yet is read again once a files block writes its path (one `Head` and one `Diff`
 a block under the folder the waiting files share, however many wait); a read
 that failed is read again on the next files block and, failing again, once the

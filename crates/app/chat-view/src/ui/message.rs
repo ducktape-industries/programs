@@ -47,7 +47,7 @@ pub(crate) struct Seen {
 
 #[derive(PartialEq)]
 struct FileSeen {
-    shown: Option<(Option<usize>, bool)>,
+    shown: Option<(Option<crate::attach::Picture>, bool)>,
     unread: Option<crate::attach::Unread>,
     opening: bool,
 }
@@ -76,12 +76,10 @@ impl Seen {
                 })
                 .map(|file| {
                     let key = (file.path.clone(), file.snapshot);
-                    let shown = chat.shown_files.get(&key).map(|shown| {
-                        let picture = shown.picture.as_ref();
-                        let picture =
-                            picture.map(|picture| std::sync::Arc::as_ptr(&picture.image) as usize);
-                        (picture, shown.chunks.is_some())
-                    });
+                    let shown = chat
+                        .shown_files
+                        .get(&key)
+                        .map(|shown| (shown.picture.clone(), shown.chunks.is_some()));
                     let unread = chat.unread_files.get(&key).map(|(_, unread)| *unread);
                     let opening = chat
                         .opening

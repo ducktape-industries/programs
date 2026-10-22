@@ -1,8 +1,6 @@
 //! A draft's files as they go up (picked, pasted or dropped; put, then committed to files under the
 //! draft's message, landed once a block holds them), and the files messages carry, read from files
 //! alone, by the path and snapshot the message names: each one's chunks to save, its picture.
-use std::sync::Arc;
-
 use chat::Block;
 use chat::message::Attachment;
 use files::{BlobId, Change, Content};
@@ -35,9 +33,9 @@ enum Found {
     Absent(Option<BlobId>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub(crate) struct Picture {
-    pub(crate) image: Arc<Image>,
+    pub(crate) blobs: Vec<String>,
     pub(crate) size: (u32, u32),
 }
 
@@ -809,25 +807,26 @@ async fn read_attachment(host: Host, file: &Attachment) -> Result<Found, Error> 
     }))
 }
 
-async fn blob(host: &Host, id: &BlobId) -> Result<Vec<u8>, Error> {
+fn blob_name(id: &BlobId) -> String {
     let hash = match id {
         BlobId::Sha256(_) => "sha256",
         BlobId::Sha1(_) => "sha1",
     };
-    let id = format!("{hash}:{}", abi::hex(id.digest()));
-    let bytes = host.ask::<BlobGet>(id).await?;
+    format!("{hash}:{}", abi::hex(id.digest()))
+}
+
+async fn blob(host: &Host, id: &BlobId) -> Result<Vec<u8>, Error> {
+    let bytes = host.ask::<BlobGet>(blob_name(id)).await?;
     bytes.ok_or_else(|| view::host::malformed(words::NOT_THERE.into()))
 }
 
 async fn picture(host: &Host, chunks: &[BlobId]) -> Result<Option<Picture>, Error> {
-    let mut bytes = Vec::new();
-    for chunk in chunks {
-        bytes.extend(blob(host, chunk).await?);
-    }
-    let format = view::picture::picture_format(&bytes);
-    let size = view::picture::picture_size(&bytes);
-    Ok(format.zip(size).map(|(format, size)| Picture {
-        image: Arc::new(Image::from_bytes(format, bytes)),
+    let Some(first) = chunks.first() else {
+        return Ok(None);
+    };
+    let size = view::picture::picture_size(&blob(host, first).await?);
+    Ok(size.map(|size| Picture {
+        blobs: chunks.iter().map(blob_name).collect(),
         size,
     }))
 }
