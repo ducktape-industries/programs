@@ -27,14 +27,25 @@ fn main() {
             key: net.key_of(ada),
         };
         net.submit(me, valset::PROGRAM, &Op::Vote(promote))?;
-        let change = programs::Op::Schedule(Scheduled {
-            height: net.height() + 300,
-            change: Change::Set(Entry {
-                program: valset::PROGRAM.into(),
-                code: abi::BlobId::Sha256([0x7e; 32]),
-                params: Vec::new(),
-            }),
-        });
+        let running: programs::Reply = net.query(
+            programs::PROGRAM,
+            &programs::Query::Program(valset::PROGRAM.into()),
+        )?;
+        let expected = match running {
+            programs::Reply::Program { entry, .. } => entry.map(|entry| entry.code),
+            _ => None,
+        };
+        let change = programs::Op::ScheduleOver {
+            scheduled: Scheduled {
+                height: net.height() + 300,
+                change: Change::Set(Entry {
+                    program: valset::PROGRAM.into(),
+                    code: abi::BlobId::Sha256([0x7e; 32]),
+                    params: Vec::new(),
+                }),
+            },
+            expected,
+        };
         let programs = Motion::Role {
             role: abi::role::PROGRAMS.into(),
             op: abi::encode(&change),

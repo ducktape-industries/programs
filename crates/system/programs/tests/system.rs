@@ -406,6 +406,15 @@ impl Net {
             .expect("the vote ran its op on the programs")
     }
 
+    fn over(&self, height: u64, change: programs::Change) -> programs::Op {
+        let running = self.host.programs().unwrap();
+        let expected = running.get(change.program()).copied();
+        programs::Op::ScheduleOver {
+            scheduled: programs::Scheduled { height, change },
+            expected,
+        }
+    }
+
     async fn refused<Q: BorshSerialize>(&self, program: &str, query: &Q) -> abi::Refusal {
         Box::pin(self.host.query(
             Layer::Confirmed,

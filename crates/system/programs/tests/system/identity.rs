@@ -222,10 +222,7 @@ fn every_program_has_its_account_from_its_admission() {
             params: abi::encode(&Vec::<Step>::new()),
         };
         let scheduled = net
-            .govern(&programs::Op::Schedule(programs::Scheduled {
-                height: lands_at,
-                change: programs::Change::Set(entry),
-            }))
+            .govern(&net.over(lands_at, programs::Change::Set(entry)))
             .await;
         output_of(&scheduled);
         assert_eq!(net.of_program("o/late").await, None);

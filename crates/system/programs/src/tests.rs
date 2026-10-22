@@ -149,19 +149,38 @@ fn hooks(store: &MockHost, height: u64) -> Vec<String> {
     }
 }
 
+fn over_what_runs(store: &MockHost, env: &Env, op: Op) -> Op {
+    match op {
+        Op::ScheduleOver { scheduled, .. } => {
+            let found = crate::rules::found_under(&store.exec(env.clone()), &scheduled);
+            let expected = found.ok().and_then(|[before, _]| before);
+            Op::ScheduleOver {
+                scheduled,
+                expected,
+            }
+        }
+        op => op,
+    }
+}
+
 fn schedule(store: &MockHost, height: u64, change: Change) -> Result<(), ::program::Error> {
-    Programs::execute(
-        &store.exec(authority(1)),
-        Op::Schedule(Scheduled { height, change }),
-    )
+    let op = Op::ScheduleOver {
+        scheduled: Scheduled { height, change },
+        expected: None,
+    };
+    let op = over_what_runs(store, &authority(1), op);
+    Programs::execute(&store.exec(authority(1)), op)
 }
 
 #[test]
 fn a_frame_that_acts_as_no_account_never_schedules_or_cancels() {
     let (store, code) = founded();
-    let scheduled = Scheduled {
-        height: 5,
-        change: Change::Set(entry("o/new", code)),
+    let over = Op::ScheduleOver {
+        scheduled: Scheduled {
+            height: 5,
+            change: Change::Set(entry("o/new", code)),
+        },
+        expected: None,
     };
     let cancel = Op::Cancel {
         height: 5,
@@ -177,13 +196,13 @@ fn a_frame_that_acts_as_no_account_never_schedules_or_cancels() {
         Origin::Program("probe".into()),
         Origin::Program(MockHost::role(abi::role::PROGRAMS)),
     ] {
-        for op in [Op::Schedule(scheduled.clone()), cancel.clone(), own.clone()] {
+        for op in [over.clone(), cancel.clone(), own.clone()] {
             let refused =
                 store.refused(|| Programs::execute(&store.exec(env(1, origin.clone())), op));
             assert_eq!(refused.code, code::UNAUTHORIZED);
         }
     }
-    Programs::execute(&store.exec(authority(1)), Op::Schedule(scheduled)).unwrap();
+    Programs::execute(&store.exec(authority(1)), over).unwrap();
     Programs::execute(&store.exec(authority(1)), cancel).unwrap();
     Programs::execute(&store.exec(authority(1)), own).unwrap();
 }
@@ -294,7 +313,7 @@ fn a_program_bound_to_a_role_is_never_removed() {
 #[test]
 fn the_schedule_pages_in_height_order_and_a_cancel_removes_one_change() {
     let (store, code) = founded();
-    for height in [30u64, 4, 200] {
+    for height in [4u64, 30, 200] {
         schedule(&store, height, Change::Set(entry("o/p", code))).unwrap();
     }
     let ask = |store: &MockHost, page: PageRequest| match Programs::query(
@@ -417,13 +436,13 @@ fn a_name_is_one_kind_whatever_order_the_changes_are_scheduled_in() {
         schedule(&store, 5, Change::Set(entry("o/x", code)))
             .unwrap_err()
             .code,
-        code::ALREADY_EXISTS,
+        code::WRONG_STATE,
         "a program landing before a pending view of its name"
     );
     schedule(&store, 5, Change::Set(entry("o/y", code))).unwrap();
     assert_eq!(
         schedule(&store, 3, view("o/y")).unwrap_err().code,
-        code::ALREADY_EXISTS,
+        code::WRONG_STATE,
         "a view landing before a pending program of its name"
     );
     assert_eq!(
@@ -786,4 +805,38 @@ fn the_retired_views_tag_is_no_query_and_the_live_ones_keep_theirs() {
         tag(&Query::HooksAt { at_height: 7 }),
     ];
     assert_eq!(live, [4, 10, 11]);
+}
+
+#[test]
+fn the_retired_schedule_tag_is_no_op_and_the_live_ones_keep_theirs() {
+    let (store, code) = founded();
+    let scheduled = Scheduled {
+        height: 5,
+        change: Change::Set(entry("o/new", code)),
+    };
+    let retired = [&[0u8][..], &borsh::to_vec(&scheduled).unwrap()].concat();
+    let sent = ::program::execute::<Programs>(&store.exec(authority(1)), &retired);
+    let refused = sent.expect_err("a plain Schedule is no op");
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused:?}");
+    let undecoded = refused
+        .message
+        .starts_with(&format!("{}: Op did not decode: ", crate::PROGRAM));
+    assert!(undecoded, "{refused:?}");
+    assert_eq!(scheduled_heights(&store), Vec::<u64>::new());
+    let tag = |op: &Op| borsh::to_vec(op).unwrap()[0];
+    let live = [
+        tag(&Op::Cancel {
+            height: 5,
+            program: "o/new".into(),
+        }),
+        tag(&Op::Own {
+            program: "o/new".into(),
+            holder: Holder::Vote,
+        }),
+        tag(&Op::ScheduleOver {
+            scheduled,
+            expected: None,
+        }),
+    ];
+    assert_eq!(live, [1, 2, 3]);
 }

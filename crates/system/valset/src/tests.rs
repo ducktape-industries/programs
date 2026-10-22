@@ -684,10 +684,13 @@ fn programs_role(op: &programs::Op) -> Motion {
 }
 
 fn schedule(height: u64) -> Motion {
-    let op = programs::Op::Schedule(Scheduled {
-        height,
-        change: Change::Remove("chat".into()),
-    });
+    let op = programs::Op::ScheduleOver {
+        scheduled: Scheduled {
+            height,
+            change: Change::Remove("chat".into()),
+        },
+        expected: None,
+    };
     programs_role(&op)
 }
 
@@ -785,10 +788,13 @@ fn a_role_motion_is_counted_unread_and_refused_only_for_an_unbound_role() {
     let store = delegated();
     assert_eq!(vote(&store, 1, schedule(2)).unwrap(), counted(1));
     assert_eq!(vote(&store, 1, cancel(1)).unwrap(), counted(1));
-    let bad = programs_role(&programs::Op::Schedule(Scheduled {
-        height: 9,
-        change: Change::Remove("valset".into()),
-    }));
+    let bad = programs_role(&programs::Op::ScheduleOver {
+        scheduled: Scheduled {
+            height: 9,
+            change: Change::Remove("valset".into()),
+        },
+        expected: None,
+    });
     assert_eq!(vote(&store, 1, bad).unwrap(), counted(1));
     let garbage = Motion::Role {
         role: abi::role::PROGRAMS.into(),

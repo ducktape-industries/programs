@@ -25,10 +25,13 @@ fn roster() -> Vec<Entry> {
 }
 
 fn set_valset(height: u64) -> Motion {
-    let op = programs::Op::Schedule(Scheduled {
-        height,
-        change: Change::Set(entry("valset", CODE)),
-    });
+    let op = programs::Op::ScheduleOver {
+        scheduled: Scheduled {
+            height,
+            change: Change::Set(entry("valset", CODE)),
+        },
+        expected: Some(abi::BlobId::Sha256(NOW)),
+    };
     Motion::Role {
         role: abi::role::PROGRAMS.into(),
         op: abi::encode(&op),
@@ -404,51 +407,77 @@ fn every_motion_reads_in_words() {
         (
             Motion::Role {
                 role: abi::role::PROGRAMS.into(),
-                op: abi::encode(&programs::Op::Schedule(Scheduled {
-                    height: 9,
-                    change: Change::Set(Entry {
-                        params: Vec::new(),
-                        ..entry("chat", CODE)
-                    }),
-                })),
+                op: abi::encode(&programs::Op::ScheduleOver {
+                    scheduled: Scheduled {
+                        height: 9,
+                        change: Change::Set(Entry {
+                            params: Vec::new(),
+                            ..entry("chat", CODE)
+                        }),
+                    },
+                    expected: Some(abi::BlobId::Sha256(NOW)),
+                }),
             },
             "Set chat to code sha256:7e7e7e7e…7e7e at block 9 · params changed",
         ),
         (
             Motion::Role {
                 role: abi::role::PROGRAMS.into(),
-                op: abi::encode(&programs::Op::Schedule(Scheduled {
-                    height: 9,
-                    change: Change::Set(entry("forge", CODE)),
-                })),
+                op: abi::encode(&programs::Op::ScheduleOver {
+                    scheduled: Scheduled {
+                        height: 9,
+                        change: Change::Set(entry("forge", CODE)),
+                    },
+                    expected: None,
+                }),
             },
             "Set forge to code sha256:7e7e7e7e…7e7e at block 9 · a new program",
         ),
         (
             Motion::Role {
                 role: abi::role::PROGRAMS.into(),
-                op: abi::encode(&programs::Op::Schedule(Scheduled {
-                    height: 9,
-                    change: Change::Publish {
-                        entry: entry("access", CODE),
-                        roles: vec![abi::role::ACCESS.into()],
+                op: abi::encode(&programs::Op::ScheduleOver {
+                    scheduled: Scheduled {
+                        height: 9,
+                        change: Change::Publish {
+                            entry: entry("access", CODE),
+                            roles: vec![abi::role::ACCESS.into()],
+                        },
                     },
-                })),
+                    expected: None,
+                }),
             },
             "Publish access at code sha256:7e7e7e7e…7e7e at block 9 · a new program · fills access",
         ),
         (
             Motion::Role {
                 role: abi::role::PROGRAMS.into(),
-                op: abi::encode(&programs::Op::Schedule(Scheduled {
-                    height: 9,
-                    change: Change::Publish {
-                        entry: entry("forge", CODE),
-                        roles: Vec::new(),
+                op: abi::encode(&programs::Op::ScheduleOver {
+                    scheduled: Scheduled {
+                        height: 9,
+                        change: Change::Publish {
+                            entry: entry("forge", CODE),
+                            roles: Vec::new(),
+                        },
                     },
-                })),
+                    expected: None,
+                }),
             },
             "Publish forge at code sha256:7e7e7e7e…7e7e at block 9 · a new program · no role",
+        ),
+        (
+            Motion::Role {
+                role: abi::role::PROGRAMS.into(),
+                op: [
+                    &[0u8][..],
+                    &abi::encode(&Scheduled {
+                        height: 9,
+                        change: Change::Set(entry("chat", CODE)),
+                    }),
+                ]
+                .concat(),
+            },
+            "A plain Schedule the programs role no longer takes",
         ),
         (
             Motion::Role {

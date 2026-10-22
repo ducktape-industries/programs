@@ -36,7 +36,7 @@ impl Net {
     }
 
     async fn schedule(&mut self, height: u64, change: programs::Change) {
-        let op = programs::Op::Schedule(programs::Scheduled { height, change });
+        let op = self.over(height, change);
         output_of(&self.govern(&op).await);
     }
 }

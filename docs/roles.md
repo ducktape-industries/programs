@@ -232,8 +232,8 @@ keys and valset's votes.
    naming what is there, unless `expected` is what is under the name both just before
    `height` and once every change already waiting for that name has landed (`None`:
    nothing is). A deploy sends its rollback code as `expected`, so two deploys of one
-   program never both land. Plain `Schedule(Scheduled)` takes the same change with no
-   `expected`, and two deploys from one base can then both land.
+   program never both land. Plain `Schedule` (tag 0) is retired: its bytes are refused
+   as an op that does not decode.
 3. At that height the kernel's `At(height)` sees the new code. Under an id
    already running, the code is swapped: the state, the account and the id
    stay, and `init` does not run again. Under a new id, the program is

@@ -19,10 +19,6 @@ fn set_chat() -> Scheduled {
     }
 }
 
-pub(crate) fn schedule() -> Op {
-    Op::Schedule(set_chat())
-}
-
 pub(crate) fn schedule_over() -> Op {
     Op::ScheduleOver {
         scheduled: set_chat(),

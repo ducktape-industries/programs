@@ -246,8 +246,23 @@ impl Programs {
         at: u64,
         change: programs::Change,
     ) -> Result<(), Error> {
+        let validators = Origin::Program(MockHost::role(abi::role::VALIDATORS));
+        let read = host.query(env("programs", height, validators, None));
+        let asked = programs::Query::ProgramsAt { at_height: at - 1 };
+        let running = match programs::Programs::query(&read, asked)? {
+            programs::Reply::Programs(running) => running,
+            other => panic!("programs: ProgramsAt answers Programs, not {other:?}"),
+        };
+        let expected = running
+            .into_iter()
+            .find(|entry| entry.program == change.program())
+            .map(|entry| entry.code);
         let scheduled = programs::Scheduled { height: at, change };
-        Self::run(host, height, programs::Op::Schedule(scheduled))
+        let op = programs::Op::ScheduleOver {
+            scheduled,
+            expected,
+        };
+        Self::run(host, height, op)
     }
 }
 

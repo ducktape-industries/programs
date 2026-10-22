@@ -266,9 +266,9 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry]) -> String {
             format!("{}: {}", door.label, door.meaning)
         }
         Motion::Role { role, op } if role == abi::role::PROGRAMS => match abi::decode(op) {
-            Ok(
-                programs::Op::Schedule(scheduled) | programs::Op::ScheduleOver { scheduled, .. },
-            ) => scheduled_words(scheduled.height, &scheduled.change, roster),
+            Ok(programs::Op::ScheduleOver { scheduled, .. }) => {
+                scheduled_words(scheduled.height, &scheduled.change, roster)
+            }
             Ok(programs::Op::Cancel { height, program }) => format!(
                 "Cancel {program}'s change at block {}",
                 design::grouped(height)
@@ -283,6 +283,9 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry]) -> String {
                     format!("Hand {program} to accounts {}", listed.join(", "))
                 }
             },
+            Err(_) if op.first() == Some(&0) => {
+                "A plain Schedule the programs role no longer takes".into()
+            }
             Err(_) => "A program change this screen can't read".into(),
         },
         Motion::Role { role, op } if role == abi::role::HALO => match abi::decode(op) {

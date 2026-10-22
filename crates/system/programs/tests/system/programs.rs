@@ -8,14 +8,14 @@ fn a_schedule_is_refused_until_a_quorum_of_validators_holds_the_code() {
         let code = net.stored(programs::CODE_KIND, &program("chat"));
         let id = code.id;
         let bundle = net.put(vec![code]).await;
-        let schedule = programs::Op::Schedule(programs::Scheduled {
-            height: net.height + 10,
-            change: programs::Change::Set(programs::Entry {
+        let schedule = net.over(
+            net.height + 10,
+            programs::Change::Set(programs::Entry {
                 program: "o/identity2".into(),
                 code: id,
                 params: Vec::new(),
             }),
-        });
+        );
         assert_eq!(net.blob(&id).await, None, "a put blob is no held one");
         assert_eq!(refusal_of(&net.govern(&schedule).await), reason::NOT_FOUND);
 
@@ -28,14 +28,14 @@ fn a_schedule_is_refused_until_a_quorum_of_validators_holds_the_code() {
         output_of(&net.govern(&schedule).await);
 
         let pack = net.hold("pack", b"PACK not code").await;
-        let not_code = programs::Op::Schedule(programs::Scheduled {
-            height: net.height + 10,
-            change: programs::Change::Set(programs::Entry {
+        let not_code = net.over(
+            net.height + 10,
+            programs::Change::Set(programs::Entry {
                 program: "packed".into(),
                 code: pack,
                 params: Vec::new(),
             }),
-        });
+        );
         assert_eq!(
             refusal_of(&net.govern(&not_code).await),
             reason::INVALID_INPUT
@@ -55,36 +55,27 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
             params: Vec::new(),
         };
         let unheld = net
-            .govern(&programs::Op::Schedule(programs::Scheduled {
-                height: net.height + 3,
-                change: programs::Change::Set(programs::Entry {
+            .govern(&net.over(
+                net.height + 3,
+                programs::Change::Set(programs::Entry {
                     program: "ghost".into(),
                     code: BlobId::Sha256([9; 32]),
                     params: Vec::new(),
                 }),
-            }))
+            ))
             .await;
         assert_eq!(refusal_of(&unheld), reason::NOT_FOUND);
-        let past = programs::Op::Schedule(programs::Scheduled {
-            height: net.height,
-            change: programs::Change::Set(entry.clone()),
-        });
+        let past = net.over(net.height, programs::Change::Set(entry.clone()));
         assert_eq!(refusal_of(&net.govern(&past).await), reason::INVALID_INPUT);
         let lands_at = net.height + 6;
         let scheduled = net
-            .govern(&programs::Op::Schedule(programs::Scheduled {
-                height: lands_at,
-                change: programs::Change::Set(entry.clone()),
-            }))
+            .govern(&net.over(lands_at, programs::Change::Set(entry.clone())))
             .await;
         output_of(&scheduled);
         let taken = net
-            .govern(&programs::Op::Schedule(programs::Scheduled {
-                height: lands_at,
-                change: programs::Change::Remove("o/identity2".into()),
-            }))
+            .govern(&net.over(lands_at, programs::Change::Remove("o/identity2".into())))
             .await;
-        assert_eq!(refusal_of(&taken), reason::ALREADY_EXISTS);
+        assert_eq!(refusal_of(&taken), reason::WRONG_STATE);
         let programs::Reply::Scheduled(pending) = net
             .ask(
                 programs::PROGRAM,
@@ -155,10 +146,7 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
         assert_eq!(seated, entry);
         let removal_at = net.height + 5;
         let removal = net
-            .govern(&programs::Op::Schedule(programs::Scheduled {
-                height: removal_at,
-                change: programs::Change::Remove("o/identity2".into()),
-            }))
+            .govern(&net.over(removal_at, programs::Change::Remove("o/identity2".into())))
             .await;
         output_of(&removal);
         let cancelled = net
@@ -172,10 +160,7 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
         assert!(net.host.programs().unwrap().contains_key("o/identity2"));
         let removal_at = net.height + 3;
         let removal = net
-            .govern(&programs::Op::Schedule(programs::Scheduled {
-                height: removal_at,
-                change: programs::Change::Remove("o/identity2".into()),
-            }))
+            .govern(&net.over(removal_at, programs::Change::Remove("o/identity2".into())))
             .await;
         output_of(&removal);
         net.ticks(2).await;
@@ -191,14 +176,14 @@ fn schedule_pages_and_missing_programs_report_the_answering_height() {
         let code = net.hold(programs::CODE_KIND, &program("identity")).await;
         for program in ["o/z", "o/a", "o/m"] {
             let receipt = net
-                .govern(&programs::Op::Schedule(programs::Scheduled {
-                    height: 100,
-                    change: programs::Change::Set(programs::Entry {
+                .govern(&net.over(
+                    100,
+                    programs::Change::Set(programs::Entry {
                         program: program.into(),
                         code,
                         params: Vec::new(),
                     }),
-                }))
+                ))
                 .await;
             output_of(&receipt);
         }
@@ -253,14 +238,14 @@ fn a_schedule_from_a_key_with_no_account_or_under_the_notice_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found(context, dir.path()).await;
         let code = net.hold(programs::CODE_KIND, &program("identity")).await;
-        let schedule = programs::Op::Schedule(programs::Scheduled {
-            height: net.height + 5,
-            change: programs::Change::Set(programs::Entry {
+        let schedule = net.over(
+            net.height + 5,
+            programs::Change::Set(programs::Entry {
                 program: "o/identity2".into(),
                 code,
                 params: Vec::new(),
             }),
-        });
+        );
         for signer in [public(1), public(7)] {
             let refused = net.refuse(&signer, programs::PROGRAM, &schedule).await;
             assert_eq!(refused, reason::UNAUTHORIZED, "a key with no account");
@@ -299,25 +284,27 @@ fn an_account_upgrades_a_program_it_holds_with_no_vote() {
         let output = net.apply(&public(7), identity::PROGRAM, &create).await;
         let seven: AccountNumber = abi::decode(&output).unwrap();
         let code = net.hold(programs::CODE_KIND, &program("chat")).await;
-        let upgrade = |height| {
-            programs::Op::Schedule(programs::Scheduled {
+        let probe = net.host.programs().unwrap()["probe"];
+        let upgrade = |height| programs::Op::ScheduleOver {
+            scheduled: programs::Scheduled {
                 height,
                 change: programs::Change::Set(programs::Entry {
                     program: "probe".into(),
                     code,
                     params: Vec::new(),
                 }),
-            })
+            },
+            expected: Some(probe),
         };
         let lands_at = net.height + 1 + programs::NOTICE;
-        let a_role = programs::Op::Schedule(programs::Scheduled {
-            height: lands_at,
-            change: programs::Change::Set(programs::Entry {
+        let a_role = net.over(
+            lands_at,
+            programs::Change::Set(programs::Entry {
                 program: identity::PROGRAM.into(),
                 code,
                 params: Vec::new(),
             }),
-        });
+        );
         let refused = net.refuse(&public(7), programs::PROGRAM, &a_role).await;
         assert_eq!(refused, reason::UNAUTHORIZED, "a role's program");
         let held = net
@@ -350,7 +337,7 @@ fn an_account_upgrades_a_program_it_holds_with_no_vote() {
         else {
             panic!()
         };
-        let programs::Op::Schedule(scheduled) = upgrade(lands_at) else {
+        let programs::Op::ScheduleOver { scheduled, .. } = upgrade(lands_at) else {
             unreachable!()
         };
         assert_eq!(
@@ -393,11 +380,13 @@ fn the_vote_overrules_an_accounts_change_at_its_own_key() {
             code,
             params: Vec::new(),
         });
-        let at = |change: &programs::Change| {
-            programs::Op::Schedule(programs::Scheduled {
+        let probe = net.host.programs().unwrap()["probe"];
+        let at = |change: &programs::Change| programs::Op::ScheduleOver {
+            scheduled: programs::Scheduled {
                 height: lands_at,
                 change: change.clone(),
-            })
+            },
+            expected: Some(probe),
         };
         net.apply(&public(7), programs::PROGRAM, &at(&change)).await;
         let overruled = net.govern(&at(&change)).await;

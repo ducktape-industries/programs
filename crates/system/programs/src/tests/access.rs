@@ -56,10 +56,12 @@ fn vote() -> Env {
 }
 
 fn run(store: &MockHost, env: Env, op: Op) -> Result<(), Error> {
+    let op = over_what_runs(store, &env, op);
     store.attempt(|| Programs::execute(&store.exec(env), op))
 }
 
 fn refusal(store: &MockHost, env: Env, op: Op) -> Error {
+    let op = over_what_runs(store, &env, op);
     store.refused(|| Programs::execute(&store.exec(env), op))
 }
 
@@ -68,7 +70,10 @@ fn refused(store: &MockHost, env: Env, op: Op) -> String {
 }
 
 fn at(height: u64, change: Change) -> Op {
-    Op::Schedule(Scheduled { height, change })
+    Op::ScheduleOver {
+        scheduled: Scheduled { height, change },
+        expected: None,
+    }
 }
 
 fn set(program: &str, code: BlobId) -> Change {
@@ -355,7 +360,7 @@ fn a_founded_name_is_the_votes_and_its_holder_or_the_vote_hands_it_on() {
         "the vote's first set"
     );
     assert_eq!(
-        refused(&store, by(EVE), at(EARLIEST, set("o/new", code))),
+        refused(&store, by(EVE), at(5_001, set("o/new", code))),
         code::UNAUTHORIZED
     );
 }

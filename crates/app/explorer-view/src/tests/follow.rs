@@ -147,10 +147,13 @@ fn programs_swapping(program: &str, at: u64) -> (program::MockHost, BlobId, Blob
         .borrow_mut()
         .siblings
         .insert(MockHost::role(abi::role::BLOBS), held);
-    let swap = programs::Op::Schedule(programs::Scheduled {
-        height: at,
-        change: programs::Change::Set(entry(scheduled)),
-    });
+    let swap = programs::Op::ScheduleOver {
+        scheduled: programs::Scheduled {
+            height: at,
+            change: programs::Change::Set(entry(scheduled)),
+        },
+        expected: Some(running),
+    };
     let validators = Origin::Program(MockHost::role(abi::role::VALIDATORS));
     Programs::execute(&store.exec(programs_env(1, validators)), swap).unwrap();
     (store, running, scheduled)

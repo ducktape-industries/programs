@@ -120,20 +120,26 @@ fn an_account_renames_an_id_it_holds_and_never_a_role_program() {
     };
     Programs::execute(&store.exec(authority(1)), own).unwrap();
     let lands = 2 + crate::NOTICE;
-    let at = |change| {
-        Op::Schedule(Scheduled {
+    let at = |who: &Env, change: Change| {
+        let scheduled = Scheduled {
             height: lands,
             change,
-        })
+        };
+        let op = Op::ScheduleOver {
+            scheduled,
+            expected: None,
+        };
+        over_what_runs(&store, who, op)
     };
-    let stranger = at(rename("boot", "eve/boot"));
+    let stranger = at(&by(EVE), rename("boot", "eve/boot"));
     let refused = store.refused(|| Programs::execute(&store.exec(by(EVE)), stranger));
     assert_eq!(refused.code, code::UNAUTHORIZED, "{refused:?}");
     let identity = MockHost::role(abi::role::IDENTITY);
-    let a_role = at(rename(&identity, "carol/identity"));
+    let a_role = at(&by(CAROL), rename(&identity, "carol/identity"));
     let refused = store.refused(|| Programs::execute(&store.exec(by(CAROL)), a_role));
     assert_eq!(refused.code, code::UNAUTHORIZED, "{refused:?}");
-    Programs::execute(&store.exec(by(CAROL)), at(rename("boot", "carol/boot"))).unwrap();
+    let renamed = at(&by(CAROL), rename("boot", "carol/boot"));
+    Programs::execute(&store.exec(by(CAROL)), renamed).unwrap();
     assert_eq!(owner(&store, "carol/boot"), Some(Holder::Account(CAROL)));
     assert_eq!(programs(&store, lands), ["carol/boot"]);
 }

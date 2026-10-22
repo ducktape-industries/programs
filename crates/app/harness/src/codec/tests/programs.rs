@@ -218,10 +218,13 @@ fn programs_round_trips() {
         code: blob(1),
         params: vec![9],
     };
-    programs.op(&::programs::Op::Schedule(::programs::Scheduled {
-        height: 100,
-        change: ::programs::Change::Set(entry.clone()),
-    }));
+    programs.op(&::programs::Op::ScheduleOver {
+        scheduled: ::programs::Scheduled {
+            height: 100,
+            change: ::programs::Change::Set(entry.clone()),
+        },
+        expected: Some(blob(2)),
+    });
     programs.op(&::programs::Op::Cancel {
         height: 100,
         program: "chat".into(),

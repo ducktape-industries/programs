@@ -136,14 +136,14 @@ pub struct Scheduled {
 #[tool_about(
     "The roster of programs and views a network runs, and the changes scheduled to it: by the validators' vote, or by the account that holds a name, at least 60 blocks ahead."
 )]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Op {
-    #[tool_op(description = "Schedule a change for a later height: Set or Remove a program (a Set's code a held blob of kind program), SetView or RemoveView a view with no program behind it, Rename a program or view to a new owner/name id with its state, account, roles, hook and holder; SetHook, RemoveHook and a Publish that declares roles are the validators' vote's. An account's change lands at least 60 blocks after the block that carries it, only for a name it holds or a free one, which it then holds (a new id is owner/name, and no two ids write the same with / as -); a program that fills a role changes only by the vote.", example = crate::examples::schedule)]
-    Schedule(Scheduled),
     #[tool_op(description = "Take back the change scheduled for program at height, before it lands: an account's change by the name's holder, the vote's by the vote.", example = crate::examples::cancel)]
-    Cancel { height: u64, program: ProgramId },
+    Cancel { height: u64, program: ProgramId } = 1,
     #[tool_op(description = "Hand a name on: to an account, to several accounts any of which acts as its holder, or to the validators' vote. Its holder or the vote.", example = crate::examples::own)]
     Own { program: ProgramId, holder: Holder },
-    #[tool_op(description = "Schedule a change as Schedule does, refused unless expected names what is under its name both just before its height and once every change already waiting for that name has landed: a code, or null for nothing. A deploy's rollback code is its expected, so two deploys of one program never both land.", example = crate::examples::schedule_over)]
+    #[tool_op(description = "Schedule a change for a later height, refused unless expected names what is under its name both just before its height and once every change already waiting for that name has landed: a code, or null for nothing. The change: Set or Remove a program (a Set's code a held blob of kind program), SetView or RemoveView a view with no program behind it, Rename a program or view to a new owner/name id with its state, account, roles, hook and holder; SetHook, RemoveHook and a Publish that declares roles are the validators' vote's. An account's change lands at least 60 blocks after the block that carries it, only for a name it holds or a free one, which it then holds (a new id is owner/name, and no two ids write the same with / as -); a program that fills a role changes only by the vote. A deploy's rollback code is its expected, so two deploys of one program never both land.", example = crate::examples::schedule_over)]
     ScheduleOver {
         scheduled: Scheduled,
         expected: Option<abi::BlobId>,
@@ -300,7 +300,6 @@ pub fn describe(op: &Op) -> describe::Description {
     use describe::{Value, field};
     let height = |height: &u64| field("height", Value::Text(height.to_string()));
     let (title, fields) = match op {
-        Op::Schedule(scheduled) => scheduled_fields(scheduled),
         Op::ScheduleOver {
             scheduled,
             expected,
@@ -349,7 +348,7 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Schedule", "Cancel", "Own", "ScheduleOver"]
+        ["-", "Cancel", "Own", "ScheduleOver"]
     );
 }
 

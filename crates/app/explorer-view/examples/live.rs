@@ -51,7 +51,18 @@ fn main() {
         let kind = programs::CODE_KIND;
         let body = b"chat, the next release".to_vec();
         let code = net.hold(kind, &body)?;
-        let at = |height: u64, change: Change| programs::Op::Schedule(Scheduled { height, change });
+        let running: programs::Reply = net.query(
+            programs::PROGRAM,
+            &programs::Query::Program(chat::PROGRAM.into()),
+        )?;
+        let chat_code = match running {
+            programs::Reply::Program { entry, .. } => entry.map(|entry| entry.code),
+            _ => None,
+        };
+        let at = |height: u64, change: Change, expected| programs::Op::ScheduleOver {
+            scheduled: Scheduled { height, change },
+            expected,
+        };
         let set = |program: &str| {
             Change::Set(programs::Entry {
                 program: program.into(),
@@ -59,8 +70,12 @@ fn main() {
                 params: Vec::new(),
             })
         };
-        net.submit(ada, programs::PROGRAM, &at(700, set(chat::PROGRAM)))?;
-        vote(&at(900, set("trade")))?;
+        net.submit(
+            ada,
+            programs::PROGRAM,
+            &at(700, set(chat::PROGRAM), chat_code),
+        )?;
+        vote(&at(900, set("trade"), None))?;
         if unprivileged {
             let validators: valset::Reply =
                 net.query(valset::PROGRAM, &valset::Query::Validators)?;

@@ -205,7 +205,7 @@ fn pending_vote_height(ctx: &QueryCtx, name: &str) -> Result<Option<u64>, Error>
         .map(|key| key.0))
 }
 
-pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error> {
+fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error> {
     let env = ctx.env();
     let by = actor(&env, scheduled.change.program())?;
     let changes = match by {
@@ -373,23 +373,31 @@ fn named(code: Option<BlobId>) -> String {
     code.map_or_else(|| "nothing".into(), |code| format!("code {code:?}"))
 }
 
-pub(crate) fn schedule_over(
+pub(crate) fn found_under(
     ctx: &ExecCtx,
-    scheduled: Scheduled,
-    expected: Option<BlobId>,
-) -> Result<(), Error> {
-    let name = scheduled.change.program().to_owned();
-    let overruled = match actor(&ctx.env(), &name)? {
+    scheduled: &Scheduled,
+) -> Result<[Option<BlobId>; 2], Error> {
+    let name = scheduled.change.program();
+    let overruled = match actor(&ctx.env(), name)? {
         Some(_) => Vec::new(),
-        None => overruled(ctx, &name)?,
+        None => overruled(ctx, name)?,
     };
-    let before = code_under(&roster(ctx, scheduled.height, &overruled)?, &name);
+    let before = code_under(&roster(ctx, scheduled.height, &overruled)?, name);
     let mut last = stored(ctx)?;
     let waiting = SCHEDULE.all(ctx)?.into_iter();
     for (_, change) in waiting.filter(|(at, _)| !overruled.contains(at)) {
         apply(&mut last, change);
     }
-    let after = code_under(&last, &name);
+    Ok([before, code_under(&last, name)])
+}
+
+pub(crate) fn schedule_over(
+    ctx: &ExecCtx,
+    scheduled: Scheduled,
+    expected: Option<BlobId>,
+) -> Result<(), Error> {
+    let [before, after] = found_under(ctx, &scheduled)?;
+    let name = scheduled.change.program();
     let found = [
         (before, format!("just before block {}", scheduled.height)),
         (
