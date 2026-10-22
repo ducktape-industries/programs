@@ -176,39 +176,36 @@ pub fn code(key: &str, lang: &str, text: &str, theme: &Theme) -> AnyElement {
 // on `surface` and semibold.
 fn table(key: &str, rows: &[Vec<Text>], theme: &Theme, on_link: &OnLink) -> AnyElement {
     let width = rows.iter().map(Vec::len).max().unwrap_or(0);
-    let mut grid = div()
-        .id(id(format!("{key}-table")))
-        .flex()
-        .flex_col()
-        .border_1()
-        .border_color(theme.border);
     let blank = Text::default();
-    for (r, row) in rows.iter().enumerate() {
-        let mut line = div()
-            .flex()
-            .when(r > 0, |line| line.border_t_1().border_color(theme.border));
-        if r == 0 {
-            line = line.bg(theme.surface).font_weight(FontWeight::SEMIBOLD);
-        }
-        for c in 0..width {
-            line = line.child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.))
-                    .px_2()
-                    .py_1()
-                    .when(c > 0, |cell| cell.border_l_1().border_color(theme.border))
-                    .child(rich(
-                        format!("{key}-{r}-{c}"),
-                        row.get(c).unwrap_or(&blank),
-                        theme,
-                        on_link,
-                    )),
-            );
-        }
-        grid = grid.child(line);
-    }
-    grid.into_any_element()
+    let cells = rows.iter().enumerate().flat_map(|(r, row)| {
+        let blank = &blank;
+        (0..width).map(move |c| {
+            div()
+                .min_w(px(0.))
+                .px_2()
+                .py_1()
+                .when(r > 0, |cell| cell.border_t_1().border_color(theme.border))
+                .when(c > 0, |cell| cell.border_l_1().border_color(theme.border))
+                .when(r == 0, |cell| {
+                    cell.bg(theme.surface).font_weight(FontWeight::SEMIBOLD)
+                })
+                .child(rich(
+                    format!("{key}-{r}-{c}"),
+                    row.get(c).unwrap_or(blank),
+                    theme,
+                    on_link,
+                ))
+        })
+    });
+    let grid = div()
+        .id(id(format!("{key}-table")))
+        .min_w(px(0.))
+        .grid()
+        .grid_cols_max_content(width as u16)
+        .border_1()
+        .border_color(theme.border)
+        .children(cells.collect::<Vec<_>>());
+    div().flex().child(grid).into_any_element()
 }
 
 // One source line as mono rich text in its tokens' colours.
@@ -238,7 +235,7 @@ pub fn source_line(
 #[cfg(all(test, feature = "parse"))]
 mod view_tests {
     use view::testing::TestAppContext;
-    use view::{Context, IntoElement, Render, View, Window};
+    use view::{Context, IntoElement, Render, Styled, View, Window};
 
     // A document that keeps each destination its `OnLink` is handed.
     #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -286,5 +283,47 @@ mod view_tests {
             doc.read(|doc| doc.pressed.clone()),
             ["duck://net-1/forge/rfcs", "../a.md", "https://x.example"]
         );
+    }
+
+    #[derive(Default, serde::Serialize, serde::Deserialize)]
+    struct Sheet;
+
+    impl View for Sheet {
+        const NAME: &'static str = "Sheet";
+    }
+
+    impl Render for Sheet {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = *cx.global::<view::Theme>();
+            let on_link: crate::OnLink = std::rc::Rc::new(|_, _, _| {});
+            super::render(
+                "sheet",
+                "| # | Prefer this shape |\n|---|---|\n| 1 | A feature kind has one home; the registry only collects |",
+                &theme,
+                &on_link,
+            )
+        }
+    }
+
+    #[test]
+    fn a_tables_columns_fit_their_content_and_its_cells_wrap() {
+        let mut cx = TestAppContext::new();
+        cx.open::<Sheet>();
+        cx.run_until_parked();
+        let mut max_content_columns = view::div().grid_cols_max_content(2);
+        assert_eq!(
+            cx.style("sheet-0-table").grid_cols,
+            max_content_columns.style().grid_cols
+        );
+        let cell_white_space: Vec<_> = cx
+            .node("sheet-0-table")
+            .children()
+            .iter()
+            .map(|cell| {
+                cell.style()
+                    .map(|style| cx.styles()[style].text.white_space)
+            })
+            .collect();
+        assert_eq!(cell_white_space, vec![Some(None); 4]);
     }
 }
