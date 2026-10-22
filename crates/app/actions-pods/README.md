@@ -49,7 +49,8 @@ the log's last 2048 bytes), or why the service could not read them. Each such be
 check's `Query::Progress`, with the block height and time it was heard, until the check ends. A
 beat comes every `every` seconds (half an egress wait), so a read time that stops moving while the
 check still runs says its wait is lost, and a pod that is gone ends the check. A beat that names no
-log, from a pods service that reads none, leaves the last read as it was. A header carries the log,
+log, from a pods service that reads none, leaves the last read as it was. An event's `data:` field
+reads with or without the space after its colon, as Server-Sent Events allow. A header carries the log,
 not a query word, because a pods service that reads no log ignores a header it doesn't know and
 refuses a word.
 
@@ -63,10 +64,14 @@ check, naming the field and what it read, and makes no pod.
 ## A check past its time limit
 
 A check whose job states `timeout-minutes` (actions `Query::TimeLimit`) is timed by block time from
-its claim. Each time a wait on its pod ends and the pod still runs, a check that has run that long
+its claim. Whenever an event of its pod's wait other than the pod's end arrives (an alive beat
+included), and whenever a wait on its pod ends and the pod still runs, a check that has run that long
 has the last lines of its `/out/log` read (the tail Kubernetes' own `FallbackToLogsOnError`
 keeps: the last 80 lines, at most 2048 bytes), its `/out` kept as for any end, and its pod
 deleted, and it is reported failed, its summary saying how long it ran, the limit, and those lines.
-So it ends at most one egress wait (`DEFAULT_WAIT`) past its limit. A pod taken up after an update
+Beats keep the wait open, so the beat after the limit ends the check: it ends at most one beat
+(`every` seconds, half an egress wait) past its limit, or one egress wait (`DEFAULT_WAIT`) where the
+beats stop. One run finishes a check: whichever of the beat and the waiting run reaches the end
+first copies, reports and deletes, and the other leaves the check alone. A pod taken up after an update
 of this program that recorded no claim time is timed from when it is taken up. A job that states no
 limit runs until its pod ends.

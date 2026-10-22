@@ -30,7 +30,7 @@ pub enum Op {
     Offer(actions::Offer),
     #[tool_op(description = "This program's own scheduled run alone: run an offered check in a pod, claim it, wait for the pod to end, record its outputs, report it and delete the pod. A check past the quota or the concurrent limit, or whose pod the cluster did not make, waits; waiting checks take room oldest first.", example = crate::examples::run)]
     Run { check: u64 },
-    #[tool_op(description = "From the egress role only: an event of a pod's streamed wait; the ended event is kept for the run that waits on that pod, and an event that reaches code other than the one that waited on its pod (a Set of this program cut that run off) books the pod's Resume the block after.", example = crate::examples::heard)]
+    #[tool_op(description = "From the egress role only: an event of a pod's streamed wait; the ended event is kept for the run that waits on that pod, any other event of a check past its job's time limit finishes that check, and an event that reaches code other than the one that waited on its pod (a Set of this program cut that run off) books the pod's Resume the block after.", example = crate::examples::heard)]
     Heard(Event),
     #[tool_op(description = "Settle every pod this runner holds against its check: a pod whose check no longer runs is deleted, one an update of this program cut off is taken up again, and waiting checks are tried again. Open to anyone.", example = crate::examples::sweep)]
     Sweep,

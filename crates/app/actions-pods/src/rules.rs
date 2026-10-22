@@ -27,6 +27,8 @@ pub(crate) const ADOPTING: Map<u64, Adopting> = Map::new("a/");
 pub(crate) const SWEEP_AT: Item<u64> = Item::new("sweep-at");
 pub(crate) const STARTED: Map<u64, u64> = Map::new("started/");
 pub(crate) const PROGRESS: Map<u64, Progress> = Map::new("progress/");
+pub(crate) const WAITED: Map<u64, RunRow> = Map::new("waited/");
+pub(crate) const FINISHING: Map<u64, Option<BlobId>> = Map::new("finishing/");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct Adopting {
@@ -156,9 +158,9 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
     if supersede_earlier_attempts(&ctx, &row).await {
         retry_waiting_next_block(&ctx).await;
     }
-    let ending = wait_for_pod_and_copy_outputs(&ctx, &row, &pod, &mut kept)
-        .await
-        .unwrap_or_else(Ending::errored);
+    let Some(ending) = wait_for_pod_and_copy_outputs(&ctx, &row, &pod, &mut kept).await else {
+        return Ok(());
+    };
     finish_pod_and_retry_waiting(&ctx, check, &pod, kept, ending).await;
     Ok(())
 }
@@ -350,6 +352,7 @@ async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) -> boo
         return false;
     };
     if found.state != State::Running {
+        FINISHING.put(ctx, &check, &now);
         delete(ctx, &held.pod).await;
         let_go(ctx, check, &held.pod);
         ADOPTING.remove(ctx, &check);
@@ -406,10 +409,13 @@ pub(crate) async fn resume(ctx: Ctx, check: u64) -> Result<(), Error> {
         ..RunRow::default()
     };
     let ending = match check_row(&ctx, check) {
-        Ok(found) => wait_for_pod_and_copy_outputs(&ctx, &found, &held.pod, &mut kept)
-            .await
-            .unwrap_or_else(Ending::errored),
-        Err(refused) => Ending::errored(refused.message),
+        Ok(found) => wait_for_pod_and_copy_outputs(&ctx, &found, &held.pod, &mut kept).await,
+        Err(refused) => {
+            took_the_finish(&ctx, check, &held.pod).then(|| Ending::errored(refused.message))
+        }
+    };
+    let Some(ending) = ending else {
+        return Ok(());
     };
     finish_pod_and_retry_waiting(&ctx, check, &held.pod, kept, ending).await;
     Ok(())
@@ -432,6 +438,7 @@ async fn supersede_earlier_attempts(ctx: &Ctx, by: &CheckRow) -> bool {
 }
 
 async fn retire_superseded_check(ctx: &Ctx, check: &CheckRow, held: &PodRow, by: &CheckRow) {
+    FINISHING.put(ctx, &check.id, &code_at_current_height(ctx));
     delete(ctx, &held.pod).await;
     let_go(ctx, check.id, &held.pod);
     ADOPTING.remove(ctx, &check.id);
@@ -468,7 +475,28 @@ fn let_go(ctx: &Ctx, check: u64, pod: &str) {
     PODS.remove(ctx, &check);
     STARTED.remove(ctx, &check);
     PROGRESS.remove(ctx, &check);
+    WAITED.remove(ctx, &check);
+    FINISHING.remove(ctx, &check);
     ENDED.remove(ctx, &pod.to_owned());
+}
+
+fn took_the_finish(ctx: &Ctx, check: u64, pod: &str) -> bool {
+    let now = code_at_current_height(ctx);
+    let holds_the_pod = PODS
+        .get(ctx, &check)
+        .ok()
+        .flatten()
+        .is_some_and(|held| held.pod == pod);
+    let finished_by_running_code = FINISHING
+        .get(ctx, &check)
+        .ok()
+        .flatten()
+        .is_some_and(|by| by == now);
+    let free = holds_the_pod && !finished_by_running_code;
+    if free {
+        FINISHING.put(ctx, &check, &now);
+    }
+    free
 }
 
 async fn room_changed(ctx: &Ctx) {
@@ -696,7 +724,22 @@ async fn wait_for_pod_and_copy_outputs(
     check: &CheckRow,
     pod: &str,
     kept: &mut RunRow,
-) -> Result<Ending, String> {
+) -> Option<Ending> {
+    if !took_the_finish(ctx, check.id, pod) {
+        return None;
+    }
+    match waited_out(ctx, check, pod, kept).await {
+        Ok(ending) => ending,
+        Err(why) => Some(Ending::errored(why)),
+    }
+}
+
+async fn waited_out(
+    ctx: &Ctx,
+    check: &CheckRow,
+    pod: &str,
+    kept: &mut RunRow,
+) -> Result<Option<Ending>, String> {
     let limit = time_limit(ctx, check.id)?;
     let started = match STARTED
         .get(ctx, &check.id)
@@ -710,40 +753,49 @@ async fn wait_for_pod_and_copy_outputs(
         }
     };
     let mut opened = (ctx.env().height, ctx.env().time);
-    let ended = loop {
+    loop {
         let every = alive_every(kept.block_ms)?;
         kept.every = every;
+        WAITED.put(ctx, &check.id, kept);
+        FINISHING.remove(ctx, &check.id);
         let wait = format!("/v1/pods/{pod}/wait?every={every}");
         let events = Delivery::Events {
             deliver: crate::heard_as(),
         };
         let reads = vec![("log".to_owned(), LOG.to_owned())];
         let waited = ask_with(ctx, http::Method::Get, wait, reads, Vec::new(), events).await;
+        if !took_the_finish(ctx, check.id, pod) {
+            return Ok(None);
+        }
         if let Some(ended) = ENDED
             .get(ctx, &pod.to_owned())
             .map_err(|refused| refused.message)?
         {
             ENDED.remove(ctx, &pod.to_owned());
-            break serde_json::from_slice::<Value>(&ended).map_err(|error| error.to_string())?;
+            let ended =
+                serde_json::from_slice::<Value>(&ended).map_err(|error| error.to_string())?;
+            return Ok(Some(pod_ended(ctx, check, pod, ended).await));
         }
-        if let Ok(answer) = &waited
-            && answer.status != 200
-        {
+        let refused = waited.as_ref().ok().filter(|answer| answer.status != 200);
+        if let Some(answer) = refused {
             return Err(refusal("the wait", answer));
         }
         if let Some(ended) = read_pod_ending(ctx, pod).await? {
-            break ended;
+            return Ok(Some(pod_ended(ctx, check, pod, ended).await));
         }
         let ran = ctx.env().time.saturating_sub(started);
-        if let Some(minutes) = limit.filter(|minutes| ran >= minutes.saturating_mul(60_000)) {
-            return Ok(past_its_limit(ctx, check, pod, minutes, ran).await);
+        if let Some(minutes) = limit.filter(|minutes| limit_reached(*minutes, ran)) {
+            return Ok(Some(past_its_limit(ctx, check, pod, minutes, ran).await));
         }
         let (height, time) = (ctx.env().height, ctx.env().time);
         if let Some(blocks) = height.checked_sub(opened.0).filter(|blocks| *blocks > 0) {
             kept.block_ms = time.saturating_sub(opened.1) / blocks;
         }
         opened = (height, time);
-    };
+    }
+}
+
+async fn pod_ended(ctx: &Ctx, check: &CheckRow, pod: &str, ended: Value) -> Ending {
     let state = match ended["exit_code"].as_i64() {
         Some(0) => State::Passed,
         Some(_) => State::Failed,
@@ -754,11 +806,41 @@ async fn wait_for_pod_and_copy_outputs(
     if let Some(missed) = missed {
         summary.push_str(&format!("; {missed}"));
     }
-    Ok(Ending {
+    Ending {
         state,
         summary,
         log,
-    })
+    }
+}
+
+fn limit_reached(minutes: u64, ran: u64) -> bool {
+    ran >= minutes.saturating_mul(60_000)
+}
+
+fn overdue(ctx: &QueryCtx, check: u64) -> Option<(u64, u64)> {
+    let minutes = time_limit(ctx, check).ok().flatten()?;
+    let started = STARTED.get(ctx, &check).ok().flatten()?;
+    let ran = ctx.env().time.saturating_sub(started);
+    limit_reached(minutes, ran).then_some((minutes, ran))
+}
+
+async fn finish_if_past_its_limit(ctx: &Ctx, check: u64, pod: &str) {
+    let Some((minutes, ran)) = overdue(ctx, check) else {
+        return;
+    };
+    if !took_the_finish(ctx, check, pod) {
+        return;
+    }
+    let ending = match check_row(ctx, check) {
+        Ok(row) => past_its_limit(ctx, &row, pod, minutes, ran).await,
+        Err(refused) => Ending::errored(refused.message),
+    };
+    let kept = WAITED.get(ctx, &check).ok().flatten().unwrap_or(RunRow {
+        check,
+        pod: Some(pod.to_owned()),
+        ..RunRow::default()
+    });
+    finish_pod_and_retry_waiting(ctx, check, pod, kept, ending).await;
 }
 
 pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
@@ -1148,24 +1230,33 @@ pub(crate) async fn heard(ctx: &Ctx, event: Event) -> Result<(), Error> {
     let Some((check, held)) = held else {
         return Ok(());
     };
-    if let Some(data) = ended_event_data(&event.data) {
-        ENDED.put(ctx, &pod, &data);
+    let ended = ended_event_data(&event.data);
+    if let Some(data) = &ended {
+        ENDED.put(ctx, &pod, data);
     }
     if let Some(log) = alive_event_log(&event.data) {
         let (height, time) = (ctx.env().height, ctx.env().time);
         PROGRESS.put(ctx, &check, &Progress { height, time, log });
     }
     take_up_if_cut_off(ctx, check, &held, code_at_current_height(ctx)).await;
+    if ended.is_none() {
+        finish_if_past_its_limit(ctx, check, &held.pod).await;
+    }
     Ok(())
 }
 
 fn ended_event_data(raw: &[u8]) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(raw).ok()?;
     let ended = text.lines().any(|line| line == "event: ended");
-    let data = text.lines().find_map(|line| line.strip_prefix("data: "));
+    let data = text.lines().find_map(data_field);
     ended
         .then(|| data.map(|data| data.as_bytes().to_vec()))
         .flatten()
+}
+
+fn data_field(line: &str) -> Option<&str> {
+    let value = line.strip_prefix("data:")?;
+    Some(value.strip_prefix(' ').unwrap_or(value))
 }
 
 fn alive_event_log(raw: &[u8]) -> Option<LogRead> {
@@ -1173,7 +1264,7 @@ fn alive_event_log(raw: &[u8]) -> Option<LogRead> {
     text.lines()
         .any(|line| line == "event: alive")
         .then_some(())?;
-    let data = text.lines().find_map(|line| line.strip_prefix("data: "))?;
+    let data = text.lines().find_map(data_field)?;
     let said: Value = serde_json::from_str(data).ok()?;
     let log = said.get("log")?;
     if let Some(why) = log["error"].as_str() {
