@@ -308,7 +308,15 @@ no hooks.
 After each frame runs, the kernel calls each hook with a `hook::Record`:
 the block height, the frame's place in the block, its signer, the account
 it acted as, its target and whether it applied. A refused frame is told
-too. The call's origin is the kernel itself (`Origin::Root`, from
+too. A hook whose code exports `hooks` (`abi::hook::BATCH_EXPORT`; the SDK's
+`export!` and `export_awaiting!` write it, so every program built on this SDK
+has it) is told once per block instead: after the block's frames and before
+the scheduler, the kernel calls it with `ProgramCall::Hooks` and every record,
+on `HOOK_FUEL` per record, and `Program::hooks` runs `hook` for each record in
+turn unless the program overrides it. Its writes then land after every frame
+of the block, so a frame that reads the hook's program in the same block sees
+the state the block started from. A batch the hook refuses keeps none of its
+writes, and the kernel tells it each record alone. The call's origin is the kernel itself (`Origin::Root`, from
 `Env::kernel()` in `program`), and `program::hook` refuses any other. A hook
 never changes a frame: its receipt stays as it ran, a hook that refuses,
 traps, runs out of fuel or emits a message keeps none of its writes, and

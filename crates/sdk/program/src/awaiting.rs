@@ -248,7 +248,7 @@ pub mod exports {
     use abi::{Invocation, ProgramCall, ProgramReply, Refusal, reason};
 
     use super::{Awaiting, Step, Suspended, resume, start};
-    use crate::{Error, ExecCtx, QueryCtx, access, code, hook, query, resource};
+    use crate::{Error, ExecCtx, QueryCtx, access, code, hook, hooks, query, resource};
 
     #[link(wasm_import_module = "ducktape")]
     unsafe extern "C" {
@@ -284,10 +284,7 @@ pub mod exports {
             ProgramCall::Access(payload) => access::<A>(&QueryCtx::new(env), &payload),
             ProgramCall::Resource(key) => resource::<A>(&QueryCtx::new(env), &key),
             ProgramCall::Hook(record) => hook::<A>(&ExecCtx::new(env), record),
-            ProgramCall::Hooks(_) => Err(Error::new(
-                code::UNSUPPORTED,
-                "this program takes each frame's hook record alone: it exports no hooks batch",
-            )),
+            ProgramCall::Hooks(records) => hooks::<A>(&ExecCtx::new(env), records),
         };
         reply.map_err(crate::kernel::refusal_from)
     }
@@ -318,5 +315,11 @@ macro_rules! export_awaiting {
         pub extern "C" fn call(ptr: u32, len: u32) -> u64 {
             $crate::awaiting::exports::call::<$program>(ptr, len)
         }
+
+        #[cfg(target_arch = "wasm32")]
+        const _: () = {
+            #[unsafe(no_mangle)]
+            pub extern "C" fn hooks() {}
+        };
     };
 }

@@ -447,8 +447,11 @@ account's frame on a program that fills no role ([roles.md](roles.md),
 "Updating a program"), before scheduling or cancelling a change.
 
 A program the programs role lists as a hook ([roles.md](roles.md), "Hooks") is
-told of every frame a block carries through `Program::hook(ctx, record)`.
-`program::hook` calls it only when `Env::kernel()` admits the origin (the
+told of every frame a block carries through `Program::hook(ctx, record)`, or,
+once per block with every record, through `Program::hooks(ctx, records)`,
+which runs `hook` for each record in turn unless the program overrides it:
+every program `export!` builds exports the marker that asks for the batch
+(roles.md, "Hooks"). `program::hook` and `program::hooks` call it only when `Env::kernel()` admits the origin (the
 chain, `Root`); a program that does not override `hook` refuses the call.
 `activity` is the one this repo founds.
 

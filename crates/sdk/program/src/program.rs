@@ -63,6 +63,12 @@ pub trait Program {
         Err(Error::new(code::UNSUPPORTED, "this program is no hook"))
     }
 
+    fn hooks(ctx: &ExecCtx, records: Vec<Record>) -> Result<(), Error> {
+        records
+            .into_iter()
+            .try_for_each(|record| Self::hook(ctx, record))
+    }
+
     fn answer(ctx: &QueryCtx, query: Self::Query) -> Result<Vec<u8>, Error> {
         Ok(abi::encode(&Self::query(ctx, query)?))
     }
@@ -153,6 +159,11 @@ pub fn hook<M: Program>(ctx: &ExecCtx, record: Record) -> Result<(), Error> {
     M::hook(ctx, record)
 }
 
+pub fn hooks<M: Program>(ctx: &ExecCtx, records: Vec<Record>) -> Result<(), Error> {
+    ctx.env().kernel()?;
+    M::hooks(ctx, records)
+}
+
 /// A query's request decoded as `M::Query`, and its [`Program::answer`]
 /// handed to the host.
 pub fn query<M: Program>(ctx: &QueryCtx, request: &[u8]) -> Result<(), Error> {
@@ -179,7 +190,7 @@ pub fn resource<M: Program>(ctx: &QueryCtx, key: &str) -> Result<(), Error> {
 pub mod exports {
     use abi::{Invocation, ProgramCall, ProgramReply, Refusal, reason};
 
-    use super::{Program, access, execute, hook, query, resource};
+    use super::{Program, access, execute, hook, hooks, query, resource};
     use crate::{ExecCtx, QueryCtx};
 
     pub fn alloc(len: u32) -> u32 {
@@ -207,10 +218,7 @@ pub mod exports {
             ProgramCall::Access(payload) => access::<M>(&QueryCtx::new(env), &payload),
             ProgramCall::Resource(key) => resource::<M>(&QueryCtx::new(env), &key),
             ProgramCall::Hook(record) => hook::<M>(&ExecCtx::new(env), record),
-            ProgramCall::Hooks(_) => Err(crate::Error::new(
-                crate::code::UNSUPPORTED,
-                "this program takes each frame's hook record alone: it exports no hooks batch",
-            )),
+            ProgramCall::Hooks(records) => hooks::<M>(&ExecCtx::new(env), records),
             ProgramCall::Resume { .. } => Err(crate::Error::new(
                 crate::code::UNSUPPORTED,
                 "this program awaits nothing",
@@ -263,6 +271,12 @@ macro_rules! export {
         pub extern "C" fn call(ptr: u32, len: u32) -> u64 {
             $crate::exports::call::<$program>(ptr, len)
         }
+
+        #[cfg(target_arch = "wasm32")]
+        const _: () = {
+            #[unsafe(no_mangle)]
+            pub extern "C" fn hooks() {}
+        };
     };
 }
 
@@ -428,6 +442,34 @@ mod tests {
         let silent =
             host.refused(|| hook::<Silent>(&host.exec(MockHost::env("silent").root()), record));
         assert_eq!(silent.code, code::UNSUPPORTED);
+    }
+
+    #[test]
+    fn the_marker_the_exports_write_is_the_name_the_kernel_reads() {
+        assert_eq!(abi::hook::BATCH_EXPORT, "hooks");
+    }
+
+    #[test]
+    fn a_batch_is_told_a_record_at_a_time_in_order_and_only_by_the_kernel() {
+        let record = |position| Record {
+            height: 4,
+            position,
+            signer: vec![1; 32],
+            account: Some(1),
+            target: "chat".into(),
+            applied: true,
+        };
+        let host = MockHost::default();
+        let refused =
+            host.refused(|| hooks::<Tap>(&host.exec(MockHost::env("tap")), vec![record(0)]));
+        assert_eq!(refused.code, code::UNAUTHORIZED);
+        let root = MockHost::env("tap").root();
+        hooks::<Tap>(&host.exec(root), vec![record(0), record(1)]).unwrap();
+        let told: Option<Record> = host.query(MockHost::env("tap")).record("told").unwrap();
+        assert_eq!(told, Some(record(1)));
+        let silent = MockHost::env("silent").root();
+        let refused = host.refused(|| hooks::<Silent>(&host.exec(silent), vec![record(0)]));
+        assert_eq!(refused.code, code::UNSUPPORTED);
     }
 
     struct Silent;
