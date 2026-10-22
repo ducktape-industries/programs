@@ -96,3 +96,23 @@ fn more_results_on_the_phone_reads_the_next_page_and_goes_at_the_last() {
     assert!(cx.has_text("3 · newest first"));
     assert!(cx.find("chat-search-more").is_none(), "the last page");
 }
+
+#[test]
+fn a_restored_search_keeps_its_hits_and_asks_no_search_again() {
+    let (mut cx, _) = opened();
+    two_pages(&cx);
+    cx.simulate_input("chat-sidebar-search", "hello");
+    cx.simulate_submit("chat-sidebar-search");
+    cx.run_until_parked();
+    assert_eq!(shown(&cx), [3, 2]);
+    let (restored, view) = restored(&cx);
+    let searched = restored
+        .host()
+        .requests::<Ask<::chat::Chat>>()
+        .into_iter()
+        .filter(|query| matches!(query, Query::TextSearch { .. }))
+        .count();
+    assert_eq!(searched, 0, "the hits came back with the snapshot");
+    let hits = view.read(|chat| chat.search.hits.ready().map(|hits| hits.rows.len()));
+    assert_eq!(hits, Some(2), "the restored view shows the hits it held");
+}

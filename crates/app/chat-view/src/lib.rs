@@ -136,7 +136,8 @@ impl View for Chat {
                 self.reply_in_thread(root, cx);
             }
         }
-        if !self.search.query.is_empty() {
+        let unanswered = !self.search.query.is_empty() && self.search.hits.is_idle();
+        if unanswered {
             self.search_now(cx);
         }
     }
