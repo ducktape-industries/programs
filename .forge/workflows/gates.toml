@@ -1,0 +1,14 @@
+# programs' lane settings: tools build.sh's lane exports this job's env into gates.sh. No event starts it
+# (on.trigger is off and it names no push, change or dispatch), so forge CI runs nothing in programs.
+name = "gates"
+
+[on]
+trigger = false
+
+[[jobs]]
+id = "gates"
+runs-on = ["pods"]
+steps = ["sh /var/tmp/tools/gates.sh /work/programs"]
+
+[jobs.env]
+LANE_TESTS = "--lib"
