@@ -240,7 +240,7 @@ fn rows(
                         let face = message::still_face(seen, &draft.author, cx, &theme);
                         let frame = |row: Stateful<Div>| row.px_4();
                         let draw = |key: &str, blocks: &[chat::Block]| {
-                            message::drawn(seen, key, blocks, cx, &theme)
+                            message::drawn(seen, key, blocks, Some(&draft.author), cx, &theme)
                         };
                         let look = (&theme, &ladder);
                         super::answering::row(seen, draft, look, frame, face, draw, held)

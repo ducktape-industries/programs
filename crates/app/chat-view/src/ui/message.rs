@@ -638,19 +638,20 @@ fn blocks(
         return vec![text.into_any_element()];
     }
     let key = format!("chat-message-{}", message.id);
-    drawn(chat, &key, &message.blocks, cx, theme)
+    drawn(chat, &key, &message.blocks, Some(&message.from), cx, theme)
 }
 
 pub(super) fn drawn(
     chat: &Chat,
     key: &str,
     blocks: &[Block],
+    author: Option<&Principal>,
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> Vec<AnyElement> {
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    pieces(blocks, names, &chat.session.chain_id)
+    pieces(blocks, names, &chat.session.chain_id, author)
         .into_iter()
         .map(|(index, piece)| match piece {
             Piece::Chat(block) => block_view(chat, key, index, block, names, cx, theme),

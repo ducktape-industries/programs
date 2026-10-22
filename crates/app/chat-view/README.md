@@ -50,7 +50,9 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   file changes, or the link alone where it has no web view; a link inside a
   sentence stays a link; a file a message carries whose name ends `.html` or
   `.htm` draws the same way, in place of its card: the page at its files path,
-  live like any artifact, so an edit to that path reloads it;
+  live like any artifact, so an edit to that path reloads it. A message from
+  another network (a linked room's foreign author) draws neither as a page:
+  its link stays a link and its file its card;
   code blocks, tables and headings draw through the SDK's `markdown` crate,
   coloured by a block's language, with no parser linked.
 - Answering (`ui/answering.rs`): at the foot of the room and of an open

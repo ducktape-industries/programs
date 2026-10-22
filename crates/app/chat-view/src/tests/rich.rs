@@ -404,6 +404,37 @@ fn a_page_link_alone_on_its_line_draws_the_page_and_any_other_link_stays_a_link(
     );
 }
 
+#[test]
+fn a_page_link_another_network_sends_stays_a_link_and_ours_draws_the_page() {
+    let (mut cx, view) = opened();
+    let page = "duck://testnet-0a1b2c3d/files/shared/artifacts/plan.html";
+    cx.update(&view, |chat, _, cx| {
+        let ours = MsgRow {
+            message_id: "ours".into(),
+            ..parsed_row(3, 7, page)
+        };
+        let theirs = MsgRow {
+            message_id: "theirs".into(),
+            author: Principal::Foreign(chat::Foreign {
+                network: [0x22; 32],
+                account: 7,
+            }),
+            ..parsed_row(4, 7, page)
+        };
+        let room = chat.room.as_mut().unwrap();
+        room.messages.ready_mut().unwrap().extend([ours, theirs]);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let drawn = |id: &str| match cx.find(id) {
+        Some(wire::Node::Artifact { link, .. }) => Some(link.clone()),
+        Some(_) => None,
+        None => panic!("{id} is not drawn"),
+    };
+    assert_eq!(drawn("chat-message-ours-block-0"), Some(page.to_owned()));
+    assert_eq!(drawn("chat-message-theirs-block-0"), None);
+}
+
 // `CHAT_SCREEN_EXPORT=1` writes a room holding a typed table, a heading and
 // a fenced block for the app's node-less renderer, as the desktop draws it.
 #[test]

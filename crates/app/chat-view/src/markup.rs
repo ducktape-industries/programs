@@ -22,7 +22,9 @@ pub(crate) fn pieces<'a>(
     blocks: &'a [Block],
     names: &Names,
     chain: &str,
+    author: Option<&Principal>,
 ) -> Vec<(usize, Piece<'a>)> {
+    let pages = !matches!(author, Some(Principal::Foreign(_)));
     let mut out = Vec::new();
     let mut at = 0;
     while at < blocks.len() {
@@ -33,7 +35,7 @@ pub(crate) fn pieces<'a>(
         }
         let piece = match heading(&blocks[at], names) {
             Some((level, text)) => Piece::Markdown(markdown::Block::Heading(level, text)),
-            None => match artifact(&blocks[at], chain) {
+            None => match artifact(&blocks[at], chain).filter(|_| pages) {
                 Some(link) => Piece::Artifact(link),
                 None => Piece::Chat(&blocks[at]),
             },
@@ -262,7 +264,7 @@ mod tests {
     #[test]
     fn a_posted_table_reads_as_one_table_its_marks_kept() {
         let blocks = j131_message_15();
-        let pieces = pieces(&blocks, &Names::empty(), "");
+        let pieces = pieces(&blocks, &Names::empty(), "", None);
         let opens: Vec<usize> = pieces.iter().map(|(at, _)| *at).collect();
         assert_eq!(opens, [0, 1, 11, 12], "the table takes blocks 1 to 10");
         let (_, Piece::Markdown(markdown::Block::Table(rows))) = &pieces[1] else {
@@ -299,7 +301,7 @@ mod tests {
     #[test]
     fn pipes_without_a_separator_under_them_stay_paragraphs() {
         let blocks = vec![plain("| a | b |"), plain("| 1 | 2 |"), plain("|---|")];
-        let pieces = pieces(&blocks, &Names::empty(), "");
+        let pieces = pieces(&blocks, &Names::empty(), "", None);
         assert_eq!(pieces.len(), 3);
         assert!(
             pieces
@@ -311,7 +313,7 @@ mod tests {
     #[test]
     fn an_escaped_pipe_stays_in_its_cell_and_a_short_row_is_padded() {
         let blocks = vec![plain("| a \\| b | c |"), plain("|:--|--:|"), plain("| 1")];
-        let pieces = pieces(&blocks, &Names::empty(), "");
+        let pieces = pieces(&blocks, &Names::empty(), "", None);
         let [(_, Piece::Markdown(markdown::Block::Table(rows)))] = &pieces[..] else {
             panic!("one table");
         };
@@ -327,7 +329,7 @@ mod tests {
             plain("####### seven"),
             plain("#"),
         ];
-        let pieces = pieces(&blocks, &Names::empty(), "");
+        let pieces = pieces(&blocks, &Names::empty(), "", None);
         let (_, Piece::Markdown(markdown::Block::Heading(2, text))) = &pieces[0] else {
             panic!("a level-2 heading");
         };
@@ -352,7 +354,7 @@ mod tests {
             ]),
             plain("|---|"),
         ];
-        let pieces = pieces(&blocks, &Names::empty(), "");
+        let pieces = pieces(&blocks, &Names::empty(), "", None);
         let [(_, Piece::Markdown(markdown::Block::Table(rows)))] = &pieces[..] else {
             panic!("one table");
         };

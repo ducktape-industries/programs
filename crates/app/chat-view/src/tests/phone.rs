@@ -1532,6 +1532,27 @@ fn a_page_link_alone_on_its_line_draws_the_page_on_the_phone() {
     );
 }
 
+#[test]
+fn a_page_link_another_network_sends_stays_a_link_on_the_phone_and_ours_draws_the_page() {
+    let (mut cx, view) = in_general();
+    let page = "duck://testnet-0a1b2c3d/files/shared/artifacts/plan.html";
+    let theirs = MsgRow {
+        author: Principal::Foreign(chat::Foreign {
+            network: [0x22; 32],
+            account: 7,
+        }),
+        ..parsed_row(2, 7, page)
+    };
+    rows_are(&mut cx, &view, vec![parsed_row(1, 7, page), theirs]);
+    let drawn = |id: &str| match cx.find(id) {
+        Some(wire::Node::Artifact { link, .. }) => Some(link.clone()),
+        Some(_) => None,
+        None => panic!("{id} is not drawn: {:?}", cx.texts()),
+    };
+    assert_eq!(drawn("chat-message-m1-block-0"), Some(page.to_owned()));
+    assert_eq!(drawn("chat-message-m2-block-0"), None);
+}
+
 // `CHAT_SCREEN_EXPORT=1` writes the same room as the phone draws it.
 #[test]
 fn export_markdown_phone_screens() {

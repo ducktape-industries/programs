@@ -173,7 +173,15 @@ fn rows(
                         let face = message::still_face(seen, &draft.author, cx, &theme, &ladder);
                         let frame = |row: view::Stateful<view::Div>| row.px(design::space::BLOCK);
                         let draw = |key: &str, blocks: &[chat::Block]| {
-                            super::rich::drawn(seen, key, blocks, cx, &theme, &ladder)
+                            super::rich::drawn(
+                                seen,
+                                key,
+                                blocks,
+                                Some(&draft.author),
+                                cx,
+                                &theme,
+                                &ladder,
+                            )
                         };
                         let look = (&theme, &ladder);
                         crate::ui::answering::row(seen, draft, look, frame, face, draw, held)

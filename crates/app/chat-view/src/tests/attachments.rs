@@ -1461,3 +1461,55 @@ fn a_page_a_message_carries_draws_as_the_page_and_any_other_file_as_its_card() {
         Some(crate::words::size(3))
     );
 }
+
+#[test]
+fn a_page_another_network_sends_draws_as_its_card_and_ours_as_the_page() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    let html = |seq: u64| {
+        chat::Block::Attachment(chat::message::Attachment {
+            path: format!("/chat/general/m{seq}/plan.html"),
+            snapshot: SNAPSHOT,
+            name: "plan.html".into(),
+            size: 3,
+            content_type: "text/html".into(),
+        })
+    };
+    let ours = MsgRow {
+        blocks: vec![html(3)],
+        ..row(3, 8, "")
+    };
+    let theirs = MsgRow {
+        blocks: vec![html(4)],
+        author: Principal::Foreign(chat::Foreign {
+            network: [0x22; 32],
+            account: 8,
+        }),
+        ..row(4, 8, "")
+    };
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![ours.clone(), theirs.clone()])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(5, posted("general")));
+    cx.run_until_parked();
+    let drawn = |id: &str| match cx.find(id) {
+        Some(wire::Node::Artifact { link, .. }) => Some(link.clone()),
+        Some(_) => None,
+        None => panic!("{id} is not drawn"),
+    };
+    assert_eq!(
+        drawn("chat-message-m3-block-0"),
+        Some("duck://testnet-0a1b2c3d/files/chat/general/m3/plan.html".to_owned())
+    );
+    assert_eq!(drawn("chat-message-m4-block-0"), None);
+    assert_eq!(
+        card_says(&cx, "chat-message-m4-block-0"),
+        Some(crate::words::size(3))
+    );
+}

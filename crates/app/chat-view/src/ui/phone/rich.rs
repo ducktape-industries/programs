@@ -13,7 +13,7 @@ use crate::Chat;
 use crate::markup::{Piece, opens, pieces};
 use crate::message::{ChatMessage, ChatSpan, Run, SpanStyle, line};
 use chat::view::Names;
-use chat::{Block, Span};
+use chat::{Block, Principal, Span};
 use view::design::Ladder;
 
 const QUOTE_INSET: Pixels = px(10.);
@@ -34,20 +34,29 @@ pub(super) fn blocks(
         return vec![text.into_any_element()];
     }
     let key = format!("chat-message-{}", message.id);
-    drawn(chat, &key, &message.blocks, cx, theme, ladder)
+    drawn(
+        chat,
+        &key,
+        &message.blocks,
+        Some(&message.from),
+        cx,
+        theme,
+        ladder,
+    )
 }
 
 pub(crate) fn drawn(
     chat: &Chat,
     key: &str,
     blocks: &[Block],
+    author: Option<&Principal>,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> Vec<AnyElement> {
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    pieces(blocks, names, &chat.session.chain_id)
+    pieces(blocks, names, &chat.session.chain_id, author)
         .into_iter()
         .map(|(index, piece)| {
             let id = format!("{key}-block-{index}");

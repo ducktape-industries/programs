@@ -339,8 +339,8 @@ fn markdown_view(
     let parsed = ::chat::parse_message(markdown);
     let id = key(slot, "text");
     let blocks = match ladder.touch {
-        true => crate::ui::phone::rich::drawn(chat, &id, &parsed, cx, theme, ladder),
-        false => crate::ui::message::drawn(chat, &id, &parsed, cx, theme),
+        true => crate::ui::phone::rich::drawn(chat, &id, &parsed, None, cx, theme, ladder),
+        false => crate::ui::message::drawn(chat, &id, &parsed, None, cx, theme),
     };
     div()
         .id(key(slot, "text"))
