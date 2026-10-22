@@ -194,6 +194,115 @@ fn a_send_waits_for_a_file_still_going_up_and_its_chip_says_how_far() {
 }
 
 #[test]
+fn a_send_after_one_waiting_for_its_file_goes_out_at_once_and_the_waiting_one_shows_its_file() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    let mut minted = 0;
+    cx.host().handle::<HostId>(move |kind| {
+        minted += 1;
+        Ok(format!("{kind}-{minted}"))
+    });
+    let putting = cx.host().stream::<OpPut>();
+    cx.host()
+        .handle::<FilePick>(|_| Ok(vec![picked("big.bin", 3, 1)]));
+    cx.simulate_click("draft-general/attach");
+    cx.run_until_parked();
+    cx.simulate_input("draft-general/editor", "with the file");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    cx.simulate_input("draft-general/editor", "and this one now");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    let posted = posts_of(&cx);
+    let [Op::PostMessage { blocks, .. }] = posted.as_slice() else {
+        panic!("the later send goes out while the file is still going up: {posted:?}")
+    };
+    assert_eq!(*blocks, chat::parse_message("and this one now"));
+    let waiting = "Waiting for big.bin to upload";
+    assert!(cx.has_text(waiting), "{:?}", cx.texts());
+    view.read(|chat| {
+        let draft = &chat.drafts["draft-general"];
+        assert!(
+            draft.attachments.is_empty(),
+            "the waiting send took its file"
+        );
+        assert!(draft.failed_send.is_none());
+    });
+    putting.send(Putting::Held(vec![CHUNK]));
+    cx.run_until_parked();
+    let posted = posts_of(&cx);
+    let [_, Op::PostMessage { blocks, .. }] = posted.as_slice() else {
+        panic!("the waiting send goes out once its file is up: {posted:?}")
+    };
+    assert_eq!(carried(blocks), ["/chat/general/message-1/big.bin"]);
+    assert_eq!(blocks[0], chat::parse_message("with the file")[0]);
+    assert!(!cx.has_text(waiting), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_waiting_send_still_shows_after_its_room_is_left_and_entered_again() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    let putting = cx.host().stream::<OpPut>();
+    cx.host()
+        .handle::<FilePick>(|_| Ok(vec![picked("big.bin", 3, 1)]));
+    cx.simulate_click("draft-general/attach");
+    cx.run_until_parked();
+    cx.simulate_input("draft-general/editor", "with the file");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    let waiting = "Waiting for big.bin to upload";
+    assert!(cx.has_text(waiting), "{:?}", cx.texts());
+    for room in ["other", "general"] {
+        cx.update(&view, |chat, _, cx| {
+            cx.notify();
+            chat.open(room.into(), cx);
+        });
+        cx.run_until_parked();
+    }
+    let texts = cx.texts();
+    assert!(
+        cx.has_text(waiting),
+        "waiting row lost after a room round trip: {texts:?}"
+    );
+    assert!(cx.has_text("with the file"), "its text too: {texts:?}");
+    putting.send(Putting::Held(vec![CHUNK]));
+    cx.run_until_parked();
+    let posted = posts_of(&cx);
+    let [Op::PostMessage { blocks, .. }] = posted.as_slice() else {
+        panic!("the waiting send goes out once its file is up: {posted:?}")
+    };
+    assert_eq!(carried(blocks), ["/chat/general/message-1/big.bin"]);
+    assert!(!cx.has_text(waiting), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_waiting_send_whose_file_is_cut_off_comes_back_saying_why() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    let putting = cx.host().stream::<OpPut>();
+    cx.host()
+        .handle::<FilePick>(|_| Ok(vec![picked("big.bin", 3, 1)]));
+    cx.simulate_click("draft-general/attach");
+    cx.run_until_parked();
+    cx.simulate_input("draft-general/editor", "with the file");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    putting.close();
+    cx.run_until_parked();
+    assert!(posts_of(&cx).is_empty());
+    view.read(|chat| {
+        let draft = &chat.drafts["draft-general"];
+        let failed = draft.failed_send.as_ref().map(|send| send.body.as_str());
+        assert_eq!(failed, Some("with the file"));
+        assert!(draft.note.starts_with("big.bin "), "{}", draft.note);
+        assert_eq!(draft.attachments.len(), 1, "the file is back, failed");
+        assert!(draft.attachments[0].failed().is_some());
+    });
+    assert!(!cx.has_text("Waiting for big.bin to upload"));
+}
+
+#[test]
 fn a_file_that_fails_says_why_and_holds_the_send_back() {
     let (mut cx, view) = opened();
     files_host(&mut cx);

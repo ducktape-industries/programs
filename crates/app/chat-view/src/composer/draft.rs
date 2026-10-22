@@ -153,6 +153,8 @@ pub struct Draft {
     // a send that waits for files still going up
     #[serde(default)]
     pub queued: Option<(Send, Target)>,
+    #[serde(default)]
+    pub waiting: Vec<super::Waiting>,
     #[serde(skip)]
     pub minting: bool,
 }
@@ -605,6 +607,13 @@ impl Draft {
     pub fn retire_device_requests(&mut self) {
         if let Some((send, _)) = self.queued.take() {
             self.in_flight.push(send);
+        }
+        for waiting in std::mem::take(&mut self.waiting) {
+            self.in_flight.push(waiting.send);
+            self.attachments.extend(waiting.files);
+            if self.message_id.is_none() {
+                self.message_id = waiting.message_id;
+            }
         }
         for file in &mut self.attachments {
             if file.landed().is_none() && file.failed().is_none() {

@@ -25,7 +25,10 @@ pub(crate) struct Typing {
 }
 
 fn sending(draft: &Draft) -> bool {
-    !draft.in_flight.is_empty() || draft.submitted.is_some() || draft.queued.is_some()
+    !draft.in_flight.is_empty()
+        || draft.submitted.is_some()
+        || draft.queued.is_some()
+        || !draft.waiting.is_empty()
 }
 
 fn post_key(channel: &str, thread: Option<u64>) -> String {

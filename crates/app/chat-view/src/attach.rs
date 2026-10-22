@@ -7,7 +7,7 @@ use files::{BlobId, Change, Content};
 use futures::StreamExt;
 use view::prelude::*;
 
-use crate::composer::{Target, Upload, attachments, editor_id};
+use crate::composer::{Attaching, Target, Upload, attachments, editor_id};
 use crate::{Chat, Page, Pane, words};
 
 #[derive(Clone, Default)]
@@ -17,6 +17,37 @@ pub(crate) struct Shown {
 }
 
 pub(crate) type FileKey = (String, [u8; 32]);
+
+type Filing = (u64, String, String, Change);
+
+fn held(
+    channel: &str,
+    message: &str,
+    uploader: Option<u64>,
+    files: &mut [Attaching],
+) -> Vec<Filing> {
+    files
+        .iter_mut()
+        .filter_map(|file| {
+            let Upload::Held(chunks) = &file.upload else {
+                return None;
+            };
+            let chunks = chunks.iter().copied().map(BlobId::Sha256).collect();
+            let path = attachments::path(channel, message, &file.name);
+            let change = Change::Put {
+                path: path.clone(),
+                exec: false,
+                meta: attachments::meta(channel, message, uploader, file),
+                content: Content::Chunks {
+                    size: file.size,
+                    chunks,
+                },
+            };
+            file.upload = Upload::Committing;
+            Some((file.id, file.name.clone(), path, change))
+        })
+        .collect()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Unread {
@@ -164,7 +195,7 @@ impl Chat {
         let file = self
             .drafts
             .get_mut(&target.key())
-            .and_then(|draft| draft.attachments.iter_mut().find(|file| file.id == id));
+            .and_then(|draft| draft.file_mut(id));
         let Some(file) = file.filter(|file| matches!(file.upload, Upload::Putting { .. })) else {
             return;
         };
@@ -185,70 +216,68 @@ impl Chat {
 
     fn advance(&mut self, target: &Target, cx: &mut Context<Self>) {
         let uploader = self.my_account();
-        let Some(draft) = self.drafts.get_mut(&target.key()) else {
+        let key = target.key();
+        let Some(draft) = self.drafts.get_mut(&key) else {
             return;
         };
-        let Some(message) = draft.message_id.clone() else {
-            let filing = draft.attachments.iter().any(|file| file.failed().is_none());
-            let mints = !draft.minting && filing;
-            if mints {
-                draft.minting = true;
-                let ask = cx.host().ask::<HostId>("message".into());
-                let on = target.clone();
-                cx.spawn(async move |this, cx| {
-                    let minted = ask.await;
-                    let _ = this.update(cx, |chat, cx| chat.minted(&on, minted, cx));
-                })
-                .detach();
-            }
-            return;
-        };
-        let channel = target.channel();
-        let commits: Vec<_> = draft
-            .attachments
-            .iter_mut()
-            .filter_map(|file| {
-                let Upload::Held(chunks) = &file.upload else {
-                    return None;
-                };
-                let chunks = chunks.iter().copied().map(BlobId::Sha256).collect();
-                let path = attachments::path(channel, &message, &file.name);
-                let change = Change::Put {
-                    path: path.clone(),
-                    exec: false,
-                    meta: attachments::meta(channel, &message, uploader, file),
-                    content: Content::Chunks {
-                        size: file.size,
-                        chunks,
-                    },
-                };
-                file.upload = Upload::Committing;
-                Some((file.id, file.name.clone(), path, change))
+        let unnamed = draft.waiting.iter().any(|waiting| {
+            let live = waiting.files.iter().any(|file| file.failed().is_none());
+            waiting.message_id.is_none() && live
+        });
+        let filing = draft.attachments.iter().any(|file| file.failed().is_none());
+        let wanted = unnamed || (draft.message_id.is_none() && filing);
+        let mints = !draft.minting && wanted;
+        if mints {
+            draft.minting = true;
+            let ask = cx.host().ask::<HostId>("message".into());
+            let on = target.clone();
+            cx.spawn(async move |this, cx| {
+                let minted = ask.await;
+                let _ = this.update(cx, |chat, cx| chat.minted(&on, minted, cx));
             })
-            .collect();
-        draft
-            .filed
-            .extend(commits.iter().map(|(_, name, ..)| name.clone()));
-        let failed = draft
-            .attachments
-            .iter()
-            .find_map(|file| Some((file.name.clone(), file.failed()?.to_owned())));
-        let mut post = None;
-        if draft.queued.is_some() {
-            if let Some((name, why)) = failed {
-                if let Some((send, _)) = draft.queued.take() {
-                    draft.failed(send);
+            .detach();
+        }
+        let channel = target.channel();
+        let mut commits = Vec::new();
+        for waiting in &mut draft.waiting {
+            if let Some(message) = &waiting.message_id {
+                commits.extend(held(channel, message, uploader, &mut waiting.files));
+            }
+        }
+        if let Some(message) = &draft.message_id {
+            let filed = held(channel, message, uploader, &mut draft.attachments);
+            draft
+                .filed
+                .extend(filed.iter().map(|(_, name, ..)| name.clone()));
+            commits.extend(filed);
+        }
+        let (mut posts, mut gone) = (Vec::new(), Vec::new());
+        for waiting in std::mem::take(&mut draft.waiting) {
+            let failed = waiting
+                .files
+                .iter()
+                .find_map(|file| Some((file.name.clone(), file.failed()?.to_owned())));
+            let up = waiting.files.iter().all(|file| file.landed().is_some());
+            match failed {
+                Some((name, why)) => {
+                    draft.note = words::not_up(&name, &why);
+                    gone.push(waiting.row.clone());
+                    draft.unwait(waiting);
                 }
-                draft.note = words::not_up(&name, &why);
-            } else if !draft.uploading() {
-                post = draft.queued.take();
+                None if up => posts.push(draft.carry(waiting)),
+                None => draft.waiting.push(waiting),
             }
         }
         for (id, name, path, change) in commits {
             self.commit(target, id, path, change, words::attached(&name), cx);
         }
-        if let Some((send, target)) = post {
-            self.post_draft(target, send, cx);
+        for row in gone {
+            self.unhold(&row);
+        }
+        for post in posts {
+            self.unhold(&post.row);
+            let (send, files, message) = (post.send, post.files, post.message);
+            self.send(key.clone(), send, files, message, post.target, cx);
         }
     }
 
@@ -260,12 +289,25 @@ impl Chat {
         draft.minting = false;
         match minted {
             Ok(id) => {
-                draft.message_id = Some(id);
-                draft.filed.clear();
+                let unnamed = draft.waiting.iter_mut().find(|waiting| {
+                    let live = waiting.files.iter().any(|file| file.failed().is_none());
+                    waiting.message_id.is_none() && live
+                });
+                match unnamed {
+                    Some(waiting) => waiting.message_id = Some(id),
+                    None => {
+                        draft.message_id = Some(id);
+                        draft.filed.clear();
+                    }
+                }
             }
             Err(refusal) => {
                 let why = design::sentence(&refusal);
-                for file in &mut draft.attachments {
+                let waiting = draft
+                    .waiting
+                    .iter_mut()
+                    .flat_map(|waiting| waiting.files.iter_mut());
+                for file in draft.attachments.iter_mut().chain(waiting) {
                     if file.landed().is_none() && file.failed().is_none() {
                         file.upload = Upload::Failed(why.clone());
                         release(file.file.take(), cx);
@@ -341,7 +383,7 @@ impl Chat {
         let file = self
             .drafts
             .get_mut(&target.key())
-            .and_then(|draft| draft.attachments.iter_mut().find(|file| file.id == id));
+            .and_then(|draft| draft.file_mut(id));
         let left: Option<String> = match file {
             Some(file) => {
                 file.upload = match landed {

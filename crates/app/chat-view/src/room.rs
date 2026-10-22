@@ -412,11 +412,13 @@ impl Chat {
             }
             return;
         }
+        let pending = self.waiting_rows(&id);
         let room = self.room.get_or_insert_default();
         if !same {
             *room = Room {
                 id: id.clone(),
                 at_tail: true,
+                pending,
                 ..Room::default()
             };
         }

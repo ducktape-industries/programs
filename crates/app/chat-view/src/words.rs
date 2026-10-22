@@ -283,6 +283,15 @@ pub(crate) fn not_up(name: &str, why: &str) -> String {
     format!("{name} didn’t upload: {why}")
 }
 
+pub(crate) fn waiting_for(names: &[&str]) -> String {
+    match names {
+        [names @ .., last] if !names.is_empty() => {
+            format!("Waiting for {} and {last} to upload", names.join(", "))
+        }
+        names => format!("Waiting for {} to upload", names.join("")),
+    }
+}
+
 pub(crate) fn not_up_because(why: &str, path: &str) -> String {
     why.replace(path, "this file")
 }

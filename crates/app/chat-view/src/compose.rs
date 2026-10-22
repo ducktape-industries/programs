@@ -177,22 +177,17 @@ impl Chat {
         self.send(key, send, Vec::new(), None, target, cx);
     }
 
-    // A send waits while a file of its draft is still going up: it is
-    // posted once they are up, and handed back when one fails.
     pub(crate) fn post_draft(&mut self, target: Target, send: Send, cx: &mut Context<Self>) {
         let key = target.key();
+        let me = self.me();
         let Some(draft) = self.drafts.get_mut(&key) else {
             return;
         };
         if draft.uploading() {
-            match &mut draft.queued {
-                Some((queued, _)) => {
-                    if !queued.body.is_empty() && !send.body.is_empty() {
-                        queued.body.push('\n');
-                    }
-                    queued.body.push_str(&send.body);
-                }
-                None => draft.queued = Some((send, target)),
+            let waiting = draft.wait(send, target.clone());
+            let row = me.and_then(|me| crate::composer::waiting_row(waiting, me));
+            if let Some(row) = row {
+                self.hold(&target, row, cx);
             }
             return;
         }
@@ -201,7 +196,7 @@ impl Chat {
         self.send(key, send, files, message, target, cx);
     }
 
-    fn send(
+    pub(crate) fn send(
         &mut self,
         key: String,
         send: Send,
@@ -289,7 +284,7 @@ impl Chat {
         .detach();
     }
 
-    fn hold(&mut self, target: &Target, row: MsgRow, cx: &mut Context<Self>) {
+    pub(crate) fn hold(&mut self, target: &Target, row: MsgRow, cx: &mut Context<Self>) {
         let Some(room) = self
             .room
             .as_mut()
@@ -316,11 +311,23 @@ impl Chat {
         cx.notify();
     }
 
-    fn unhold(&mut self, message_id: &str) {
+    pub(crate) fn unhold(&mut self, message_id: &str) {
         let Some(room) = self.room.as_mut() else {
             return;
         };
         room.pending.retain(|row| row.message_id != message_id);
+    }
+
+    pub(crate) fn waiting_rows(&self, channel: &str) -> Vec<MsgRow> {
+        let Some(me) = self.me() else {
+            return Vec::new();
+        };
+        self.drafts
+            .values()
+            .flat_map(|draft| &draft.waiting)
+            .filter(|waiting| waiting.target.channel() == channel)
+            .filter_map(|waiting| crate::composer::waiting_row(waiting, me.clone()))
+            .collect()
     }
 
     /// A post into a dm room the channel list doesn't hold yet: the op that
@@ -358,4 +365,5 @@ fn spent(key: &str, draft: &Draft) -> bool {
         && draft.submitted.is_none()
         && draft.in_flight.is_empty()
         && draft.queued.is_none()
+        && draft.waiting.is_empty()
 }

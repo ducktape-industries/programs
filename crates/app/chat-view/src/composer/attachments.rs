@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 use view::methods::{BlobBody, NewBlob, Picked};
 
-use super::{Draft, Target};
+use super::{Draft, Send, Target};
 
 // what a name files takes no segment from becomes
 const FALLBACK: &str = "file";
@@ -23,6 +23,23 @@ pub enum Upload {
     Landed(Attachment),
     // why it is not up, in every view's words
     Failed(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Waiting {
+    pub send: Send,
+    pub target: Target,
+    pub message_id: Option<String>,
+    pub files: Vec<Attaching>,
+    pub row: String,
+}
+
+pub struct Carried {
+    pub row: String,
+    pub send: Send,
+    pub files: Vec<Attachment>,
+    pub message: Option<String>,
+    pub target: Target,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,6 +115,61 @@ impl Draft {
         self.attachments
             .iter()
             .any(|file| !file.sent && file.landed().is_none())
+    }
+
+    pub fn wait(&mut self, send: Send, target: Target) -> &Waiting {
+        let (files, kept): (Vec<Attaching>, Vec<Attaching>) = std::mem::take(&mut self.attachments)
+            .into_iter()
+            .partition(|file| !file.sent);
+        self.attachments = kept;
+        self.waiting.push(Waiting {
+            row: format!("{}/waiting/{}", target.key(), self.attached),
+            send,
+            target,
+            message_id: self.message_id.take(),
+            files,
+        });
+        self.waiting.last().expect("the send just put to wait")
+    }
+
+    pub fn unwait(&mut self, waiting: Waiting) {
+        self.failed(waiting.send);
+        self.attachments.extend(waiting.files);
+        if self.message_id.is_none() {
+            self.message_id = waiting.message_id;
+        }
+    }
+
+    pub fn carry(&mut self, waiting: Waiting) -> Carried {
+        let files = waiting
+            .files
+            .iter()
+            .filter_map(|file| file.landed().cloned())
+            .collect();
+        let carried = waiting
+            .files
+            .into_iter()
+            .map(|file| Attaching { sent: true, ..file });
+        self.attachments.extend(carried);
+        self.in_flight.push(waiting.send.clone());
+        Carried {
+            row: waiting.row,
+            send: waiting.send,
+            files,
+            message: waiting.message_id,
+            target: waiting.target,
+        }
+    }
+
+    pub fn file_mut(&mut self, id: u64) -> Option<&mut Attaching> {
+        let waiting = self
+            .waiting
+            .iter_mut()
+            .flat_map(|waiting| waiting.files.iter_mut());
+        self.attachments
+            .iter_mut()
+            .chain(waiting)
+            .find(|file| file.id == id)
     }
 
     // the files a send carries, each spoken for until the send lands, and

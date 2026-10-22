@@ -6,7 +6,7 @@ pub(crate) mod attachments;
 mod binding;
 mod draft;
 
-pub use attachments::{Attaching, Upload};
+pub use attachments::{Attaching, Upload, Waiting};
 pub use binding::{Click, Event, Outcome, view};
 pub(crate) use binding::{
     Handle, Presses, chips, dropped, editor, mention_popup, opening, picks, press, presses,
@@ -14,7 +14,7 @@ pub(crate) use binding::{
 pub use draft::{Draft, MentionChoice, Place, Send, focus};
 pub(crate) use draft::{editor_id, matching_choices};
 
-use chat::message::Attachment;
+use chat::message::{Attachment, Mark, Span};
 use chat::{Block, MsgRow, Op, Principal, parse_message};
 use serde::{Deserialize, Serialize};
 use view::host::Error;
@@ -88,6 +88,31 @@ pub fn op(id: String, send: &Send, files: &[Attachment], target: &Target) -> Res
             blocks,
             base_rev: Some(base_rev),
         },
+    })
+}
+
+pub fn waiting_row(waiting: &Waiting, author: Principal) -> Option<MsgRow> {
+    let Target::Post { thread, .. } = &waiting.target else {
+        return None;
+    };
+    let names: Vec<&str> = waiting
+        .files
+        .iter()
+        .map(|file| file.name.as_str())
+        .collect();
+    let mut blocks = match waiting.send.body.is_empty() {
+        true => Vec::new(),
+        false => parse_message(&waiting.send.body),
+    };
+    blocks.push(Block::Paragraph(vec![Span {
+        text: crate::words::waiting_for(&names),
+        marks: vec![Mark::Italic],
+    }]));
+    Some(MsgRow {
+        message_id: waiting.row.clone(),
+        blocks,
+        thread: *thread,
+        ..MsgRow::by(author)
     })
 }
 
