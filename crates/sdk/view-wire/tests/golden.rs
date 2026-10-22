@@ -593,6 +593,13 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
         exchange::<methods::StoreSecretGet>("dc/2".into(), Some(vec![1, 2, 3])),
         exchange::<methods::StoreSecretSet>(("dc/2".into(), Some(vec![1, 2, 3])), ()),
         exchange::<methods::HostDebug>((), true),
+        exchange::<methods::KeySign>(
+            methods::Signing {
+                purpose: "seal-device/v1".into(),
+                message: vec![1, 2, 3],
+            },
+            vec![7; 64],
+        ),
         exchange::<FileSave>(
             SaveFile {
                 name: "tape.png".into(),

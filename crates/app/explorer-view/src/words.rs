@@ -325,5 +325,8 @@ pub(crate) fn allows(capability: Capability) -> &'static str {
         Capability::Socket => {
             "connects from this device to the hosts it names, once you said yes: nothing passes through the network"
         }
+        Capability::Key => {
+            "signs what it asks in your name, apart from any operation, when you press for it"
+        }
     }
 }

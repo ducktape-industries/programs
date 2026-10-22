@@ -51,7 +51,7 @@ pub const WIRE_ID: &str = include!(concat!(env!("OUT_DIR"), "/wire_id.rs"));
 // `op.put` takes a blob of any size. Level 3: `file.read`. Level 4:
 // `Node::Artifact` and the `artifact` capability; `socket.open`,
 // `socket.send`, `host.random` and the manifest's `hosts` line.
-pub const WIRE_LEVEL: u32 = 6;
+pub const WIRE_LEVEL: u32 = 7;
 
 pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
     *value == T::default()

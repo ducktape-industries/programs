@@ -361,6 +361,23 @@ OS's own words. A host from before them refuses `unknown_request`. A view
 that can't keep a secret holds it in memory for this run and says so; it
 never falls back to `store.set`.
 
+A view signs something in the person's name, apart from an op, with
+`key.sign` under the `key` capability:
+`cx.host().ask::<KeySign>(Signing { purpose, message })` answers the seated
+key's signature, in the form that key's scheme proves a frame with (64 bytes
+or an SSHSIG blob for Ed25519, `personal_sign` for secp256k1, the WebAuthn
+assertion envelope for a passkey). The key signs under one namespace,
+`program::view_sign::VIEW_SIGN` (`ducktape/view-sign/v1`), over
+`program::view_sign::statement(<the view's program id>, purpose, message)`.
+The host picks the namespace and the view id, so a view can't make the key
+sign a frame, a consent or another view's statement, and a program checks
+the signature with `ctx.verify` over the same bytes. Only a person's press
+or key in the view asks it (`needs_gesture` otherwise). With no key unlocked
+it is refused `session_locked`, and on a network whose id and `VIEW_SIGN`
+are prefix-related (`view_sign::prefix_related`) `host_fault`. A host from
+before it refuses `unknown_request`: a view reads that as "this app can't
+sign yet".
+
 A value is the view's own borsh bytes (`view::store` has the same calls
 over a `Host`). The host keeps them on this device and never on the
 network, apart per program (its panes and its notifier share them, and
@@ -661,7 +678,7 @@ under `host`), the manifest's hosts line, and `store.secret_get` and
 `program.watch`, `notify.needs` and `host.debug` (a subscription to whether the
 person turned the app's Debug mode on, the first item at subscribe and one
 per change; a view shows its debugging details only while it is true, and
-reads a host's `unknown_request` as off). What a host answers is
+reads a host's `unknown_request` as off); level 7, the `key` capability and `key.sign` ("Keeping things on the device"). What a host answers is
 `host.methods` (`methods::Hosted`): `cx.host().hosted()` asks it once, and
 `Hosted::has("link.window")` says whether to offer what needs it. A host
 before J-085 refuses `host.methods`, and `hosted()` answers `None`: ask the

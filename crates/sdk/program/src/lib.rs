@@ -60,6 +60,7 @@ pub mod schema;
 pub mod section;
 pub mod source;
 pub mod tools;
+pub mod view_sign;
 
 pub use abi;
 pub use abi::hook;

@@ -1439,6 +1439,83 @@
     "reply": true
   },
   {
+    "kind": "key.sign",
+    "request": {
+      "purpose": "seal-device/v1",
+      "message": [
+        1,
+        2,
+        3
+      ]
+    },
+    "reply": [
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7
+    ]
+  },
+  {
     "kind": "file.save",
     "request": {
       "name": "tape.png",
@@ -2150,7 +2227,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2192,7 +2270,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2234,7 +2313,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2276,7 +2356,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2318,7 +2399,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2360,7 +2442,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2402,7 +2485,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2444,7 +2528,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2486,7 +2571,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2528,7 +2614,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [
@@ -2570,7 +2657,8 @@
             "Microphone",
             "File",
             "Artifact",
-            "Socket"
+            "Socket",
+            "Key"
           ],
           "min_width": 480,
           "targets": [

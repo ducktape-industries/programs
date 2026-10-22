@@ -34,6 +34,7 @@ host.unfloat None () -> ()
 host.visible None () -> bool
 host.widget None TypeName("WidgetCommand") -> Unit tree
 invite.create None CreateInvite -> Invite
+key.sign None Signing -> Vec<u8>
 link.open None String -> ()
 link.window None String -> ()
 live.publish None LivePublish -> Publishing
@@ -82,7 +83,7 @@ BlockRef = Enum { tag_width: 1, variants: [(0, "Height", "BlockRef__Height"), (1
 BlockRef__Height = Struct { fields: UnnamedFields(["u64"]) }
 BlockRef__Id = Struct { fields: UnnamedFields(["[u8; 32]"]) }
 CameraDevice = Struct { fields: NamedFields([("id", "String"), ("name", "String"), ("default", "bool"), ("facing", "Facing")]) }
-Capability = Enum { tag_width: 1, variants: [(0, "Chain", "Capability__Chain"), (1, "Program", "Capability__Program"), (2, "Op", "Capability__Op"), (3, "Invite", "Capability__Invite"), (4, "Link", "Capability__Link"), (5, "Blob", "Capability__Blob"), (6, "Host", "Capability__Host"), (7, "Clock", "Capability__Clock"), (8, "Clipboard", "Capability__Clipboard"), (9, "Notify", "Capability__Notify"), (10, "Store", "Capability__Store"), (11, "Web", "Capability__Web"), (12, "Live", "Capability__Live"), (13, "Camera", "Capability__Camera"), (14, "Microphone", "Capability__Microphone"), (15, "File", "Capability__File"), (16, "Artifact", "Capability__Artifact"), (17, "Socket", "Capability__Socket")] }
+Capability = Enum { tag_width: 1, variants: [(0, "Chain", "Capability__Chain"), (1, "Program", "Capability__Program"), (2, "Op", "Capability__Op"), (3, "Invite", "Capability__Invite"), (4, "Link", "Capability__Link"), (5, "Blob", "Capability__Blob"), (6, "Host", "Capability__Host"), (7, "Clock", "Capability__Clock"), (8, "Clipboard", "Capability__Clipboard"), (9, "Notify", "Capability__Notify"), (10, "Store", "Capability__Store"), (11, "Web", "Capability__Web"), (12, "Live", "Capability__Live"), (13, "Camera", "Capability__Camera"), (14, "Microphone", "Capability__Microphone"), (15, "File", "Capability__File"), (16, "Artifact", "Capability__Artifact"), (17, "Socket", "Capability__Socket"), (18, "Key", "Capability__Key")] }
 Capability__Artifact = Struct { fields: Empty }
 Capability__Blob = Struct { fields: Empty }
 Capability__Camera = Struct { fields: Empty }
@@ -92,6 +93,7 @@ Capability__Clock = Struct { fields: Empty }
 Capability__File = Struct { fields: Empty }
 Capability__Host = Struct { fields: Empty }
 Capability__Invite = Struct { fields: Empty }
+Capability__Key = Struct { fields: Empty }
 Capability__Link = Struct { fields: Empty }
 Capability__Live = Struct { fields: Empty }
 Capability__Microphone = Struct { fields: Empty }
@@ -188,6 +190,7 @@ ReadFile = Struct { fields: NamedFields([("file", "u64"), ("offset", "u64"), ("l
 Receipt = Struct { fields: NamedFields([("program", "String"), ("outcome", "Outcome"), ("events", "Vec<Vec<u8>>"), ("nested", "Vec<Receipt>")]) }
 SaveFile = Struct { fields: NamedFields([("name", "String"), ("blobs", "Vec<[u8; 32]>")]) }
 Session = Struct { fields: NamedFields([("connected", "bool"), ("chain_id", "String"), ("signer", "String"), ("account", "Option<u64>"), ("endpoint", "String")]) }
+Signing = Struct { fields: NamedFields([("purpose", "String"), ("message", "Vec<u8>")]) }
 SocketItem = Enum { tag_width: 1, variants: [(0, "Opened", "SocketItem__Opened"), (1, "Binary", "SocketItem__Binary"), (2, "Text", "SocketItem__Text"), (3, "Closed", "SocketItem__Closed")] }
 SocketItem__Binary = Struct { fields: UnnamedFields(["Vec<u8>"]) }
 SocketItem__Closed = Struct { fields: NamedFields([("code", "u16"), ("reason", "String")]) }

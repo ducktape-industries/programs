@@ -1126,6 +1126,13 @@ pub struct SocketSend {
     #[serde(with = "crate::codec::bin")]
     pub body: Vec<u8>,
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct Signing {
+    pub purpose: String,
+    #[serde(with = "crate::codec::bin")]
+    pub message: Vec<u8>,
+}
 methods! {
     also: ["program.query", "op.submit", "program.changes", HostWidget::KIND, "program.watch"];
     /// `chain.status`: the connected node's status.
@@ -1389,6 +1396,7 @@ methods! {
     StoreSecretSet, "store.secret_set", (String, Option<Vec<u8>>), ();
     NotifyNeeds, "notify.needs", Needs, ();
     HostDebug, "host.debug", (), bool;
+    KeySign, "key.sign", Signing, Vec<u8>;
 }
 
 // The `<capability>` half of every kind in [`ALL`]: what a view's manifest
@@ -1455,10 +1463,11 @@ pub enum Capability {
     // none of the links the app opens.
     Artifact,
     Socket,
+    Key,
 }
 
 impl Capability {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::Chain,
         Self::Program,
         Self::Op,
@@ -1477,6 +1486,7 @@ impl Capability {
         Self::File,
         Self::Artifact,
         Self::Socket,
+        Self::Key,
     ];
 
     /// The name a manifest and a kind spell it with.
@@ -1500,6 +1510,7 @@ impl Capability {
             Self::File => "file",
             Self::Artifact => "artifact",
             Self::Socket => "socket",
+            Self::Key => "key",
         }
     }
 
