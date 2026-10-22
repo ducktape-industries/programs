@@ -18,6 +18,7 @@ mod gate;
 mod listening;
 mod pictures;
 mod program;
+mod promises;
 mod providers;
 mod queries;
 mod relined;
@@ -143,6 +144,25 @@ pub enum Op {
         description = "From fleet only: a run an agent asked for with the fleet_run tool ended or was lost; the conversation that asked is told, when the run's asker is that conversation's agent."
     )]
     RunEnded { thread: u64, ended: fleet::RunEnd },
+    #[tool_op(description = "As an agent harness runs: record what account owed_by owes, said in thread, answering message seq of chat channel channel, due at block due: a promise when owed_by is the agent itself, an ask of someone else otherwise. At due harness wakes owed_by's current conversation, when harness runs owed_by, and the asking conversation, each with it and what that agent still owes and asked, and again on harness's hourly repeat, until owed_by closes it with Keep. Returns the record's id.", returns = u64, example = examples::promise)]
+    Promise {
+        thread: u64,
+        owed_by: AccountNumber,
+        channel: String,
+        seq: u64,
+        text: String,
+        due: u64,
+    },
+    #[tool_op(description = "Close an open promise or ask as kept or dropped, with one line on how. Only the account that owes it; nothing else closes one.", example = examples::keep)]
+    Keep {
+        promise: u64,
+        kept: bool,
+        how: String,
+    },
+    #[tool_op(
+        description = "Harness's own scheduled entry only: an open promise comes due, wakes its conversation and books its next wake."
+    )]
+    PromiseDue { promise: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -903,6 +923,28 @@ pub struct Ended {
     pub text: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct PromiseRow {
+    pub id: u64,
+    pub owed_by: AccountNumber,
+    pub asked_by: AccountNumber,
+    pub thread: u64,
+    pub channel: String,
+    pub seq: u64,
+    pub text: String,
+    pub made: u64,
+    pub due: u64,
+    pub next: u64,
+    pub closed: Option<PromiseClosed>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct PromiseClosed {
+    pub height: u64,
+    pub kept: bool,
+    pub how: String,
+}
+
 // what will wake a conversation again, each as harness holds it: an input no turn has seen yet
 // (or a paused turn), a turn in progress, tool calls still open, a model call in flight, a retry
 // asked again from block `at`, a settle window until time `until` (ms), an armed wait, a streamed
@@ -1104,6 +1146,24 @@ pub enum Query {
     #[reads(state::BUDGETS, state::PACES, state::FLIGHTS, state::BUDGET_FACTS)]
     #[tool_query(description = "Every model service account's usage windows, calls per minute and when it runs out, with what harness learned of each: the provider its calls were for, the login its gate names behind it, and the login before that with when it changed.", example = examples::budget_facts)]
     BudgetFacts,
+    #[ask(Reply::Promises(PageResponse<PromiseRow>))]
+    #[reads(state::PROMISING, state::PROMISES)]
+    #[tool_query(description = "What an account owes and has not closed, its own promises and what others asked of it, oldest first: what each says, who asked, the asking conversation, the chat message it answers, the block it was made at and the block it is due next.", example = examples::promises)]
+    Promises {
+        agent: AccountNumber,
+        page: PageRequest,
+    },
+    #[ask(Reply::Promise(Option<PromiseRow>))]
+    #[reads(state::PROMISES)]
+    #[tool_query(description = "One promise or ask by id, open or closed and how, or null.", example = examples::promise_row)]
+    Promise { promise: u64 },
+    #[ask(Reply::Promises(PageResponse<PromiseRow>))]
+    #[reads(state::ASKING, state::PROMISES)]
+    #[tool_query(description = "What an agent asked of other accounts that is not closed yet, oldest first, as Promises lists each.", example = examples::asked)]
+    Asked {
+        agent: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1139,6 +1199,8 @@ pub enum Reply {
     Runs(Vec<RunRow>),
     Conversations(PageResponse<Conversation>),
     BudgetFacts(BudgetFactsReport),
+    Promises(PageResponse<PromiseRow>),
+    Promise(Option<PromiseRow>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1319,6 +1381,30 @@ pub fn describe(op: &Op) -> describe::Description {
                 field("run", Value::count(ended.run)),
             ],
         ),
+        Op::Promise {
+            thread,
+            owed_by,
+            due,
+            ..
+        } => (
+            format!("Record what account {owed_by} owes thread {thread}, due at block {due}"),
+            vec![
+                field("thread", Value::count(*thread)),
+                field("owed by", Value::count(*owed_by)),
+                field("due", Value::count(*due)),
+            ],
+        ),
+        Op::Keep { promise, kept, .. } => (
+            match kept {
+                true => format!("Close promise {promise} as kept"),
+                false => format!("Close promise {promise} as dropped"),
+            },
+            vec![field("promise", Value::count(*promise))],
+        ),
+        Op::PromiseDue { promise } => (
+            format!("Wake promise {promise}'s conversation at its block"),
+            vec![field("promise", Value::count(*promise))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1365,6 +1451,9 @@ fn op_variants_only_append() {
             "-",
             "HoldSealed",
             "RunEnded",
+            "Promise",
+            "Keep",
+            "PromiseDue",
         ]
     );
 }
@@ -1412,7 +1501,10 @@ fn query_variants_only_append() {
             "FinalErrors",
             "Runs",
             "Conversations",
-            "BudgetFacts"
+            "BudgetFacts",
+            "Promises",
+            "Promise",
+            "Asked"
         ]
     );
 }

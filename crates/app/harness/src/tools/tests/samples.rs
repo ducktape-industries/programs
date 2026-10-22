@@ -333,6 +333,31 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
         ),
         ("wait_cancel", vec![json!({ "wait": 3 })]),
         (
+            "promise",
+            vec![
+                json!({ "text": PROSE, "channel": "j-287", "seq": 1, "in": 600 }),
+                json!({ "text": "post the design", "channel": "j-287", "seq": 4, "height": 350000, "in": null }),
+                json!({ "text": "rule on the tail order", "channel": "j-287", "seq": 9, "in": 600, "owed_by": 17 }),
+                json!({ "text": "it's mine", "channel": "j-287", "seq": 9, "in": 1, "owed_by": null }),
+            ],
+        ),
+        (
+            "promise_keep",
+            vec![
+                json!({ "promise": 1, "kept": true, "how": PROSE }),
+                json!({ "promise": 2, "kept": false, "how": "chief took it over" }),
+            ],
+        ),
+        (
+            "promise_list",
+            vec![
+                json!({}),
+                json!({ "cursor": null }),
+                json!({ "cursor": "00ff", "asked": true }),
+                json!({ "asked": null }),
+            ],
+        ),
+        (
             "fleet_run",
             vec![
                 json!({ "command": ["sh", "/var/tmp/warm/build.sh", "programs", COMMIT, "lane"], "on": { "labels": ["warm"] } }),

@@ -13,6 +13,7 @@ pub(crate) mod interface;
 mod lines;
 mod network;
 pub(crate) mod prefix;
+mod promise;
 mod schedule;
 mod service;
 mod symbols;
@@ -207,6 +208,9 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<wait::For>(),
     entry::<wait::List>(),
     entry::<wait::Cancel>(),
+    entry::<promise::Make>(),
+    entry::<promise::Keep>(),
+    entry::<promise::List>(),
     entry::<fleet::Ask>(),
 ];
 

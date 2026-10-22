@@ -101,6 +101,13 @@ impl Program for Harness {
                 queries::conversations(ctx, agent, &page)?,
             )),
             Query::BudgetFacts => Ok(Reply::BudgetFacts(budget::facts(ctx)?)),
+            Query::Promises { agent, page } => {
+                Ok(Reply::Promises(crate::promises::open(ctx, agent, &page)?))
+            }
+            Query::Promise { promise } => Ok(Reply::Promise(crate::promises::row(ctx, promise)?)),
+            Query::Asked { agent, page } => {
+                Ok(Reply::Promises(crate::promises::asked(ctx, agent, &page)?))
+            }
         }
     }
 }
@@ -140,6 +147,21 @@ impl Awaiting for Harness {
             Op::AdoptTallies { after, limit } => tallies::adopt(&ctx, after, limit).await,
             Op::HoldSealed => crate::relined::hold_sealed(&ctx).await,
             Op::RunEnded { thread, ended } => crate::fleet_runs::ended(&ctx, thread, ended).await,
+            Op::Promise {
+                thread,
+                owed_by,
+                channel,
+                seq,
+                text,
+                due,
+            } => {
+                let said = (channel, seq, text);
+                crate::promises::promise(&ctx, thread, owed_by, said, due).await
+            }
+            Op::Keep { promise, kept, how } => {
+                crate::promises::keep(&ctx, promise, kept, how).await
+            }
+            Op::PromiseDue { promise } => crate::promises::due(ctx, promise).await,
         }
     }
 }

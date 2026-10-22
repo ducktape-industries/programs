@@ -80,6 +80,11 @@ pub const ARMED: Set<(u64, u64)> = Set::new("armed/");
 // threads whose turn armed a wait: it ends once its calls are back
 pub const ENDING: Set<u64> = Set::new("ending/");
 pub const WAIT_COUNT: Item<u64> = Item::new("wait-count");
+pub const PROMISES: Map<u64, crate::PromiseRow> = Map::new("promise/");
+pub const PROMISING: Set<(AccountNumber, u64)> = Set::new("promising/");
+pub const ASKING: Set<(AccountNumber, u64)> = Set::new("asking/");
+pub const PROMISE_ENTRIES: Map<u64, u64> = Map::new("promise-entry/");
+pub const PROMISE_COUNT: Item<u64> = Item::new("promise-count");
 // each agent's open message waits, by channel
 pub const MESSAGE_WAITS: Set<(AccountNumber, (String, u64))> = Set::new("wait-message/");
 // each tool call whose write awaits its answer, and each stream a watch listens to, by thread:

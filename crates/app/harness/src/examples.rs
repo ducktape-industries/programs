@@ -267,3 +267,40 @@ pub(crate) fn adopt_tallies() -> Op {
 pub(crate) fn hold_sealed() -> Op {
     Op::HoldSealed
 }
+
+pub(crate) fn promise() -> Op {
+    Op::Promise {
+        thread: 504,
+        owed_by: 21,
+        channel: "j-287".into(),
+        seq: 1,
+        text: "post the design in j-287".into(),
+        due: 350000,
+    }
+}
+
+pub(crate) fn keep() -> Op {
+    Op::Keep {
+        promise: 1,
+        kept: true,
+        how: "posted it as message 2".into(),
+    }
+}
+
+pub(crate) fn promises() -> Query {
+    Query::Promises {
+        agent: 21,
+        page: page(),
+    }
+}
+
+pub(crate) fn promise_row() -> Query {
+    Query::Promise { promise: 1 }
+}
+
+pub(crate) fn asked() -> Query {
+    Query::Asked {
+        agent: 17,
+        page: page(),
+    }
+}

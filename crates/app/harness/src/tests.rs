@@ -29,6 +29,7 @@ mod notices;
 mod oversize;
 mod owned;
 mod pictures;
+mod promises;
 mod reactions;
 mod reads;
 mod resume;
