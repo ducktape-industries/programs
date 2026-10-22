@@ -284,14 +284,13 @@ impl Host {
         registry.asked_hosted |= wanted;
         wanted
     }
-    pub(crate) fn lacks(&self) -> bool {
+    pub(crate) fn lacked(&self) -> Vec<String> {
         let registry = self.0.borrow();
-        match &registry.hosted {
-            Some(kinds) => registry.unknown.iter().any(|kind| !kinds.contains(kind)),
-            None => registry
-                .unknown
-                .contains(<methods::HostMethods as Method>::KIND),
-        }
+        let unlisted = |kind: &&String| match &registry.hosted {
+            Some(kinds) => !kinds.contains(*kind),
+            None => kind.as_str() == <methods::HostMethods as Method>::KIND,
+        };
+        registry.unknown.iter().filter(unlisted).cloned().collect()
     }
     pub fn log(&self, message: impl AsRef<str>) {
         self.notify::<methods::HostLog>(message.as_ref().to_owned());

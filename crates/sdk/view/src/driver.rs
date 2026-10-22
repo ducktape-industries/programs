@@ -141,9 +141,13 @@ impl<V: View> Driver<V> {
                 })
                 .detach();
         }
-        let lacking = host.lacks();
+        let lacked = host.lacked();
+        let lacking = !lacked.is_empty();
         if lacking != self.lacking {
             self.lacking = lacking;
+            if lacking {
+                host.log(format!("{OLDER_HOST} This app answers none of {lacked:?}."));
+            }
             self.app.inner.memos.borrow_mut().forget();
             self.app.notify();
         }
@@ -440,7 +444,7 @@ impl<V: View> Driver<V> {
                     .into_any_element()
             };
             let element = match lacking {
-                true => older_host(element, app.global::<Theme>()),
+                true => older_host(element, app.global::<Theme>(), app.inner.touch.get()),
                 false => element,
             };
             spent.render += started.elapsed();
@@ -513,13 +517,14 @@ impl<V: View> Driver<V> {
 
 const OLDER_HOST: &str = "This app is older than this view. Update the app to see everything.";
 
-fn older_host(view: crate::AnyElement, theme: &Theme) -> crate::AnyElement {
+fn older_host(view: crate::AnyElement, theme: &Theme, touch: bool) -> crate::AnyElement {
     use crate::prelude::*;
     let line = div()
         .id("older-host")
         .flex_none()
         .px(design::space::BLOCK)
         .py(design::space::SM)
+        .when(touch, |line| line.pr(design::CAPSULE_CLEARANCE))
         .bg(theme.warning_soft)
         .text_color(theme.foreground)
         .text_size(design::text::SECONDARY)

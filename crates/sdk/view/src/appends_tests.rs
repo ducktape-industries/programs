@@ -135,6 +135,51 @@ fn a_kind_the_host_does_not_list_refused_as_unknown_is_told_to_update() {
 }
 
 #[test]
+fn under_touch_the_line_clears_the_hosts_capsule() {
+    let mut cx = TestAppContext::new();
+    cx.host()
+        .handle::<HostMethods>(|_| Ok(hosting_without(HostRandom::KIND)));
+    cx.host().refuse::<HostRandom>(
+        methods::refusal::UNKNOWN_REQUEST,
+        "unknown request `host.random`",
+    );
+    cx.open::<Draws>();
+    cx.simulate_click("Draw");
+    let clearance = |cx: &TestAppContext| cx.style("older-host").padding.right;
+    assert_ne!(
+        clearance(&cx),
+        Some(crate::design::CAPSULE_CLEARANCE.into())
+    );
+    cx.simulate_touch(true);
+    assert!(cx.has_text(OLDER), "{:?}", cx.texts());
+    assert_eq!(
+        clearance(&cx),
+        Some(crate::design::CAPSULE_CLEARANCE.into())
+    );
+}
+
+#[test]
+fn the_host_log_names_each_kind_the_host_lacks() {
+    let mut cx = TestAppContext::new();
+    cx.host()
+        .handle::<HostMethods>(|_| Ok(hosting_without(HostRandom::KIND)));
+    cx.host().refuse::<HostRandom>(
+        methods::refusal::UNKNOWN_REQUEST,
+        "unknown request `host.random`",
+    );
+    cx.open::<Draws>();
+    cx.simulate_click("Draw");
+    let named: Vec<String> = cx
+        .host()
+        .requests::<crate::methods::HostLog>()
+        .into_iter()
+        .filter(|line| line.contains(HostRandom::KIND))
+        .collect();
+    assert_eq!(named.len(), 1, "{named:?}");
+    assert!(named[0].starts_with(OLDER), "{named:?}");
+}
+
+#[test]
 fn a_kind_the_host_lists_refused_as_unknown_is_that_requests_own() {
     let mut cx = TestAppContext::new();
     cx.host().refuse::<HostRandom>(
