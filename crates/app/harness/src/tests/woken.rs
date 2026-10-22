@@ -140,10 +140,13 @@ fn a_wake_that_ends_after_its_conversation_closed_is_left_there_as_not_delivered
     let undelivered = "Not delivered, as this conversation is closed: Wake 1 is over: block 10";
     assert!(text.starts_with(undelivered), "{text}");
     assert!(told(chain, first).is_empty());
-    assert!(
-        assigned(chain, SERVICE).is_empty(),
-        "nothing asks the model"
-    );
+    let its_own = ::egress::Delivery::Events {
+        deliver: streamed_as(thread),
+    };
+    let asking = assigned(chain, SERVICE)
+        .into_iter()
+        .any(|row| row.delivery == its_own);
+    assert!(!asking, "the closed conversation asks nothing");
 }
 
 #[test]

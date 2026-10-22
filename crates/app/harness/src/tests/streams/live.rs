@@ -406,7 +406,13 @@ fn a_post_still_forming_when_its_thread_closes_never_posts_and_fails() {
     assert!(message(chain, &id).is_none(), "nothing was posted");
     let (text, failed) = result_of(chain, thread, "toolu_p");
     assert!(failed && text.contains("closed"), "{text}");
-    assert!(assigned(chain, SERVICE).is_empty());
+    let its_own = ::egress::Delivery::Events {
+        deliver: crate::streamed_as(thread),
+    };
+    let asking = assigned(chain, SERVICE)
+        .into_iter()
+        .any(|row| row.delivery == its_own);
+    assert!(!asking, "the closed conversation asks nothing");
 }
 
 #[test]

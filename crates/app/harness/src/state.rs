@@ -108,6 +108,17 @@ pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
 pub const FINAL_ERRORS: Map<(AccountNumber, u64), FinalError> = Map::new("final-error/");
 pub const RUNS: Map<(AccountNumber, String), Run> = Map::new("mention-run/");
 pub const FLEET_RUNS: Set<(u64, u64)> = Set::new("fleet-run/");
+pub const UNANSWERED: Map<(AccountNumber, u64), Unanswered> = Map::new("unanswered/");
+pub const UNANSWERED_HELD: Set<(u64, AccountNumber, u64)> = Set::new("unanswered-held/");
+pub const UNANSWERED_UNHEARD: Set<(AccountNumber, u64)> = Set::new("unanswered-unheard/");
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Unanswered {
+    pub channel: String,
+    pub thread: Option<u64>,
+    pub text: String,
+    pub held_by: Option<u64>,
+}
 pub const SECTIONS: Map<(String, String), SectionRow> = Map::new("code-section/");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

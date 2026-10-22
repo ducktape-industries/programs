@@ -497,7 +497,8 @@ pub(crate) fn let_go(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error>
     crate::woken::let_go(ctx, thread.agent, thread.id)?;
     unseal(ctx, thread)?;
     ctx.blob_release_lines(held_on(thread.id, b""));
-    Ok(())
+    THREADS.put(ctx, &thread.id, thread);
+    crate::unanswered::returned(ctx, thread)
 }
 
 // sealed parts written in another wire, or for another account than the call's, are written again:

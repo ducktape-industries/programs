@@ -481,7 +481,8 @@ impl Tool for React {
         )
     }
 
-    fn run(_: &ExecCtx, seat: &Seat, args: ReactArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, seat: &Seat, args: ReactArgs) -> Result<Run, Error> {
+        let _ = crate::unanswered::reacted(ctx, seat.agent, &args.channel, args.seq);
         match record::<ReactArgs>(seat) {
             Some(shown) if shown == args => Ok(Run::Done(json!({ "ok": true }))),
             Some(shown) => Ok(Run::Write(vec![

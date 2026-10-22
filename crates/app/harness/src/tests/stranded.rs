@@ -395,8 +395,15 @@ fn closing_a_conversation_whose_call_a_switch_cut_off_ends_its_turn_and_its_reco
     assert!(!wakes.iter().any(held), "{wakes:?}");
     assert_eq!(partial(chain, thread), None);
     chain.at(6, 0);
-    let [open]: [RequestRow; 1] = assigned(chain, SERVICE).try_into().unwrap();
-    assert_eq!(open.id, request.id, "a closed conversation asks nothing");
+    let its_own = ::egress::Delivery::Events {
+        deliver: streamed_as(thread),
+    };
+    let asked: Vec<_> = assigned(chain, SERVICE)
+        .into_iter()
+        .filter(|row| row.delivery == its_own)
+        .map(|row| row.id)
+        .collect();
+    assert_eq!(asked, [request.id], "a closed conversation asks nothing");
 }
 
 #[test]

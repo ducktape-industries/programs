@@ -43,6 +43,7 @@ mod stranded;
 mod streams;
 mod tags;
 mod thinking;
+mod unanswered;
 mod wait;
 mod wait_file;
 mod wait_forge;
@@ -1481,12 +1482,14 @@ fn an_idle_thread_closed_or_retired_holds_no_line() {
     );
 
     let retired = world.mention("m2", "a fresh start");
-    chain.at(5, 0);
-    model_says(
-        chain,
-        json!([{ "type": "text", "text": "Noted." }]),
-        "end_turn",
-    );
+    for height in [5, 6] {
+        chain.at(height, 0);
+        model_says(
+            chain,
+            json!([{ "type": "text", "text": "Noted." }]),
+            "end_turn",
+        );
+    }
     assert!(!lines_of(chain, retired).is_empty());
     let new = Op::NewThread { agent: world.agent };
     chain.submit(signed(ADA), PROGRAM, &new).unwrap();

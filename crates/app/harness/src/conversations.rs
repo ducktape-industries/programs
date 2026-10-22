@@ -211,6 +211,7 @@ pub(crate) fn fork_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Er
     copied(ctx, &from, &mut row)?;
     crate::tallies::kept(ctx, row.id)?;
     THREADS.put(ctx, &row.id, &row);
+    crate::unanswered::moved(ctx, from.id, row.id)?;
     retire(ctx, from.id)?;
     ctx.set_return_data(abi::encode(&row.id));
     Ok(())

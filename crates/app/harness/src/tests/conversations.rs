@@ -212,9 +212,17 @@ fn only_the_manager_starts_a_new_conversation_and_the_old_one_stays_readable() {
         frames(chain, first) == before,
         "the old conversation hears nothing more"
     );
-    let [Body::Post { text, .. }] = &frames(chain, second)[..] else {
-        panic!("{:?}", frames(chain, second));
+    let heard: Vec<Body> = frames(chain, second)
+        .into_iter()
+        .chain(held(chain, second))
+        .collect();
+    let [Body::Post { text: carried, .. }, Body::Post { text, .. }] = &heard[..] else {
+        panic!("{heard:?}");
     };
+    assert!(
+        carried.starts_with("notice queue Note: 1 unanswered"),
+        "{carried}"
+    );
     assert!(text.ends_with("what plan?"), "{text}");
     assert_eq!(thread_row(chain, second).place, "");
 }
@@ -327,6 +335,7 @@ fn after_a_swap_the_agents_most_recently_active_open_idle_thread_becomes_current
     let general = answered(&world, "m1", "from general");
     let release = renewed(chain, ADA, &Op::NewThread { agent: world.agent }).unwrap();
     let dead = renewed(chain, ADA, &Op::NewThread { agent: world.agent }).unwrap();
+    let (release_before, dead_before) = (frames(chain, release), frames(chain, dead));
     let host = chain.host(PROGRAM);
     let ctx = host.exec(chain.env(PROGRAM));
     let reopen = |id: u64, asking: Asking, last_height: u64| {
@@ -351,12 +360,13 @@ fn after_a_swap_the_agents_most_recently_active_open_idle_thread_becomes_current
         panic!("{bodies:?}");
     };
     assert!(text.ends_with("after the swap"), "{text}");
-    assert!(
-        frames(chain, release).is_empty(),
+    assert_eq!(
+        frames(chain, release),
+        release_before,
         "the other thread stays as it was"
     );
     assert!(!thread_row(chain, release).closed);
-    assert!(frames(chain, dead).is_empty());
+    assert_eq!(frames(chain, dead), dead_before);
 }
 
 fn topic(chain: &MockChain, thread: u64) -> Option<String> {

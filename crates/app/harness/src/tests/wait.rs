@@ -101,7 +101,11 @@ fn a_wait_whose_conversation_closed_ends_there_as_a_notice_and_wakes_no_other() 
     let fresh = world.mention("m2", "a fresh start");
     assert_ne!(fresh, thread);
     chain.at(21, 0);
-    assert!(wakes(chain, fresh).is_empty(), "{:?}", wakes(chain, fresh));
+    let woke = wakes(chain, fresh);
+    assert!(
+        woke.iter().all(|text| !text.starts_with("Wait")),
+        "{woke:?}"
+    );
     assert!(wakes(chain, thread).is_empty());
     let noticed = frames(chain, thread).into_iter().any(|body| match body {
         Body::Notice { text } => text.starts_with(&format!(

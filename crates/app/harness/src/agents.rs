@@ -421,6 +421,18 @@ impl Heard {
     fn light(self) -> bool {
         matches!(self, Heard::Reaction)
     }
+
+    fn addressed(self) -> bool {
+        match self {
+            Heard::Mention | Heard::Direct | Heard::Thread | Heard::Continued { .. } => true,
+            Heard::Listen
+            | Heard::Watch
+            | Heard::Waited
+            | Heard::Notice
+            | Heard::Own
+            | Heard::Reaction => false,
+        }
+    }
 }
 
 fn heard_as(reason: &Reason) -> Option<Heard> {
@@ -444,7 +456,7 @@ fn heard_as(reason: &Reason) -> Option<Heard> {
     }
 }
 
-fn chat_places(channel: &str, thread: Option<u64>) -> Vec<String> {
+pub(crate) fn chat_places(channel: &str, thread: Option<u64>) -> Vec<String> {
     let whole = Place::Channel {
         channel: channel.to_owned(),
     };
@@ -668,6 +680,7 @@ pub(crate) fn own_posts(ctx: &ExecCtx, agent: AccountNumber, writer: u64, posts:
         let Ok(chat::Reply::Message(Some(row))) = ctx.query(chat::PROGRAM, &asked) else {
             continue;
         };
+        let _ = crate::unanswered::answered(ctx, agent, &row.channel_id, row.thread);
         if let Ok(Some(thread)) = own_post(ctx, agent, writer, row) {
             let resume = Op::Resume { thread };
             ctx.emit(&ctx.env().program, &resume, ::program::Reply::None);
@@ -798,6 +811,10 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
             | Heard::Reaction => {}
         }
     }
+    let queued = posted.as_ref().filter(|_| why.addressed());
+    if let Some(row) = queued {
+        crate::unanswered::kept(ctx, agent.number, change.seq, row, &text, thread.id);
+    }
     // the wake that conversation heard already quotes the message
     if woke == Some(thread.id) {
         return Ok(Hearing { told: None, woke });
@@ -816,6 +833,7 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     if !why.light() {
         resume::heard(ctx, thread.id)?;
     }
+    crate::unanswered::deliver(ctx, agent.number)?;
     Ok(Hearing {
         told: Some((thread.id, why)),
         woke,
