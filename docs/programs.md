@@ -436,7 +436,11 @@ no default of its owner's is their "Only me". So a list set with
 a policy that lets those writers in (`Create` then `Relink`, or a
 `SetDefault` before the key is made), as forge-view's Grant and harness's
 `files_set_list` do. A program that
-reads a list for a rule of its own asks the access program. Whom an agent
+reads a list for a rule of its own asks the access program. The access role
+is optional ([roles.md](roles.md)): `program::access_checker(roles)` names
+the program that fills it, or none, and with none the kernel checks
+nothing, so anything sent to the access program is sent only while it names
+one, and a view asks programs' `Roles` and the same function. Whom an agent
 answers is no access list: it is identity's (`SetOwnership`, `Answers`,
 `Hears`; [roles.md](roles.md)).
 
@@ -856,9 +860,11 @@ would (`hold`, `register`, `profile` for a program account and its standing); se
 the chain asks it instead, and the roster's edits do nothing (identity's own ops seat keys
 then). `chain.init(program, &params)` runs `init` as the kernel admits a
 program: one frame, what it emits run after it, a refusal undoing it all.
-Before each op the chain asks the program's `access` as the kernel does, and
-when it answers needs, runs the access role's `Check` on the program seated
-there (seat `access::Access` under `"access"`); and once a run that claimed a
+While a program fills the access role, before each op the chain asks the
+program's `access` as the kernel does, and when it answers needs, runs the
+access role's `Check` on the program seated there (seat `access::Access`
+under `"access"`; founded with no access role, it checks nothing, as the
+kernel does); and once a run that claimed a
 new key, or changed a key the ownership program holds a record for, returns,
 the chain asks the program seated at the ownership role, as the kernel does,
 before anything the run emitted runs (seat `ownership::Ownership` under

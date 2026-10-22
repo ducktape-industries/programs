@@ -73,7 +73,7 @@ pub use chain::{MAX_DEPTH, MockChain, OpenRead, Roster};
 pub use ctx::{ExecCtx, QueryCtx, Reply};
 pub use kernel::{
     AccountNumber, Cause, EntryId, Env, Error, Foreign, FrameId, MessageId, NetworkId, Order,
-    Origin, Outcome, Principal, ProgramId, Range, Roles, Ticket, code,
+    Origin, Outcome, Principal, ProgramId, Range, Roles, Ticket, access_checker, code,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use mock::{

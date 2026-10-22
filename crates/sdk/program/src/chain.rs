@@ -792,6 +792,9 @@ impl MockChain {
     }
 
     fn gate(&self, env: &Env, payload: &[u8]) -> Result<(), Error> {
+        let Some(checker) = crate::access_checker(&self.roles).cloned() else {
+            return Ok(());
+        };
         let seat = self.seated(&env.program)?;
         (seat.access)(seat.host.query(env.clone()), payload)?;
         let needs: Vec<Need> =
@@ -799,7 +802,6 @@ impl MockChain {
         if needs.is_empty() {
             return Ok(());
         }
-        let checker = self.role(role::ACCESS)?;
         let check = abi::role::access::Op::Check {
             program: env.program.clone(),
             actor: env.actor(),

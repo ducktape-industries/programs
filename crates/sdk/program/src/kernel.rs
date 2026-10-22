@@ -312,6 +312,10 @@ impl Env {
     }
 }
 
+pub fn access_checker(roles: &Roles) -> Option<&ProgramId> {
+    roles.get(abi::role::ACCESS)
+}
+
 impl From<abi::Env> for Env {
     fn from(e: abi::Env) -> Self {
         Env {

@@ -673,3 +673,47 @@ fn every_program_reads_the_one_blob_store_the_network_keeps() {
     chain.submit(ada(), "c", &vec![Step::Stat(id)]).unwrap();
     assert_eq!(held("c"), Some(vec![1]));
 }
+
+struct Needy;
+
+impl Program for Needy {
+    const NAME: &'static str = "needy";
+    type Op = ();
+    type Query = String;
+    type Reply = Option<Vec<u8>>;
+
+    fn execute(ctx: &ExecCtx, (): ()) -> Result<(), Error> {
+        log(ctx)
+    }
+
+    fn access(_: &QueryCtx, (): &()) -> Result<Vec<crate::Need>, Error> {
+        Ok(vec![crate::Need::write("k".to_owned())])
+    }
+
+    fn query(ctx: &QueryCtx, key: String) -> Result<Option<Vec<u8>>, Error> {
+        Ok(ctx.get(key))
+    }
+}
+
+#[test]
+fn an_op_runs_unchecked_where_no_program_fills_the_access_role() {
+    let unbound: Roles = MockHost::roles()
+        .iter()
+        .filter(|(role, _)| *role != abi::role::ACCESS)
+        .map(|(role, program)| (role.to_owned(), program.clone()))
+        .collect();
+    let mut chain = MockChain::founded(unbound);
+    chain.seat::<Needy>("needy");
+    chain.submit(ada(), "needy", &()).unwrap();
+    assert_eq!(logged(&chain, "needy").len(), 1, "the op ran");
+
+    let mut bound = MockChain::default();
+    bound.seat::<Needy>("needy");
+    let refused = bound.submit(ada(), "needy", &()).unwrap_err();
+    assert_eq!(
+        refused.code,
+        code::UNKNOWN_PROGRAM,
+        "where the role is bound the chain still asks it, and nothing is seated there"
+    );
+    assert!(logged(&bound, "needy").is_empty());
+}

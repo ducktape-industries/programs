@@ -50,7 +50,7 @@ pub async fn link(host: &Host, item: Item, owner: Party, write: Writers) -> Answ
 
 pub async fn access_gates(host: &Host) -> Result<bool, Error> {
     let roles = host.query(programs::ask::Roles).await?;
-    Ok(roles.iter().any(|(role, _)| role == abi::role::ACCESS))
+    Ok(::program::access_checker(&roles).is_some())
 }
 
 pub async fn access_list(
