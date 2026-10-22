@@ -55,11 +55,17 @@ pub(super) fn pane(
         Some(shown) => shown,
         None => rows(view, Layout::Docked(chosen), cx, theme, ladder),
     };
+    let budget = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.go(Screen::List, cx));
     div()
         .flex()
         .flex_col()
         .gap(space::BLOCK)
         .child(head(view, cx, theme, ladder))
+        .child(
+            design::button("agents-budget", "Model budget", ladder, theme, budget)
+                .kind(design::Kind::Quiet)
+                .selected(matches!(view.screen, Screen::List)),
+        )
         .child(body)
         .into_any_element()
 }

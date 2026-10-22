@@ -575,3 +575,23 @@ fn a_provider_reads_in_its_own_spelling_and_any_other_as_given() {
         );
     }
 }
+
+#[test]
+fn the_model_budget_control_restores_the_account_windows() {
+    let net = Net {
+        budget: one(vec![outlook("5h", 530_000, at(217), None)]),
+        ..Net::default()
+    };
+    let (mut cx, _) = seated(net, EDDY);
+    cx.simulate_resize(2400., 900.);
+    cx.run_until_parked();
+    assert!(cx.has_text("53%"), "{:?}", cx.texts());
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(!cx.has_text("53%"), "{:?}", cx.texts());
+    cx.simulate_click("agents-budget");
+    cx.run_until_parked();
+    for text in ["work", "53%", "resets 12:35 PM"] {
+        assert!(cx.has_text(&kept(text)), "{text}: {:?}", cx.texts());
+    }
+}

@@ -41,6 +41,24 @@ fn a_chosen_agent_opens_beside_the_list_and_pressed_again_gives_the_budget_back(
 }
 
 #[test]
+fn the_model_budget_control_returns_from_an_open_agent() {
+    let mut cx = wide();
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(cx.has_text(USAGE), "{:?}", cx.texts());
+    assert!(!cx.has_text(NO_BUDGET), "{:?}", cx.texts());
+    assert!(cx.has_text("Model budget"), "{:?}", cx.texts());
+    cx.simulate_click("agents-budget");
+    cx.run_until_parked();
+    assert!(cx.has_text(NO_BUDGET), "{:?}", cx.texts());
+    assert!(!cx.has_text(USAGE), "{:?}", cx.texts());
+    assert!(cx.has_text("Atlas"), "the list stays: {:?}", cx.texts());
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(cx.has_text(USAGE), "the agent reopens: {:?}", cx.texts());
+}
+
+#[test]
 fn a_narrower_window_keeps_one_column() {
     let (mut cx, _) = seated(Net::default(), EDDY);
     assert!(cx.has_text(NO_BUDGET), "{:?}", cx.texts());
