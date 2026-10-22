@@ -185,6 +185,92 @@ fn a_moved_head_is_stale() {
         &squash((feature, feature), Some("x"), None),
     );
     assert_eq!(error.code, code::STALE);
+    let named = format!(
+        "{MAIN} is at {}, not expected_into {}",
+        main.to_hex(),
+        feature.to_hex()
+    );
+    assert!(error.message.contains(&named), "{}", error.message);
+}
+
+#[test]
+fn a_target_the_repository_lacks_is_not_found_naming_it() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let (main, feature) = diverged(&mut store);
+    let sandbox = seeded(&store, main, feature);
+    let op = Op::SquashMerge {
+        repo: "project".into(),
+        into: b"refs/heads/gone".to_vec(),
+        from: forge::Revision::Ref(FEATURE.as_bytes().to_vec()),
+        expected_into: main.to_hex(),
+        expected_from: feature.to_hex(),
+        message: Some("x".into()),
+        change: None,
+    };
+    let error = refused(&sandbox, OWNER, &op);
+    assert_eq!(error.code, code::NOT_FOUND);
+    assert!(
+        error
+            .message
+            .contains("repository project has no ref refs/heads/gone"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn a_moved_source_is_stale_naming_where_it_is() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let (main, feature) = diverged(&mut store);
+    let sandbox = seeded(&store, main, feature);
+    let error = refused(&sandbox, OWNER, &squash((main, main), Some("x"), None));
+    assert_eq!(error.code, code::STALE);
+    let named = format!(
+        "the source is at {}, not expected_from {}",
+        feature.to_hex(),
+        main.to_hex()
+    );
+    assert!(error.message.contains(&named), "{}", error.message);
+}
+
+#[test]
+fn a_missing_source_is_not_found_even_when_the_target_head_differs() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let (main, feature) = diverged(&mut store);
+    let sandbox = seeded(&store, main, feature);
+    let from = forge::Revision::Ref(b"refs/heads/gone".to_vec());
+    let ops = [
+        Op::Merge {
+            repo: "project".into(),
+            into: MAIN.as_bytes().to_vec(),
+            from: from.clone(),
+            expected_into: feature.to_hex(),
+            expected_from: feature.to_hex(),
+            result: feature.to_hex(),
+            change: None,
+        },
+        Op::SquashMerge {
+            repo: "project".into(),
+            into: MAIN.as_bytes().to_vec(),
+            from,
+            expected_into: feature.to_hex(),
+            expected_from: feature.to_hex(),
+            message: Some("x".into()),
+            change: None,
+        },
+    ];
+    for op in ops {
+        let error = refused(&sandbox, OWNER, &op);
+        assert_eq!(error.code, code::NOT_FOUND);
+        assert!(
+            error
+                .message
+                .contains("repository project has no ref refs/heads/gone"),
+            "{}",
+            error.message
+        );
+        assert_eq!(refs_of(&sandbox, "project")[MAIN], main.to_hex());
+    }
 }
 
 #[test]

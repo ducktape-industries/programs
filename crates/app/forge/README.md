@@ -288,7 +288,10 @@ commits naming them. A delta may be against an object already stored. The
 repository's writers push and stage.
 
 A merge requires a nonzero result that advances the target, correct endpoint
-hash kinds, writer authority and matching current heads. It does not validate
+hash kinds, writer authority and matching current heads. A target branch the
+repository does not have is `not_found`, naming the ref and the repository, as
+a source branch is; a head that moved is `stale`, naming where it is now and
+what the op expected. It does not validate
 ancestry or possession of the client result; the writer is responsible for
 publishing it first (e.g. push a prepared result ref). `change: None` changes only
 the target ref.

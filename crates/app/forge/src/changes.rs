@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use ::program::Env;
 use ::program::{
-    AccountNumber, Error, ExecCtx, QueryCtx, capacity, invalid, stale, unexpected_reply,
+    AccountNumber, Error, ExecCtx, QueryCtx, capacity, invalid, not_found, stale, unexpected_reply,
     wrong_state,
 };
 use gitcore::merge::{Clash, Conflict};
@@ -284,10 +284,24 @@ fn heads_still_at_merge_inputs(
     (into, from): (&[u8], &Revision),
     (expected_into, expected_from): (Oid, Oid),
 ) -> Result<(), Error> {
-    let heads_moved = load_ref(ctx, repo, into, hash)? != Some(expected_into)
-        || resolve(ctx, repo, from, hash)? != expected_from;
-    if heads_moved {
-        return Err(stale("source or target head moved; recompute the merge"));
+    let target = String::from_utf8_lossy(into);
+    let Some(into_head) = load_ref(ctx, repo, into, hash)? else {
+        return Err(not_found(format!("repository {repo} has no ref {target}")));
+    };
+    let from_head = resolve(ctx, repo, from, hash)?;
+    if into_head != expected_into {
+        return Err(stale(format!(
+            "{target} is at {}, not expected_into {}; recompute the merge",
+            into_head.to_hex(),
+            expected_into.to_hex()
+        )));
+    }
+    if from_head != expected_from {
+        return Err(stale(format!(
+            "the source is at {}, not expected_from {}; recompute the merge",
+            from_head.to_hex(),
+            expected_from.to_hex()
+        )));
     }
     Ok(())
 }
