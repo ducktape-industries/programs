@@ -1,6 +1,6 @@
 //! The `egress` program, bound to the egress role (`abi::role::egress`): a program's call to a
 //! registered service or the public internet, answered whole or as `text/event-stream` events by
-//! the elected member node, or expired by its own scheduled run. Its first queries are the role's.
+//! the elected node, or expired by its own scheduled run. Its first queries are the role's.
 mod program;
 mod rules;
 mod state;
@@ -90,7 +90,7 @@ pub enum Query {
     Node { key: Vec<u8> },
     #[ask(Reply::Serving(Vec<Vec<u8>>))]
     #[reads(state::SERVING, state::SERVICES)]
-    #[tool_query(description = "The member nodes that may serve a service now: serving it, and named by its Assign where it is registered.", example = crate::tools::serving)]
+    #[tool_query(description = "The keys that may serve a service now: serving it, and a member node for http, relay and crosspond, or named by its Assign where it is registered, member or not.", example = crate::tools::serving)]
     Serving { service: String },
     #[ask(Reply::Request(Option<RequestRow>))]
     #[reads(state::REQUESTS)]

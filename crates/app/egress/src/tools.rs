@@ -27,7 +27,7 @@ fn op(variant: &'static str, description: &'static str, value: Op) -> Tool {
 }
 
 impl Described for Ops {
-    const ABOUT: &'static str = "Calls from programs to the world outside the chain: the public internet (service http) or a service registered here, each answered by a member node elected among those serving it, whole or as streamed events, or expired once its wait runs out.";
+    const ABOUT: &'static str = "Calls from programs to the world outside the chain: the public internet (service http) or a service registered here, each answered by a node elected among those serving it, whole or as streamed events, or expired once its wait runs out.";
 
     fn tools() -> Vec<Tool> {
         vec![
@@ -40,7 +40,7 @@ impl Described for Ops {
             ),
             op(
                 "Assign",
-                "Set the member nodes, by node key, that may serve a registered service, replacing its list: a registered service is served only by the nodes it names. Its owner, or whom the service's policy admits.",
+                "Set the keys that may serve a registered service, replacing its list: a registered service is served only by the keys it names, member nodes or not. Its owner, or whom the service's policy admits.",
                 Op::Assign {
                     service: "pods".into(),
                     nodes: vec![key()],
@@ -48,7 +48,7 @@ impl Described for Ops {
             ),
             op(
                 "Serve",
-                "Signed by a member node's own key: the services this node serves, replacing its list; an empty list stops it serving.",
+                "Signed by the serving key: the services it serves, replacing its list; an empty list stops it serving. http, relay and crosspond are served by member nodes only, and a registered service by the keys its Assign names.",
                 Op::Serve {
                     services: vec!["pods".into()],
                 },

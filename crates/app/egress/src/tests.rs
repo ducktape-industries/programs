@@ -422,6 +422,53 @@ fn only_a_member_node_serves_and_only_a_program_calling_requests() {
 }
 
 #[test]
+fn an_assigned_key_serves_a_registered_service_without_being_a_member() {
+    let chain = chain();
+    let register = Op::Register {
+        service: SERVICE.into(),
+    };
+    submit(&chain, OWNER, &register).unwrap();
+    let assign = Op::Assign {
+        service: SERVICE.into(),
+        nodes: vec![STRANGER.to_vec()],
+    };
+    submit(&chain, OWNER, &assign).unwrap();
+    serve(&chain, STRANGER, &[SERVICE]).unwrap();
+    assert_eq!(serving(&chain, SERVICE), [STRANGER.to_vec()]);
+    ask(&chain, http_request(SERVICE, "/v1/messages", Vec::new()));
+    let [row] = assigned(&chain, STRANGER).try_into().unwrap();
+    chain.at(2, 0);
+    answer(&chain, STRANGER, row.id, Answer::Output(b"pong".to_vec())).unwrap();
+    let [pong] = answers(&chain).try_into().unwrap();
+    assert_eq!(pong.unwrap(), b"pong");
+
+    let unassigned = [8u8; 32];
+    serve(&chain, unassigned, &[SERVICE]).unwrap();
+    assert_eq!(serving(&chain, SERVICE), [STRANGER.to_vec()]);
+    let cost = |chain: &MockChain| {
+        let before = chain.host(PROGRAM).borrow().work;
+        assert_eq!(serving(chain, SERVICE), [STRANGER.to_vec()]);
+        let after = chain.host(PROGRAM).borrow().work;
+        (after.gets - before.gets, after.scanned - before.scanned)
+    };
+    let few = cost(&chain);
+    for spam in 10u8..40 {
+        serve(&chain, [spam; 32], &[SERVICE]).unwrap();
+    }
+    assert_eq!(
+        cost(&chain),
+        few,
+        "keys nobody assigned add no work to an election"
+    );
+    for own in RESERVED.iter().copied() {
+        let refused = serve(&chain, STRANGER, &[SERVICE, own]).unwrap_err();
+        assert_eq!(refused.code, code::UNAUTHORIZED, "{own}");
+        assert!(serving(&chain, own).is_empty(), "{own}");
+    }
+    assert_eq!(serving(&chain, SERVICE), [STRANGER.to_vec()]);
+}
+
+#[test]
 fn a_request_schedules_its_own_expiry_and_an_answer_cancels_it() {
     let chain = chain();
     serve(&chain, ADA, &[RELAY]).unwrap();

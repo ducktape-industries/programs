@@ -1,7 +1,7 @@
 # egress
 
 Outbound HTTP for programs. A service registered here is served by the
-member nodes assigned to it, and a program's call is answered by one of
+keys its owner assigns to it, member nodes or not, and a program's call is answered by one of
 them, whole or as events. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 Three services are egress's own and never registered: `http`, `relay` and
 `crosspond`. Any member node that serves one may be elected for it, and
@@ -14,7 +14,7 @@ each is asked only as its own `Request` variant (`Http`, `Relay`,
 |---|---|
 | `Register { service }` | any account for a new name; it owns the service from then on. An unregistered name stays reserved to its last owner: that owner or the validators’ vote may register it again, retaining that owner |
 | `Assign { service, nodes }` | the service's owner, or whom the access list on `services/<name>` names |
-| `Serve { services }` | a member key (the validators role's `Members`), with or without a node, signed by its own key; a key with no node serves over halo's `ducktape/egress` lane through a validator's node (core's `ducktape egress serve`). An empty list, which stops its serving, needs no membership |
+| `Serve { services }` | any key, signed by its own key. Serving `http`, `relay` or `crosspond` takes a member key (the validators role's `Members`); a registered service is served by the keys its `Assign` names, member or not, so a list of registered names alone needs no membership. A key with no node of its own serves through a validator's node (core's `ducktape egress serve`). An empty list stops its serving |
 | `Request { request, delivery, wait }` | programs only: a call from another program (`Cause::Call`), which awaits the answer. An account's own frame is refused, so an account off the chain reaches a service only through a program (agents through harness). It needs a scheduler role on the network |
 | `Answer`, `Events`, `EndStream` | the key the request was elected to, signed by it, in a later block than the request |
 | `Expire { id }` | egress's own scheduled run for that request |

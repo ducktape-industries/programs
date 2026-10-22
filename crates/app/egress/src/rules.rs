@@ -1,5 +1,5 @@
 //! What each op checks and writes: a service its owner registers and assigns (the access list on
-//! `services/<name>`), a member node serving, a program's call and the elected node's answer (whole, or as events in `seq` order, then the stream's end) or expiry.
+//! `services/<name>`), a node serving (a member, or a key a registered service's owner assigned), a program's call and the elected node's answer (whole, or as events in `seq` order, then the stream's end) or expiry.
 use ::program::kernel::error_from;
 use ::program::{
     BlobId, Cause, Ctx, Error, ExecCtx, Need, Origin, Ownership, Party, QueryCtx, Reply, Resource,
@@ -168,10 +168,15 @@ pub(crate) fn serve(ctx: &ExecCtx, mut services: Vec<String>) -> Result<(), Erro
         service_name(service)?;
     }
     let stopping = services.is_empty();
-    if !stopping && !members(ctx)?.contains(&key) {
-        return Err(unauthorized(
-            "only a member node of this network serves: enroll the serving node in this network",
-        ));
+    let own = services
+        .iter()
+        .any(|service| RESERVED.contains(&service.as_str()));
+    let unadmitted = own && !members(ctx)?.contains(&key);
+    if unadmitted {
+        return Err(unauthorized(format!(
+            "only a member node of this network serves egress's own services ({}): enroll the serving node in this network, or serve only registered services, which their owners assign",
+            RESERVED.join(", ")
+        )));
     }
     let since = match NODES.get(ctx, &key)? {
         Some(previous) => {
@@ -234,34 +239,34 @@ fn check(ctx: &QueryCtx, request: &Request) -> Result<(), Error> {
 }
 
 pub(crate) fn serving(ctx: &QueryCtx, service: &str) -> Result<Vec<Vec<u8>>, Error> {
-    let members = members(ctx)?;
-    let reserved = RESERVED.contains(&service);
-    let assigned = match reserved {
-        true => None,
-        false => Some(
-            SERVICES
-                .get(ctx, &service.to_owned())?
-                .map(|row| row.nodes)
-                .unwrap_or_default(),
-        ),
-    };
-    let may_serve = |key: &Vec<u8>| {
-        let member = members.contains(key);
-        let allowed = assigned.as_ref().is_none_or(|nodes| nodes.contains(key));
-        member && allowed
-    };
-    Ok(SERVING
-        .scan(ctx, SERVING.prefix_of(&service.to_owned()))?
+    let own = RESERVED.contains(&service);
+    if own {
+        let members = members(ctx)?;
+        return Ok(SERVING
+            .scan(ctx, SERVING.prefix_of(&service.to_owned()))?
+            .into_iter()
+            .map(|(_, key)| key)
+            .filter(|key| members.contains(key))
+            .collect());
+    }
+    let assigned = SERVICES
+        .get(ctx, &service.to_owned())?
+        .map(|row| row.nodes)
+        .unwrap_or_default();
+    Ok(assigned
         .into_iter()
-        .map(|(_, key)| key)
-        .filter(may_serve)
+        .filter(|key| SERVING.has(ctx, &(service.to_owned(), key.clone())))
         .collect())
 }
 
 fn elect(ctx: &ExecCtx, service: &str) -> Result<Vec<u8>, Error> {
     let eligible = serving(ctx, service)?;
     if eligible.is_empty() {
-        return Err(not_found(format!("no member node serves {service}")));
+        let who = match RESERVED.contains(&service) {
+            true => "member node",
+            false => "node its owner assigned",
+        };
+        return Err(not_found(format!("no {who} serves {service}")));
     }
     let turn = TURNS.get(ctx, &service.to_owned())?.unwrap_or(0);
     TURNS.put(ctx, &service.to_owned(), &(turn + 1));
