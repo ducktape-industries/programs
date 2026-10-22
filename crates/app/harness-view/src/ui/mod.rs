@@ -17,6 +17,7 @@ use view::design::{fonts, space, text};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
+use crate::read::{Card, Roster};
 use crate::words::{thinking_short, thinking_words};
 use crate::{Agents, Picture, Screen, State};
 
@@ -393,6 +394,29 @@ pub(crate) fn no_node(
         _ => return None,
     };
     Some(shown)
+}
+
+pub(crate) const REVOKED: &str = "agents-revoked";
+
+pub(crate) struct Groups<'a> {
+    pub mine: Vec<&'a Card>,
+    pub others: Vec<&'a Card>,
+    pub revoked: Vec<&'a Card>,
+}
+
+pub(crate) fn groups(roster: &Roster, me: Option<u64>) -> Groups<'_> {
+    let (revoked, standing): (Vec<&Card>, Vec<&Card>) = roster
+        .agents
+        .iter()
+        .partition(|card| card.setup.standing == identity::Standing::Revoked);
+    let (mine, others) = standing
+        .into_iter()
+        .partition(|card| Some(card.setup.manager) == me);
+    Groups {
+        mine,
+        others,
+        revoked,
+    }
 }
 
 pub(crate) fn opened(view: &Agents, key: &str, starts_open: bool) -> bool {

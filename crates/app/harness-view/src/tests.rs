@@ -8,6 +8,7 @@ mod live_calls;
 mod phone;
 mod policies;
 mod reads;
+mod revoked;
 mod routes;
 mod runs;
 mod server_tools;

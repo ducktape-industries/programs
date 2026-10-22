@@ -466,3 +466,16 @@ fn sweep() {
         assert_eq!(cx.back_handler(), None);
     });
 }
+
+#[test]
+fn the_root_folds_a_revoked_agent_away_until_it_is_opened() {
+    let (mut cx, _) = phone(super::revoked::revoke_in(Net::default(), ATLAS), EDDY);
+    assert!(cx.find("agent-12").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("agent-24").is_none(), "{:?}", cx.texts());
+    assert!(!cx.has_text("Other agents"), "{:?}", cx.texts());
+    tap(&mut cx, &["agents-revoked"]);
+    assert!(cx.find("agent-24").is_some(), "{:?}", cx.texts());
+
+    let (cx, _) = phone(Net::default(), EDDY);
+    assert!(cx.find("agents-revoked").is_none(), "{:?}", cx.texts());
+}

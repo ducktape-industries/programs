@@ -1,12 +1,12 @@
-//! The agents: the reader's, then the rest of the network's, each a row that says what it is
-//! doing now, who manages it and when it last moved; docked beside a wide window's side pane, each
-//! row its name, state, topic and last move, the chosen one marked.
+//! The agents: the reader's, the rest of the network's, then the revoked in a closed fold, each a
+//! row that says what it is doing now, who manages it and when it last moved; docked beside a wide
+//! window's side pane, each row its name, state, topic and last move, the chosen one marked.
 use view::design::Ladder;
 use view::design::{space, text};
 use view::prelude::*;
 use view::{FontWeight, Stateful};
 
-use super::{agent_face, caption, state_badge, waiting};
+use super::{Groups, REVOKED, agent_face, caption, fold, groups, opened, state_badge, waiting};
 use crate::read::{Card, Roster};
 use crate::words::{agent_sentence_topic, ago, last_moved};
 use crate::{Agents, Picture, Screen, agent_state};
@@ -142,10 +142,11 @@ fn rows(
         }))
         .into_any_element();
     }
-    let (mine, others): (Vec<&Card>, Vec<&Card>) = roster
-        .agents
-        .iter()
-        .partition(|card| Some(card.setup.manager) == view.me);
+    let Groups {
+        mine,
+        others,
+        revoked,
+    } = groups(roster, view.me);
     let mut list = div().flex().flex_col().gap(space::BLOCK);
     if !mine.is_empty() {
         list = list.child(
@@ -182,6 +183,37 @@ fn rows(
                 )
             }),
         ));
+    }
+    if !revoked.is_empty() {
+        let chosen_revoked = match layout {
+            Layout::Docked(Some(chosen)) => revoked.iter().any(|card| card.setup.agent == chosen),
+            _ => false,
+        };
+        let open = chosen_revoked || opened(view, REVOKED, false);
+        let label = div()
+            .text_size(text::SECTION)
+            .font_weight(FontWeight::SEMIBOLD)
+            .child("Revoked");
+        let count = Some(revoked.len().to_string());
+        let head = fold(REVOKED.to_owned(), open, label, count, cx, theme, ladder)
+            .pb(space::XS)
+            .border_b_1()
+            .border_color(theme.border);
+        let mut group = div().flex().flex_col().child(head);
+        if open {
+            group = group.children(revoked.iter().map(|card| {
+                row(
+                    layout,
+                    card,
+                    view.picture(card.setup.agent, cx),
+                    roster,
+                    cx,
+                    theme,
+                    ladder,
+                )
+            }));
+        }
+        list = list.child(group);
     }
     list.into_any_element()
 }

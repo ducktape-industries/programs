@@ -1,11 +1,12 @@
-//! The root: the reader's agents, then the rest of the network's, each a row with its state and
-//! what it is doing; then what else the view holds, the create form and the models.
+//! The root: the reader's agents, the rest of the network's, then the revoked in a closed fold,
+//! each a row with its state and what it is doing; then what else the view holds, the create form
+//! and the models.
 use view::design::Ladder;
 use view::prelude::*;
 
 use super::parts::{badged, glyph, opening_row, scroller, section};
 use crate::read::{Card, Roster};
-use crate::ui::{agent_face, state_badge, waiting};
+use crate::ui::{Groups, REVOKED, agent_face, fold, groups, opened, state_badge, waiting};
 use crate::words::{agent_sentence_topic, last_moved, network};
 use crate::{Agents, Picture, Screen, agent_state};
 
@@ -61,10 +62,11 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
         }))
         .into_any_element();
     }
-    let (mine, others): (Vec<&Card>, Vec<&Card>) = roster
-        .agents
-        .iter()
-        .partition(|card| Some(card.setup.manager) == view.me);
+    let Groups {
+        mine,
+        others,
+        revoked,
+    } = groups(roster, view.me);
     let mut list = div().flex().flex_col();
     if !mine.is_empty() {
         let count = mine.len();
@@ -98,6 +100,33 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
                     ladder,
                 )
             }));
+    }
+    if !revoked.is_empty() {
+        let open = opened(view, REVOKED, false);
+        let count = Some(revoked.len().to_string());
+        let head = fold(
+            REVOKED.to_owned(),
+            open,
+            "Revoked",
+            count,
+            cx,
+            theme,
+            ladder,
+        )
+        .px(design::space::BLOCK);
+        list = list.child(head);
+        if open {
+            list = list.children(revoked.iter().map(|card| {
+                row(
+                    card,
+                    view.picture(card.setup.agent, cx),
+                    roster,
+                    cx,
+                    theme,
+                    ladder,
+                )
+            }));
+        }
     }
     list.child(more(view, cx, theme, ladder))
         .child(
