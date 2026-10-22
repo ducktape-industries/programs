@@ -1185,10 +1185,14 @@ pub fn merge_base<S: Objects + ?Sized>(
             paint.mark(parent, propagate)?;
         }
     }
+    let candidates: Vec<Oid> = results
+        .into_iter()
+        .filter(|id| paint.flags.get(id).is_some_and(|flags| flags & STALE == 0))
+        .collect();
     let mut best: Vec<Oid> = Vec::new();
-    for candidate in &results {
+    for candidate in &candidates {
         let mut dominated = false;
-        for other in &results {
+        for other in &candidates {
             let same = other == candidate;
             if same {
                 continue;

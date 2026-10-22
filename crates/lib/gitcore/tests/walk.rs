@@ -10,7 +10,8 @@ use gitcore::walk::{
     Listing, ShallowListing, Trees, Verdict, Walk, closure, commits, history as walked_history,
     is_ancestor, merge_base, shallow_history, squash_base, tree_at_path,
 };
-use gitcore::{Commit, Error, Hash, Kind, MemoryObjects, Mode, Objects as _, Oid, Tag, Tree};
+use gitcore::{Commit, Error, Hash, Kind, MemoryObjects, Mode, Object, Objects, Oid, Tag, Tree};
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write as _;
 use std::path::Path;
@@ -592,33 +593,7 @@ fn paged_closures_of_generated_histories_list_what_git_lists() {
     for seed in 0..120 {
         let made = history(&mut rng);
         let dir = root.join(format!("history-{seed}"));
-        std::fs::create_dir_all(&dir).unwrap();
-        git(&git_path, &dir, &["init", "-q", "--bare"], b"");
-        let marks = dir.join("marks");
-        let export = format!("--export-marks={}", marks.display());
-        git(
-            &git_path,
-            &dir,
-            &["fast-import", "--quiet", &export],
-            &made.import,
-        );
-        let marked: BTreeMap<usize, Oid> = std::fs::read_to_string(&marks)
-            .unwrap()
-            .lines()
-            .map(|line| {
-                let (mark, id) = line.split_once(' ').unwrap();
-                let mark = mark.trim_start_matches(':').parse::<usize>().unwrap();
-                (mark - 1, Oid::from_hex(Hash::Sha1, id).unwrap())
-            })
-            .collect();
-        assert_eq!(marked.len(), made.commits);
-        let all = git(
-            &git_path,
-            &dir,
-            &["cat-file", "--batch-all-objects", "--batch"],
-            b"",
-        );
-        let store = loaded(&all);
+        let (store, marked) = imported(&git_path, &dir, &made);
         let tip = made.heads[rng.below(made.heads.len())];
         let mut wants = vec![marked[&tip]];
         let another = made.heads[rng.below(made.heads.len())];
@@ -662,6 +637,162 @@ fn paged_closures_of_generated_histories_list_what_git_lists() {
 
 fn args(asked: &[String]) -> Vec<&str> {
     asked.iter().map(String::as_str).collect()
+}
+
+fn imported(git_path: &Path, dir: &Path, made: &History) -> (MemoryObjects, BTreeMap<usize, Oid>) {
+    std::fs::create_dir_all(dir).unwrap();
+    git(git_path, dir, &["init", "-q", "--bare"], b"");
+    let marks = dir.join("marks");
+    let export = format!("--export-marks={}", marks.display());
+    git(
+        git_path,
+        dir,
+        &["fast-import", "--quiet", &export],
+        &made.import,
+    );
+    let marked: BTreeMap<usize, Oid> = std::fs::read_to_string(&marks)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let (mark, id) = line.split_once(' ').unwrap();
+            let mark = mark.trim_start_matches(':').parse::<usize>().unwrap();
+            (mark - 1, Oid::from_hex(Hash::Sha1, id).unwrap())
+        })
+        .collect();
+    assert_eq!(marked.len(), made.commits);
+    let all = git(
+        git_path,
+        dir,
+        &["cat-file", "--batch-all-objects", "--batch"],
+        b"",
+    );
+    (loaded(&all), marked)
+}
+
+struct CountedReads<'a> {
+    store: &'a MemoryObjects,
+    reads: Cell<usize>,
+}
+
+impl Objects for CountedReads<'_> {
+    fn get(&self, id: &Oid) -> gitcore::Result<Option<Object>> {
+        self.reads.set(self.reads.get() + 1);
+        self.store.get(id)
+    }
+
+    fn has(&self, id: &Oid) -> gitcore::Result<bool> {
+        self.store.has(id)
+    }
+}
+
+const LINE_DEPTH: usize = 200;
+
+#[test]
+fn a_merge_base_reads_no_commit_twice_while_a_second_line_walks_down_to_where_it_meets() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let t = file_tree(&mut store, &[("f", "x\n")]);
+    let root = commit(&mut store, t, &[], 100, "root");
+    let side = commit(
+        &mut store,
+        t,
+        &[root],
+        150,
+        "side line, met only at the root",
+    );
+    let mut line = vec![root];
+    for n in 1..=LINE_DEPTH {
+        let parent = line[n - 1];
+        line.push(commit(&mut store, t, &[parent], 200 + n as i64, "line"));
+    }
+    let tip = line[LINE_DEPTH];
+    let ahead = commit(&mut store, t, &[tip], 1000, "ahead");
+    let merged = commit(&mut store, t, &[tip, side], 1000, "merge of the side line");
+    let commits_in_the_store = line.len() + 3;
+    let counted = CountedReads {
+        store: &store,
+        reads: Cell::new(0),
+    };
+    assert_eq!(
+        merge_base(&counted, &ahead, &merged, usize::MAX),
+        Ok(Some(tip))
+    );
+    let reads = counted.reads.get();
+    assert!(
+        reads <= commits_in_the_store,
+        "{reads} reads of {commits_in_the_store} commits"
+    );
+}
+
+#[test]
+fn a_merge_base_is_the_least_of_the_common_ancestors_no_other_one_descends_from() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let t = file_tree(&mut store, &[("f", "x\n")]);
+    let root = commit(&mut store, t, &[], 100, "root");
+    let left = commit(&mut store, t, &[root], 200, "left");
+    let right = commit(&mut store, t, &[root], 200, "right");
+    let left_takes_right = commit(&mut store, t, &[left, right], 300, "left takes right");
+    let right_takes_left = commit(&mut store, t, &[right, left], 300, "right takes left");
+    assert_eq!(
+        merge_base(&store, &left_takes_right, &right_takes_left, usize::MAX),
+        Ok(Some(left.min(right)))
+    );
+
+    let early = commit(&mut store, t, &[root], 500, "dated after its child");
+    let late = commit(&mut store, t, &[early], 400, "dated before its parent");
+    let one = commit(&mut store, t, &[late, early], 1000, "one");
+    let other = commit(&mut store, t, &[late, early], 1100, "other");
+    assert_eq!(merge_base(&store, &one, &other, usize::MAX), Ok(Some(late)));
+}
+
+#[test]
+fn a_merge_base_walks_nowhere_from_a_common_ancestor_that_turned_stale_after_it_was_found() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let t = file_tree(&mut store, &[("f", "x\n")]);
+    let mut line_top = commit(&mut store, t, &[], 100, "root");
+    for n in 1..=LINE_DEPTH {
+        line_top = commit(&mut store, t, &[line_top], 200 + n as i64, "line");
+    }
+    let early = commit(&mut store, t, &[line_top], 5000, "dated after its child");
+    let late = commit(&mut store, t, &[early], 4000, "dated before its parent");
+    let one = commit(&mut store, t, &[late, early], 9000, "one");
+    let other = commit(&mut store, t, &[late, early], 9100, "other");
+    let tips_skewed_pair_and_line_top = 5;
+    let counted = CountedReads {
+        store: &store,
+        reads: Cell::new(0),
+    };
+    assert_eq!(
+        merge_base(&counted, &one, &other, usize::MAX),
+        Ok(Some(late))
+    );
+    let reads = counted.reads.get();
+    assert!(
+        reads <= tips_skewed_pair_and_line_top,
+        "{reads} reads, {tips_skewed_pair_and_line_top} commits above the line"
+    );
+}
+
+#[test]
+fn merge_bases_of_generated_histories_are_the_least_of_what_git_names() {
+    let git_path = git_binary();
+    let root = temp_dir("gitcore-merge-base");
+    let mut rng = Rng(0xD1B5_4A32_D192_ED03);
+    for seed in 0..60 {
+        let made = history(&mut rng);
+        let dir = root.join(format!("history-{seed}"));
+        let (store, marked) = imported(&git_path, &dir, &made);
+        for pair in 0..4 {
+            let one = marked[&rng.below(made.commits)];
+            let other = marked[&rng.below(made.commits)];
+            let (one_hex, other_hex) = (one.to_hex(), other.to_hex());
+            let asked = ["merge-base", "--all", &one_hex, &other_hex];
+            let named = ids(&git(&git_path, &dir, &asked, b""));
+            assert!(!named.is_empty(), "history {seed}, pair {pair}");
+            let ours = merge_base(&store, &one, &other, usize::MAX).unwrap();
+            assert_eq!(ours, named.first().copied(), "history {seed}, pair {pair}");
+        }
+    }
+    std::fs::remove_dir_all(&root).ok();
 }
 
 #[test]
