@@ -946,8 +946,11 @@ async fn compact(
     parts: Vec<BlobId>,
 ) -> Result<(), Error> {
     let head = wire::summary_head(asked.wire);
+    let sent = ctx.env().height;
     let answer = call_model(ctx, &asked, head, parts, egress::Delivery::Whole).await;
     let mut thread = thread(ctx, id)?;
+    let waited = ctx.env().height.saturating_sub(sent);
+    let expired = waited >= asked.wait.unwrap_or(egress::DEFAULT_WAIT);
     let read = answer.map(|response| (wire::summarized(asked.wire, &response), response));
     let again = match read {
         Ok((Summarized::Summary(summary), _)) => {
@@ -969,6 +972,10 @@ async fn compact(
             true => None,
             false => failed(ctx, &mut thread, Failure::answered(text, &response))?,
         },
+        Err(_) if expired => {
+            thread.compact_before = Some(through);
+            None
+        }
         Err(failure) => failed(ctx, &mut thread, failure)?,
     };
     settle(ctx, &mut thread)?;
