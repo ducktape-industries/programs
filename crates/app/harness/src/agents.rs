@@ -106,28 +106,40 @@ pub(crate) fn configured(ctx: &QueryCtx, path: &str) -> Result<Configured, Error
 
 // `configured`, and the service or account its front matter pins the agent's model calls to
 pub(crate) fn configured_pinned(ctx: &QueryCtx, path: &str) -> Result<(Configured, Pin), Error> {
+    configured_file(ctx, path).map(|(configured, pin, _)| (configured, pin))
+}
+
+pub(crate) fn configured_file(
+    ctx: &QueryCtx,
+    path: &str,
+) -> Result<(Configured, Pin, Option<String>), Error> {
     let (snapshot, bytes) = match read(ctx, path, None) {
         Ok(read) => read,
         Err(error) => {
             let reason = format!("{}: {}", error.code, error.message);
-            return Ok((Configured::Unreadable { reason }, Pin::default()));
+            return Ok((Configured::Unreadable { reason }, Pin::default(), None));
         }
     };
-    let (config, pin) = match Config::parse_pinned(&bytes) {
+    let parsed = match crate::config::PromptConfig::parse(&bytes) {
         Ok(parsed) => parsed,
         Err(malformed) => {
             let configured = Configured::Malformed {
                 snapshot,
                 malformed,
             };
-            return Ok((configured, Pin::default()));
+            return Ok((configured, Pin::default(), None));
         }
     };
+    let crate::config::PromptConfig {
+        config,
+        pin,
+        compaction_instruction,
+    } = parsed;
     let configured = match &pin.provider {
         Some(provider) => routed(ctx, snapshot, config, provider.clone())?,
         None => Configured::Unprovided { snapshot, config },
     };
-    Ok((configured, pin))
+    Ok((configured, pin, compaction_instruction))
 }
 
 pub(crate) fn routed(

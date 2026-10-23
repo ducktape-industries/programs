@@ -1,4 +1,5 @@
 mod compact_at;
+mod compaction_instruction;
 mod listen;
 mod server_tools;
 mod splice;

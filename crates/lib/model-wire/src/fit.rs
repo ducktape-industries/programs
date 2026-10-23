@@ -156,5 +156,6 @@ pub fn fit(request: &Request, provider: &str) -> Request {
         messages,
         target: request.target.clone(),
         cache_key: request.cache_key.clone(),
+        compaction_instruction: request.compaction_instruction.clone(),
     }
 }

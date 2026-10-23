@@ -57,6 +57,7 @@ struct Turn {
     model: String,
     max_tokens: u32,
     header: BlobId,
+    compaction_instruction: Option<String>,
 }
 
 pub(crate) fn append(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
@@ -599,8 +600,17 @@ fn summarize_parts(
     let mut parts = opening(ctx, thread, turn)?;
     parts.extend(covered.iter().map(|sealed| sealed.part));
     let target = turn.asked.target();
-    let summarize = wire::summarize(wire, &target);
-    parts.push(put_constant(ctx, b"summarize", wire, &target, summarize)?);
+    let tail = match turn.compaction_instruction.as_deref() {
+        Some(instruction) => {
+            let summarize = wire::harness::summarize(&target, instruction);
+            put_on(ctx, thread.id, b"summary-tail", summarize)?
+        }
+        None => {
+            let summarize = wire::summarize(wire, &target);
+            put_constant(ctx, b"summarize", wire, &target, summarize)?
+        }
+    };
+    parts.push(tail);
     Ok(Some((through, parts)))
 }
 
@@ -776,7 +786,8 @@ fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
 }
 
 fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<Step>, Error> {
-    let (configured, _) = crate::kept::configured_for(ctx, thread, &agent.path)?;
+    let (configured, _, compaction_instruction) =
+        crate::kept::configured_for(ctx, thread, &agent.path)?;
     let (snapshot, config, model) = match configured {
         Configured::Routed {
             snapshot,
@@ -859,6 +870,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         model: model.name.clone(),
         max_tokens: config.max_tokens,
         header,
+        compaction_instruction,
     };
     match crowded(thread.context, window, turn.max_tokens, threshold) {
         true => plan_summary(ctx, thread, turn),
@@ -882,6 +894,14 @@ fn plan_turn(ctx: &ExecCtx, thread: &mut ThreadRow, turn: Turn) -> Result<Option
 }
 
 fn plan_summary(ctx: &ExecCtx, thread: &mut ThreadRow, turn: Turn) -> Result<Option<Step>, Error> {
+    let supported =
+        turn.asked.wire == Wire::Harness && turn.asked.provider == model_wire::codex::PROVIDER;
+    let unsupported = turn.compaction_instruction.is_some() && !supported;
+    if unsupported {
+        give_up(ctx, thread,
+            "compaction_instruction is supported only by the Codex provider on the harness wire; the summary model was not asked".into())?;
+        return Ok(None);
+    }
     let Some((through, parts)) = summarize_parts(ctx, thread, &turn)? else {
         if thread.compact_before.is_some() {
             crate::summaries::failed(

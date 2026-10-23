@@ -50,6 +50,8 @@ pub struct Request {
     pub target: Target,
     #[serde(default)]
     pub cache_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_instruction: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

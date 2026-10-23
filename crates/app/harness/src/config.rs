@@ -1,6 +1,6 @@
-//! An agent's configuration file: Markdown whose TOML front matter, between `+++` lines, names
-//! the model, `max_tokens`, `wait`, `thinking`, `server_tools`, `listen`, `settle`, `compact_at`
-//! and the `service` and `provider` it pins (`Pin`); its body is the system prompt (`with_front`, `with_body`).
+//! Agent Markdown configuration: model settings, route metadata and a summary instruction in
+//! TOML front matter, with the ordinary system prompt as the body. PromptConfig preserves the
+//! file-only settings beside the public Config.
 use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
@@ -32,6 +32,13 @@ pub struct Config {
 pub struct Pin {
     pub service: Option<String>,
     pub provider: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PromptConfig {
+    pub config: Config,
+    pub pin: Pin,
+    pub compaction_instruction: Option<String>,
 }
 
 #[derive(
@@ -156,6 +163,7 @@ struct FrontMatter {
     compact_at: Option<u64>,
     service: Option<String>,
     provider: Option<String>,
+    compaction_instruction: Option<String>,
 }
 
 fn fence(line: &str) -> bool {
@@ -188,6 +196,12 @@ impl Config {
     }
 
     pub fn parse_pinned(bytes: &[u8]) -> Result<(Config, Pin), Malformed> {
+        PromptConfig::parse(bytes).map(|parsed| (parsed.config, parsed.pin))
+    }
+}
+
+impl PromptConfig {
+    pub fn parse(bytes: &[u8]) -> Result<Self, Malformed> {
         let text = std::str::from_utf8(bytes).map_err(|_| Malformed::NotText)?;
         let [_, front, _, body] = front_matter_parts(text)?;
         let matter: FrontMatter = toml::from_str(front)
@@ -211,6 +225,15 @@ impl Config {
             None => None,
             Some(given) => Some(millis(&given).ok_or(Malformed::NoSettle(given))?),
         };
+        let blank_instruction = matter
+            .compaction_instruction
+            .as_ref()
+            .is_some_and(|instruction| instruction.trim().is_empty());
+        if blank_instruction {
+            return Err(Malformed::FrontMatter(
+                "compaction_instruction must not be blank".into(),
+            ));
+        }
         let named = |name: Option<String>| name.filter(|name| !name.is_empty());
         let pin = Pin {
             service: named(matter.service),
@@ -227,9 +250,28 @@ impl Config {
             compact_at: matter.compact_at,
             system: body.trim().to_owned(),
         };
-        Ok((config, pin))
+        Ok(Self {
+            config,
+            pin,
+            compaction_instruction: matter.compaction_instruction,
+        })
     }
 
+    fn front(&self) -> String {
+        let mut front = self.config.front(&self.pin);
+        if let Some(instruction) = &self.compaction_instruction {
+            let instruction = toml::Value::String(instruction.clone());
+            front.push_str(&format!("compaction_instruction = {instruction}\n"));
+        }
+        front
+    }
+
+    pub fn write(&self) -> String {
+        format!("{FENCE}\n{}{FENCE}\n{}\n", self.front(), self.config.system)
+    }
+}
+
+impl Config {
     pub fn paragraphs(&self) -> Vec<String> {
         let mut paragraphs = Vec::new();
         let mut lines: Vec<&str> = Vec::new();
@@ -308,15 +350,20 @@ fn front_matter_parts(text: &str) -> Result<[&str; 4], Malformed> {
 // byte; the service the file pins stays only while the provider does, as another provider's route
 // lists other services; `config.system` is not read
 pub fn with_front(file: &[u8], config: &Config, provider: &str) -> Result<String, Malformed> {
-    let (_, pin) = Config::parse_pinned(file)?;
-    let kept = pin.provider.as_deref() == Some(provider);
+    let parsed = PromptConfig::parse(file)?;
+    let kept = parsed.pin.provider.as_deref() == Some(provider);
     let pin = Pin {
-        service: pin.service.filter(|_| kept),
+        service: parsed.pin.service.filter(|_| kept),
         provider: Some(provider.to_owned()),
     };
     let text = std::str::from_utf8(file).map_err(|_| Malformed::NotText)?;
     let [open, _, close, body] = front_matter_parts(text)?;
-    Ok(format!("{open}{}{close}{body}", config.front(&pin)))
+    let parsed = PromptConfig {
+        config: config.clone(),
+        pin,
+        compaction_instruction: parsed.compaction_instruction,
+    };
+    Ok(format!("{open}{}{close}{body}", parsed.front()))
 }
 
 // `file` with `system` as its body, its front matter kept byte for byte

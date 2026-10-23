@@ -10,7 +10,10 @@ default, and the Anthropic wire sends `off` as thinking disabled and a level as 
 thinking at that effort), and an optional `compact_at` (tokens: once a thread's measured
 context reaches it, harness summarizes the thread before its next turn; at least 1, and
 absent: a thread summarizes only when the next answer would not fit), an optional
-`service` (accepted as metadata but ignored for placement; harness reads `provider`
+`compaction_instruction` (a nonblank string replacing the Codex summary instruction exactly;
+missing keeps the adapter's default; it is summary-only and refreshes for existing conversations,
+without changing their kept model; unsupported provider/wire paths refuse an override explicitly),
+an optional `service` (accepted as metadata but ignored for placement; harness reads `provider`
 beside `harness::Config`, as `harness::config::Pin`), and whose body is the system prompt (`harness::Config`). A
 model call sends each paragraph of the system prompt as its own system block, in order,
 then harness's own block, the ducktape resource manual: the agent's account and its

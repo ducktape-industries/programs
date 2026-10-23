@@ -18,6 +18,15 @@ pub(crate) fn close(target: &model_wire::Target) -> String {
     format!("],\"target\":{target}}}")
 }
 
+pub(crate) fn summarize(target: &model_wire::Target, instruction: &str) -> String {
+    let tail = serde_json::json!({
+        "target": target,
+        "compaction_instruction": instruction,
+    });
+    let tail = tail.to_string();
+    format!("],{}", &tail[1..])
+}
+
 fn json_head(method: Method, target: String) -> Head {
     let headers = match method {
         Method::Post => vec![("content-type".into(), "application/json".into())],
