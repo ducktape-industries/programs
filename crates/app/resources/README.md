@@ -2,7 +2,7 @@
 
 The network's resource controller: what each provider offers, who asked for what, which provider each request was placed on and why, and what each placement used. A **kind** names a resource (`model.anthropic`, `service.jev-rank`, `compute.linux-x86_64`, `build`). Its owner sets its **policy** and its **admitted** providers. A provider **offers** slots of a kind and **beats** while they're there. Anyone **requests** a use. The program alone writes the **assignment** between them, with its reason. Use is counted by whoever can count it (the provider, the requester, the chain) and kept per assignment. Placement follows the kind's policy and nothing else: no agent picks a provider.
 
-**Status:** this crate holds the interface. The rules that keep its rows land in their own change, and nothing runs it yet.
+**Status:** the rules are in `src/rules.rs`, and `src/contract.rs` runs each liveness claim below on a MockChain. Nothing runs it on a network yet.
 
 ## Rows
 | table | key | what |
@@ -26,15 +26,19 @@ The network's resource controller: what each provider offers, who asked for what
 | `used/` | (request, attempt) | `Usage`: each side's count, the chain's count, evidence, `Standing` |
 | `ledger/` | (kind, group, meter, window start) | a group's running use, for fair share and quotas |
 | `record/` | (provider, name) | `Record`: an offer's running counts |
+| `check/` | (provider, name) | the height of an offer's next booked `Lapse` |
+| `disputed/` | (request, attempt) | an assignment already counted in its offer's `Record.disputed` |
+| `charged/` | (request, attempt, meter) | the highest count of a meter charged to the ledger for that assignment |
+| `last` | | the newest request id |
 
 ## Ops
-- `RegisterKind { name, spec }`: anyone, for a name nobody holds; the sender owns the kind from then. On a held name, the kind row's ownership policy decides (its owner always), and the spec is replaced. A meter whose `checked_by` is its own `reported_by` is refused `invalid_input`: a count can't check itself.
+- `RegisterKind { name, spec }`: anyone, for a name nobody holds; the sender owns the kind from then. On a held name, the kind row's ownership policy decides (its owner always), and the spec is replaced. A meter whose `checked_by` is its own `reported_by` is refused `invalid_input`: a count can't check itself. Notarizing someone's kind is an obligation, so it needs consent, and consent bounds the list: a spec that names a notary kind it didn't name before is sent by whom that kind's row ownership policy admits (its owner always), else refused `unauthorized`.
 - `SetPolicy { kind, policy }`, `Admit { kind, provider }`, `Evict { kind, provider }`: whom the kind row's ownership policy admits (its owner always). This is the ownership record of `kind/<name>`, not the `Policy` struct, which lists no one who may administer the kind. A new policy rules placements from the next block. `Admit` takes effect in its frame. `Evict` stops placement on the provider's offers of that kind in its frame and books a `Lapse` of each at the next block, which loses what they hold.
 - `Offer { offer }`: anyone, as a provider of its own offers (the sender is the provider). Declares or replaces the sender's offer `offer.name`. An offer is visible at once and takes work only while its kind admits its provider. It books a step of the kind's queue walk (Queue walks, below).
 - `Withdraw { name }`: the sender's offer. It becomes `Draining`, and `Gone` once it holds nothing.
 - `Beat { name, free, readings }`: the sender's offer. A `Missed` or `Lapsed` offer is `Ready` again.
-- `Request { spec }`: anyone. The request is the sending account's (`RequestRow.by`). A program asking for an account it runs sends it as that account through the kernel (`emit_as`, checked by the kernel against who runs the account), and the program is kept as `via` (the frame's origin). There is no field naming another account. A class whose `may_use` doesn't admit the account is refused. It is placed in this frame on an offer that takes it now, else queued. Returns the id.
-- `Pick { spec }`: the same parties as `Request`. Places the request in this frame, for a client that reaches the provider itself (egress, for a model call or a service). The assignment starts `Claimed`. Refused `wrong_state`, naming what held it back, when no admitted offer takes it now. Returns the `Placement`.
+- `Request { spec }`: anyone. The request is the sending account's (`RequestRow.by`). A program asking for an account it runs sends it as that account through the kernel (`emit_as`, checked by the kernel against who runs the account), and the program is kept as `via` (the frame's origin). There is no field naming another account. A class whose `may_use` doesn't admit the account is refused. It is placed in this frame on an offer that takes it now, else queued. When the offer it would take also takes one of the first `walk` requests of its kind's queue (in key order, over quota and waiting on a notary passed by), it is queued instead and a step is booked for the next block, so it never takes a slot a queued request it sees would be given. A queue of requests that offer doesn't take holds no one back. One held back only by a quota books a step at that quota window's end. Returns the id.
+- `Pick { spec }`: the same parties as `Request`. Places the request in this frame, for a client that reaches the provider itself (egress, for a model call or a service). The assignment starts `Claimed`. Refused `wrong_state`, naming what held it back, when no admitted offer takes it now or a queued request takes that offer first, as `Request` reads it. Returns the `Placement`.
 - `Cancel { request }`: whom the request row's policy admits (the account it is for always). A queued request ends `Cancelled`. A placed one becomes `Stopping`, which its provider sees in `Holds`, until it reports the end.
 - `Claim { request, attempt }`, `Decline { request, attempt, why }`: the provider of the assigned offer, at that attempt. A decline places the request again, never on that offer.
 - `Report { request, attempt, outcome, readings, evidence }`: the provider of the offer, at that attempt. Its readings are the provider's count of the meters the kind says the provider reports or checks, and each report replaces the provider's counts before. A report may come mid-run with no outcome. The report that carries an outcome ends the assignment, frees its slot, and is the last one.
@@ -42,7 +46,7 @@ The network's resource controller: what each provider offers, who asked for what
 - `Missed { request, attempt }`: the program the request came through, at that attempt. It says the provider never answered. The assignment and the offer become `Missed`, and the offer is passed over until it beats. The request goes as its `on_loss` says: `Retry` places it again as its next attempt, and `Park` leaves it `Lost`, since the provider may have done the work.
 - `Confirm { request, attempt, readings }`: the account the request is for, and only it. Its readings are that account's counts of the meters the kind says the requester reports or checks, and each confirm replaces the last. The use's standing is worked out again from both sides (below).
 - `Lapse { offer }`, `Unclaimed { request, attempt }`: resources books each for itself. Anyone may send them, and each acts only on what the chain shows.
-  - An offer silent past its kind's lapse (`KindSpec.lapse`, or egress's `DEFAULT_WAIT` when none) becomes `Lapsed` and loses what it holds. `OnLoss::Retry` places each request again as its next attempt, and `OnLoss::Park` leaves it `Lost`.
+  - An offer silent past its kind's lapse (`KindSpec.lapse`, or egress's `DEFAULT_WAIT` when none) becomes `Lapsed`, then loses what it holds, so nothing it held is placed back on it. `OnLoss::Retry` places each request again as its next attempt, and `OnLoss::Park` leaves it `Lost`.
   - An assignment unclaimed past the lapse makes its offer `Missed` and places the request again. It never ran, so `on_loss` doesn't apply.
 - `Place { kind }`: anyone; resources also books it itself (Queue walks, below). Takes the next step of the kind's queue walk and acts only on what the chain shows, so a request held back by nothing the chain still shows is placed whoever sends it.
 
@@ -69,12 +73,12 @@ For a request R of kind K, and offers O of K:
 5. The assignment keeps the class, the group, the group's use and weight at that height, and which rule chose the offer (`Reason`). `Why` reads it back. `PassedOver` walks K's `kind-offer/` index and says, per offer, why it doesn't take R now.
 
 ### Queue walks
-A queued request is placed by a walk of its kind's queue, in the order of rule 3, taken in steps. Each step is its own `Place { kind }` frame, never the frame of the op that started the walk. A step examines up to `KindSpec.walk` queued requests, a number the kind's owner sets at `RegisterKind` (there is no program default). It places each one a free admitted offer takes. A step ends the walk in two cases: when no offer of the kind has a free slot left, and when it reaches the queue's end. Either way it clears `walk/<kind>` and books nothing, because the next capacity event starts a fresh walk with a fresh order. Only a step that used up its `walk` count with free slots left books the next step, for the next block. The walk's class and group order, fixed at its first step, and its position are kept in `walk/<kind>` meanwhile, so each step goes on from where the last stopped. A walk started while one is running joins it.
+A queued request is placed by a walk of its kind's queue, in the order of rule 3, taken in steps. Each step is its own `Place { kind }` frame, never the frame of the op that started the walk. A step examines up to `KindSpec.walk` queued requests, a number the kind's owner sets at `RegisterKind` (there is no program default). It places each one a free admitted offer takes. A step ends the walk in two cases: when no offer of the kind has a free slot left, and when it reaches the queue's end. Either way it clears `walk/<kind>` and books nothing, because the next capacity event starts a fresh walk with a fresh order. Only a step that used up its `walk` count with free slots left books the next step, for the next block. The walk's class and group order, fixed at its first step, and its position are kept in `walk/<kind>` meanwhile, so each step goes on from where the last stopped. A walk started while one is running joins it. A request filed in a class and group the running walk has already passed makes the walk start over once it reaches the queue's end, rather than end, so a free slot never waits for the next capacity event while a request it takes is queued.
 
 These events book a step for the next block, once per (kind, height) through `walk-at/`:
 - capacity frees: an assignment ends (a `Report` or `Count` with an outcome, `Decline`, `Missed`, `Unclaimed`, a `Lapse` that loses what an offer held, `Cancel` of a placed request once it ends);
 - capacity appears: `Offer`, `Beat` taking an offer back to `Ready`, `Admit`;
-- a notary appears: any of those on a notary kind books a step for every kind `notary-of/` names for it;
+- a notary appears: any of those on a notary kind books a step for every kind `notary-of/` names for it, each there by the notary kind's consent;
 - `SetPolicy`, whose policy rules from the next block.
 
 A step that passes a group over its quota also books one at that quota window's end (`Waiting::OverQuota.until`).
@@ -93,8 +97,10 @@ It also keeps any evidence blob. Its `Standing`, worked out again at each count,
 - `Counted`: only chain-reported meters are in;
 - `Attested`: the provider's count is in and the checker's isn't yet;
 - `Claimed`: the requester's count is in and the provider's isn't yet (an egress client may see its tokens first);
-- `Confirmed`: every checked meter's two counts agree within `Policy.tolerance_ppm`;
-- `Disputed { meters }`: the checked meters where they don't. Both counts stay on the row.
+- `Confirmed`: every checked meter's two counts agree within `Policy.tolerance_ppm` of the larger;
+- `Disputed { meters }`: the checked meters where they don't. Both counts stay on the row. An assignment counts once in its offer's `Record.disputed`, however often its counts change.
+
+What a count of a meter the kind reports rose past the highest count charged before is added to the group's `ledger/` rows, one per window the policy reads for that meter: the share window (since the policy was set, when it names none) and each quota's window, aligned to multiples of its length. Units assigned count as the meter `""`.
 
 Nothing here proves that an upstream behind a provider did the work. A provider is trusted with its output exactly as far as its kind's owner admitted it, and eviction is the remedy.
 

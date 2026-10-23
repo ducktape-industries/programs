@@ -1,10 +1,16 @@
-//! The `resources` program's interface: kinds of resource with their owner's policy, the offers
+//! The `resources` program: kinds of resource with their owner's policy, the offers
 //! providers make of them, the requests callers make, the assignments the controller places with
-//! their reason, and the use each assignment met (README.md). Its rules land in their own change.
+//! their reason, and the use each assignment met (README.md). Its rules are in `rules.rs`.
+#[cfg(test)]
+mod contract;
 mod examples;
+mod program;
+mod rules;
+mod state;
 
 pub use ::program::{AccountNumber, BlobId, ProgramId};
 pub use ownership::PolicyId;
+pub use program::Resources;
 pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
@@ -393,7 +399,7 @@ pub struct PassedOverRow {
     "The network's resource controller: what each provider offers, who asked for what, which provider each request was placed on and why, and the use each placement met. A kind's owner sets its policy and which providers it admits; providers offer and beat; anyone requests; placement follows the kind's policy alone."
 )]
 pub enum Op {
-    #[tool_op(description = "Register a kind under a name nobody holds, which you then own: what one use is measured in, what one slot of capacity means, how many blocks an offer may be silent before its work is lost (none: the egress wait, DEFAULT_WAIT) and which kind notarizes its uses (none: no request of it can ask for a notarized use). `walk` is how many queued requests one step of a walk of its queue examines before the walk goes on at the next block (0 is refused). A meter whose checker is its own reporter is refused. As its owner, or whom the kind row's ownership policy lists, replace that spec.", example = crate::examples::register_kind)]
+    #[tool_op(description = "Register a kind under a name nobody holds, which you then own: what one use is measured in, what one slot of capacity means, how many blocks an offer may be silent before its work is lost (none: the egress wait, DEFAULT_WAIT) and which kind notarizes its uses (none: no request of it can ask for a notarized use). `walk` is how many queued requests one step of a walk of its queue examines before the walk goes on at the next block (0 is refused). A meter whose checker is its own reporter is refused. Naming a notary kind needs its consent: whom that kind's row ownership policy lists, its owner always. As its owner, or whom the kind row's ownership policy lists, replace that spec.", example = crate::examples::register_kind)]
     RegisterKind { name: String, spec: KindSpec },
     #[tool_op(description = "Replace a kind's policy: its classes (highest first), its groups with their weights, its quotas, what fair share counts and the gap tolerated between a provider's and a requester's count. The kind's owner, or whom the kind row's ownership policy lists. Placements from the next block follow it.", example = crate::examples::set_policy)]
     SetPolicy { kind: String, policy: Policy },
@@ -417,9 +423,9 @@ pub enum Op {
         free: u64,
         readings: Vec<(String, u64)>,
     },
-    #[tool_op(description = "Ask for a use of a kind: what it needs, its class, what a loss makes of it and who is told. It is placed in this frame on an offer that takes it now, else queued until one does. The request is the sending account's: a program that runs an account asks as it through the kernel, and is kept as the request's `via`. Returns the request's id.", returns = u64, example = crate::examples::request)]
+    #[tool_op(description = "Ask for a use of a kind: what it needs, its class, what a loss makes of it and who is told. It is placed in this frame on an offer that takes it now, unless one of the first `walk` queued requests of its kind takes that offer, else queued until one does. The request is the sending account's: a program that runs an account asks as it through the kernel, and is kept as the request's `via`. Returns the request's id.", returns = u64, example = crate::examples::request)]
     Request { spec: Spec },
-    #[tool_op(description = "Ask for a one-shot use of a kind and have it placed in this frame, for a client that reaches the provider itself (egress for a model call). The placement is claimed at once. Refused, saying why, when no admitted offer takes it now. Returns where it went.", returns = Placement, example = crate::examples::pick)]
+    #[tool_op(description = "Ask for a one-shot use of a kind and have it placed in this frame, for a client that reaches the provider itself (egress for a model call). The placement is claimed at once. Refused, saying why, when no admitted offer takes it now or a queued request of its kind takes that offer first. Returns where it went.", returns = Placement, example = crate::examples::pick)]
     Pick { spec: Spec },
     #[tool_op(description = "Cancel a request: a queued one ends at once, a placed one is stopping until its provider reports its end. Whom the request row's policy admits; the account it is for always.", example = crate::examples::cancel)]
     Cancel { request: u64 },
@@ -535,6 +541,104 @@ pub enum Reply {
     Why(Option<WhyView>),
     PassedOver(PageResponse<PassedOverRow>),
 }
+
+pub fn describe(op: &Op) -> describe::Description {
+    use describe::{Value, field};
+    let kind = |name: &str| field("kind", Value::text(name));
+    let request = |id: &u64| field("request", Value::count(*id));
+    let (title, fields) = match op {
+        Op::RegisterKind { name, spec } => (
+            format!("Register kind {name}"),
+            vec![field("walk", Value::count(spec.walk))],
+        ),
+        Op::SetPolicy { kind: name, policy } => (
+            format!("Set the policy of {name}"),
+            vec![
+                field("classes", Value::count(policy.classes.len() as u64)),
+                field("groups", Value::count(policy.groups.len() as u64)),
+            ],
+        ),
+        Op::Admit {
+            kind: name,
+            provider,
+        } => (
+            format!("Admit account {provider} to {name}"),
+            vec![kind(name)],
+        ),
+        Op::Evict {
+            kind: name,
+            provider,
+        } => (
+            format!("Evict account {provider} from {name}"),
+            vec![kind(name)],
+        ),
+        Op::Offer { offer } => (
+            format!("Offer {} of {}", offer.name, offer.kind),
+            vec![field("slots", Value::count(offer.capacity))],
+        ),
+        Op::Withdraw { name } => (format!("Withdraw offer {name}"), Vec::new()),
+        Op::Beat { name, free, .. } => (
+            format!("Offer {name} beats"),
+            vec![field("free", Value::count(*free))],
+        ),
+        Op::Request { spec } => (
+            format!("Request {}", spec.kind),
+            vec![field("units", Value::count(spec.needs.units))],
+        ),
+        Op::Pick { spec } => (
+            format!("Pick {} now", spec.kind),
+            vec![field("units", Value::count(spec.needs.units))],
+        ),
+        Op::Cancel { request: id } => (format!("Cancel request {id}"), vec![request(id)]),
+        Op::Claim { request: id, .. } => (format!("Claim request {id}"), vec![request(id)]),
+        Op::Decline {
+            request: id, why, ..
+        } => (
+            format!("Decline request {id}"),
+            vec![request(id), field("why", Value::text(why))],
+        ),
+        Op::Report {
+            request: id,
+            outcome,
+            ..
+        } => (
+            match outcome {
+                Some(outcome) => format!("Report request {id} {outcome:?}"),
+                None => format!("Report request {id}'s counts"),
+            },
+            vec![request(id)],
+        ),
+        Op::Count {
+            request: id,
+            outcome,
+            ..
+        } => (
+            match outcome {
+                Some(outcome) => format!("Count request {id} {outcome:?}"),
+                None => format!("Count request {id}'s use"),
+            },
+            vec![request(id)],
+        ),
+        Op::Missed { request: id, .. } => (
+            format!("Say request {id}'s provider never answered"),
+            vec![request(id)],
+        ),
+        Op::Confirm { request: id, .. } => {
+            (format!("Confirm request {id}'s use"), vec![request(id)])
+        }
+        Op::Lapse { offer } => (
+            format!("Check offer {} of {}", offer.name, offer.provider),
+            Vec::new(),
+        ),
+        Op::Unclaimed { request: id, .. } => {
+            (format!("Check request {id} was claimed"), vec![request(id)])
+        }
+        Op::Place { kind: name } => (format!("Walk the queue of {name}"), vec![kind(name)]),
+    };
+    describe::Description { title, fields }
+}
+
+describe::export!(Op, describe);
 
 #[cfg(test)]
 mod tests {

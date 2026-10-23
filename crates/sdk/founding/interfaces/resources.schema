@@ -1,0 +1,3857 @@
+{
+  "declaration": "Interface<Op, Query, Reply, Returns<Op>>",
+  "definitions": [
+    [
+      "()",
+      {
+        "primitive": 0
+      }
+    ],
+    [
+      "(String, String)",
+      {
+        "tuple": {
+          "elements": [
+            "String",
+            "String"
+          ]
+        }
+      }
+    ],
+    [
+      "(String, u64)",
+      {
+        "tuple": {
+          "elements": [
+            "String",
+            "u64"
+          ]
+        }
+      }
+    ],
+    [
+      "AdmittedRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "u64"
+              ],
+              [
+                "by",
+                "u64"
+              ],
+              [
+                "height",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "AssignState",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Assigned",
+              "AssignState__Assigned"
+            ],
+            [
+              1,
+              "Claimed",
+              "AssignState__Claimed"
+            ],
+            [
+              2,
+              "Stopping",
+              "AssignState__Stopping"
+            ],
+            [
+              3,
+              "Ended",
+              "AssignState__Ended"
+            ],
+            [
+              4,
+              "Declined",
+              "AssignState__Declined"
+            ],
+            [
+              5,
+              "Missed",
+              "AssignState__Missed"
+            ],
+            [
+              6,
+              "Lost",
+              "AssignState__Lost"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "AssignState__Assigned",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "AssignState__Claimed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "AssignState__Declined",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "AssignState__Ended",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Outcome"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "AssignState__Lost",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "AssignState__Missed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "AssignState__Stopping",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Assignment",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ],
+              [
+                "offer",
+                "OfferId"
+              ],
+              [
+                "notary",
+                "Option<OfferId>"
+              ],
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "reason",
+                "Reason"
+              ],
+              [
+                "state",
+                "AssignState"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "BeatRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "free",
+                "u64"
+              ],
+              [
+                "readings",
+                "Vec<(String, u64)>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "BlobId",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Sha256",
+              "BlobId__Sha256"
+            ],
+            [
+              1,
+              "Sha1",
+              "BlobId__Sha1"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "BlobId__Sha1",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "[u8; 20]"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "BlobId__Sha256",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "[u8; 32]"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Class",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ],
+              [
+                "may_use",
+                "Option<u64>"
+              ],
+              [
+                "notarized",
+                "bool"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Counter",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Provider",
+              "Counter__Provider"
+            ],
+            [
+              1,
+              "Requester",
+              "Counter__Requester"
+            ],
+            [
+              2,
+              "Chain",
+              "Counter__Chain"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Counter__Chain",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Counter__Provider",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Counter__Requester",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Group",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ],
+              [
+                "members",
+                "u64"
+              ],
+              [
+                "weight",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Interface<Op, Query, Reply, Returns<Op>>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "op",
+                "Op"
+              ],
+              [
+                "query",
+                "Query"
+              ],
+              [
+                "reply",
+                "Reply"
+              ],
+              [
+                "returns",
+                "Returns<Op>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Isolation",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "Isolation__None"
+            ],
+            [
+              1,
+              "Container",
+              "Isolation__Container"
+            ],
+            [
+              2,
+              "Landlock",
+              "Isolation__Landlock"
+            ],
+            [
+              3,
+              "Seatbelt",
+              "Isolation__Seatbelt"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Isolation__Container",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Isolation__Landlock",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "abi",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Isolation__None",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Isolation__Seatbelt",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "KindRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ],
+              [
+                "owner",
+                "u64"
+              ],
+              [
+                "spec",
+                "KindSpec"
+              ],
+              [
+                "registered",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "KindSpec",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "meters",
+                "Vec<Meter>"
+              ],
+              [
+                "slot",
+                "String"
+              ],
+              [
+                "lapse",
+                "Option<u64>"
+              ],
+              [
+                "notary",
+                "Option<String>"
+              ],
+              [
+                "walk",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "LedgerRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "meter",
+                "String"
+              ],
+              [
+                "window_start",
+                "u64"
+              ],
+              [
+                "used",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Meter",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ],
+              [
+                "unit",
+                "String"
+              ],
+              [
+                "reported_by",
+                "Counter"
+              ],
+              [
+                "checked_by",
+                "Option<Counter>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Needs",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "units",
+                "u64"
+              ],
+              [
+                "labels",
+                "Vec<Selector>"
+              ],
+              [
+                "pin",
+                "Option<Pin>"
+              ],
+              [
+                "isolation",
+                "Isolation"
+              ],
+              [
+                "notarized",
+                "bool"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Notify",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Program",
+              "Notify__Program"
+            ],
+            [
+              1,
+              "Chat",
+              "Notify__Chat"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Notify__Chat",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "channel",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Notify__Program",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "program",
+                "String"
+              ],
+              [
+                "deliver",
+                "Vec<u8>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Offer",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ],
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "labels",
+                "Vec<(String, String)>"
+              ],
+              [
+                "capacity",
+                "u64"
+              ],
+              [
+                "reach",
+                "Reach"
+              ],
+              [
+                "terms",
+                "Terms"
+              ],
+              [
+                "isolation",
+                "Isolation"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "OfferId",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "u64"
+              ],
+              [
+                "name",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "OfferRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "u64"
+              ],
+              [
+                "offer",
+                "Offer"
+              ],
+              [
+                "state",
+                "OfferState"
+              ],
+              [
+                "busy",
+                "u64"
+              ],
+              [
+                "idle_since",
+                "Option<u64>"
+              ],
+              [
+                "since",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "OfferRule",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Only",
+              "OfferRule__Only"
+            ],
+            [
+              1,
+              "Preferred",
+              "OfferRule__Preferred"
+            ],
+            [
+              2,
+              "FreeLongest",
+              "OfferRule__FreeLongest"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "OfferRule__FreeLongest",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OfferRule__Only",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OfferRule__Preferred",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OfferState",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Ready",
+              "OfferState__Ready"
+            ],
+            [
+              1,
+              "Missed",
+              "OfferState__Missed"
+            ],
+            [
+              2,
+              "Lapsed",
+              "OfferState__Lapsed"
+            ],
+            [
+              3,
+              "Draining",
+              "OfferState__Draining"
+            ],
+            [
+              4,
+              "Gone",
+              "OfferState__Gone"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "OfferState__Draining",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OfferState__Gone",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OfferState__Lapsed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OfferState__Missed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OfferState__Ready",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OfferView",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "offer",
+                "OfferRow"
+              ],
+              [
+                "beat",
+                "Option<BeatRow>"
+              ],
+              [
+                "admitted",
+                "bool"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "OnLoss",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Retry",
+              "OnLoss__Retry"
+            ],
+            [
+              1,
+              "Park",
+              "OnLoss__Park"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "OnLoss__Park",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "OnLoss__Retry",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Op",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "RegisterKind",
+              "Op__RegisterKind"
+            ],
+            [
+              1,
+              "SetPolicy",
+              "Op__SetPolicy"
+            ],
+            [
+              2,
+              "Admit",
+              "Op__Admit"
+            ],
+            [
+              3,
+              "Evict",
+              "Op__Evict"
+            ],
+            [
+              4,
+              "Offer",
+              "Op__Offer"
+            ],
+            [
+              5,
+              "Withdraw",
+              "Op__Withdraw"
+            ],
+            [
+              6,
+              "Beat",
+              "Op__Beat"
+            ],
+            [
+              7,
+              "Request",
+              "Op__Request"
+            ],
+            [
+              8,
+              "Pick",
+              "Op__Pick"
+            ],
+            [
+              9,
+              "Cancel",
+              "Op__Cancel"
+            ],
+            [
+              10,
+              "Claim",
+              "Op__Claim"
+            ],
+            [
+              11,
+              "Decline",
+              "Op__Decline"
+            ],
+            [
+              12,
+              "Report",
+              "Op__Report"
+            ],
+            [
+              13,
+              "Count",
+              "Op__Count"
+            ],
+            [
+              14,
+              "Missed",
+              "Op__Missed"
+            ],
+            [
+              15,
+              "Confirm",
+              "Op__Confirm"
+            ],
+            [
+              16,
+              "Lapse",
+              "Op__Lapse"
+            ],
+            [
+              17,
+              "Unclaimed",
+              "Op__Unclaimed"
+            ],
+            [
+              18,
+              "Place",
+              "Op__Place"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Op__Admit",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "provider",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Beat",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ],
+              [
+                "free",
+                "u64"
+              ],
+              [
+                "readings",
+                "Vec<(String, u64)>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Cancel",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Claim",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Confirm",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ],
+              [
+                "readings",
+                "Vec<(String, u64)>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Count",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ],
+              [
+                "outcome",
+                "Option<Outcome>"
+              ],
+              [
+                "readings",
+                "Vec<(String, u64)>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Decline",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ],
+              [
+                "why",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Evict",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "provider",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Lapse",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "offer",
+                "OfferId"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Missed",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Offer",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "offer",
+                "Offer"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Pick",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "spec",
+                "Spec"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Place",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__RegisterKind",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ],
+              [
+                "spec",
+                "KindSpec"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Report",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ],
+              [
+                "outcome",
+                "Option<Outcome>"
+              ],
+              [
+                "readings",
+                "Vec<(String, u64)>"
+              ],
+              [
+                "evidence",
+                "Option<BlobId>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Request",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "spec",
+                "Spec"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__SetPolicy",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "policy",
+                "Policy"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Unclaimed",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Withdraw",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Option<Assignment>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Assignment"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<BeatRow>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "BeatRow"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<BlobId>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "BlobId"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Counter>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Counter"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<KindRow>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "KindRow"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Notify>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Notify"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<OfferId>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "OfferId"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<OfferView>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "OfferView"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Outcome>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Outcome"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Pin>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Pin"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Policy>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Policy"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Record>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Record"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<RequestView>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "RequestView"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<String>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "String"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Usage>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Usage"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Vec<u8>>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Vec<u8>"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<WhyView>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "WhyView"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<u64>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "u64"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Outcome",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Passed",
+              "Outcome__Passed"
+            ],
+            [
+              1,
+              "Failed",
+              "Outcome__Failed"
+            ],
+            [
+              2,
+              "Errored",
+              "Outcome__Errored"
+            ],
+            [
+              3,
+              "Cancelled",
+              "Outcome__Cancelled"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Outcome__Cancelled",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Outcome__Errored",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Outcome__Failed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Outcome__Passed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "PageRequest",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "after",
+                "Option<Vec<u8>>"
+              ],
+              [
+                "limit",
+                "Option<u64>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<AdmittedRow>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<AdmittedRow>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<Assignment>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<Assignment>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<KindRow>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<KindRow>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<LedgerRow>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<LedgerRow>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<OfferView>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<OfferView>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<PassedOverRow>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<PassedOverRow>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "PageResponse<RequestView>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<RequestView>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Passed",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "NotAdmitted",
+              "Passed__NotAdmitted"
+            ],
+            [
+              1,
+              "NotReady",
+              "Passed__NotReady"
+            ],
+            [
+              2,
+              "Full",
+              "Passed__Full"
+            ],
+            [
+              3,
+              "Labels",
+              "Passed__Labels"
+            ],
+            [
+              4,
+              "Isolation",
+              "Passed__Isolation"
+            ],
+            [
+              5,
+              "Terms",
+              "Passed__Terms"
+            ],
+            [
+              6,
+              "Declined",
+              "Passed__Declined"
+            ],
+            [
+              7,
+              "NotNotarizing",
+              "Passed__NotNotarizing"
+            ],
+            [
+              8,
+              "NotPinned",
+              "Passed__NotPinned"
+            ],
+            [
+              9,
+              "NoNotary",
+              "Passed__NoNotary"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "PassedOverRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "offer",
+                "OfferId"
+              ],
+              [
+                "passed",
+                "Passed"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Passed__Declined",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Passed__Full",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Passed__Isolation",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Passed__Labels",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Passed__NoNotary",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Passed__NotAdmitted",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Passed__NotNotarizing",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Passed__NotPinned",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Passed__NotReady",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "OfferState"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Passed__Terms",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Pin",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Only",
+              "Pin__Only"
+            ],
+            [
+              1,
+              "Prefer",
+              "Pin__Prefer"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Pin__Only",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "OfferId"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Pin__Prefer",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "OfferId"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Placement",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ],
+              [
+                "offer",
+                "OfferId"
+              ],
+              [
+                "reach",
+                "Reach"
+              ],
+              [
+                "notary",
+                "Option<OfferId>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Policy",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "classes",
+                "Vec<Class>"
+              ],
+              [
+                "groups",
+                "Vec<Group>"
+              ],
+              [
+                "quotas",
+                "Vec<Quota>"
+              ],
+              [
+                "share",
+                "Share"
+              ],
+              [
+                "tolerance_ppm",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Kind",
+              "Query__Kind"
+            ],
+            [
+              1,
+              "Kinds",
+              "Query__Kinds"
+            ],
+            [
+              2,
+              "Policy",
+              "Query__Policy"
+            ],
+            [
+              3,
+              "Admitted",
+              "Query__Admitted"
+            ],
+            [
+              4,
+              "Offer",
+              "Query__Offer"
+            ],
+            [
+              5,
+              "Offers",
+              "Query__Offers"
+            ],
+            [
+              6,
+              "Request",
+              "Query__Request"
+            ],
+            [
+              7,
+              "Queued",
+              "Query__Queued"
+            ],
+            [
+              8,
+              "Assignment",
+              "Query__Assignment"
+            ],
+            [
+              9,
+              "Holds",
+              "Query__Holds"
+            ],
+            [
+              10,
+              "Usage",
+              "Query__Usage"
+            ],
+            [
+              11,
+              "Ledger",
+              "Query__Ledger"
+            ],
+            [
+              12,
+              "Record",
+              "Query__Record"
+            ],
+            [
+              13,
+              "Why",
+              "Query__Why"
+            ],
+            [
+              14,
+              "PassedOver",
+              "Query__PassedOver"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Query__Admitted",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Assignment",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Holds",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "offer",
+                "OfferId"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Kind",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Kinds",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Ledger",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "group",
+                "String"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Offer",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "offer",
+                "OfferId"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Offers",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__PassedOver",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Policy",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Queued",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Record",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "offer",
+                "OfferId"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Request",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "id",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Usage",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Why",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Quota",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "group",
+                "String"
+              ],
+              [
+                "meter",
+                "String"
+              ],
+              [
+                "window",
+                "u64"
+              ],
+              [
+                "most",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reach",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Egress",
+              "Reach__Egress"
+            ],
+            [
+              1,
+              "Fleet",
+              "Reach__Fleet"
+            ],
+            [
+              2,
+              "Direct",
+              "Reach__Direct"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Reach__Direct",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Reach__Egress",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "service",
+                "String"
+              ],
+              [
+                "node",
+                "Vec<u8>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reach__Fleet",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "machine",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reason",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "class",
+                "String"
+              ],
+              [
+                "group",
+                "String"
+              ],
+              [
+                "group_used",
+                "u64"
+              ],
+              [
+                "group_weight",
+                "u32"
+              ],
+              [
+                "rule",
+                "OfferRule"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Record",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "assigned",
+                "u64"
+              ],
+              [
+                "claimed",
+                "u64"
+              ],
+              [
+                "declined",
+                "u64"
+              ],
+              [
+                "missed",
+                "u64"
+              ],
+              [
+                "lost",
+                "u64"
+              ],
+              [
+                "ended",
+                "u64"
+              ],
+              [
+                "disputed",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Kind",
+              "Reply__Kind"
+            ],
+            [
+              1,
+              "Kinds",
+              "Reply__Kinds"
+            ],
+            [
+              2,
+              "Policy",
+              "Reply__Policy"
+            ],
+            [
+              3,
+              "Admitted",
+              "Reply__Admitted"
+            ],
+            [
+              4,
+              "Offer",
+              "Reply__Offer"
+            ],
+            [
+              5,
+              "Offers",
+              "Reply__Offers"
+            ],
+            [
+              6,
+              "Request",
+              "Reply__Request"
+            ],
+            [
+              7,
+              "Requests",
+              "Reply__Requests"
+            ],
+            [
+              8,
+              "Assignment",
+              "Reply__Assignment"
+            ],
+            [
+              9,
+              "Assignments",
+              "Reply__Assignments"
+            ],
+            [
+              10,
+              "Usage",
+              "Reply__Usage"
+            ],
+            [
+              11,
+              "Ledger",
+              "Reply__Ledger"
+            ],
+            [
+              12,
+              "Record",
+              "Reply__Record"
+            ],
+            [
+              13,
+              "Why",
+              "Reply__Why"
+            ],
+            [
+              14,
+              "PassedOver",
+              "Reply__PassedOver"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Reply__Admitted",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<AdmittedRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Assignment",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<Assignment>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Assignments",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<Assignment>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Kind",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<KindRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Kinds",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<KindRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Ledger",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<LedgerRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Offer",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<OfferView>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Offers",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<OfferView>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__PassedOver",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<PassedOverRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Policy",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<Policy>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Record",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<Record>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Request",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<RequestView>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Requests",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<RequestView>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Usage",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<Usage>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Why",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<WhyView>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "RequestRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "id",
+                "u64"
+              ],
+              [
+                "by",
+                "u64"
+              ],
+              [
+                "via",
+                "Option<String>"
+              ],
+              [
+                "spec",
+                "Spec"
+              ],
+              [
+                "made",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "RequestState",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Queued",
+              "RequestState__Queued"
+            ],
+            [
+              1,
+              "Placed",
+              "RequestState__Placed"
+            ],
+            [
+              2,
+              "Lost",
+              "RequestState__Lost"
+            ],
+            [
+              3,
+              "Ended",
+              "RequestState__Ended"
+            ],
+            [
+              4,
+              "Cancelled",
+              "RequestState__Cancelled"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "RequestState__Cancelled",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "RequestState__Ended",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "RequestState__Lost",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "RequestState__Placed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "RequestState__Queued",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "RequestView",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "request",
+                "RequestRow"
+              ],
+              [
+                "attempt",
+                "u32"
+              ],
+              [
+                "state",
+                "RequestState"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Returns<Op>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "Request",
+                "u64"
+              ],
+              [
+                "Pick",
+                "Placement"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Selector",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Is",
+              "Selector__Is"
+            ],
+            [
+              1,
+              "Has",
+              "Selector__Has"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Selector__Has",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "String"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Selector__Is",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "String",
+              "String"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Share",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "meter",
+                "Option<String>"
+              ],
+              [
+                "window",
+                "Option<u64>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Spec",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "needs",
+                "Needs"
+              ],
+              [
+                "class",
+                "String"
+              ],
+              [
+                "on_loss",
+                "OnLoss"
+              ],
+              [
+                "notify",
+                "Option<Notify>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Standing",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Counted",
+              "Standing__Counted"
+            ],
+            [
+              1,
+              "Attested",
+              "Standing__Attested"
+            ],
+            [
+              2,
+              "Claimed",
+              "Standing__Claimed"
+            ],
+            [
+              3,
+              "Confirmed",
+              "Standing__Confirmed"
+            ],
+            [
+              4,
+              "Disputed",
+              "Standing__Disputed"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Standing__Attested",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Standing__Claimed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Standing__Confirmed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Standing__Counted",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Standing__Disputed",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "meters",
+                "Vec<String>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "String",
+      {
+        "sequence": {
+          "elements": "u8",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Terms",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "serves",
+                "Option<u64>"
+              ],
+              [
+                "notarizes",
+                "bool"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Usage",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "provider",
+                "Vec<(String, u64)>"
+              ],
+              [
+                "provider_at",
+                "Option<u64>"
+              ],
+              [
+                "evidence",
+                "Option<BlobId>"
+              ],
+              [
+                "requester",
+                "Vec<(String, u64)>"
+              ],
+              [
+                "requester_at",
+                "Option<u64>"
+              ],
+              [
+                "chain",
+                "Vec<(String, u64)>"
+              ],
+              [
+                "standing",
+                "Standing"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Vec<(String, String)>",
+      {
+        "sequence": {
+          "elements": "(String, String)",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<(String, u64)>",
+      {
+        "sequence": {
+          "elements": "(String, u64)",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<AdmittedRow>",
+      {
+        "sequence": {
+          "elements": "AdmittedRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<Assignment>",
+      {
+        "sequence": {
+          "elements": "Assignment",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<Class>",
+      {
+        "sequence": {
+          "elements": "Class",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<Group>",
+      {
+        "sequence": {
+          "elements": "Group",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<KindRow>",
+      {
+        "sequence": {
+          "elements": "KindRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<LedgerRow>",
+      {
+        "sequence": {
+          "elements": "LedgerRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<Meter>",
+      {
+        "sequence": {
+          "elements": "Meter",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<OfferView>",
+      {
+        "sequence": {
+          "elements": "OfferView",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<PassedOverRow>",
+      {
+        "sequence": {
+          "elements": "PassedOverRow",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<Quota>",
+      {
+        "sequence": {
+          "elements": "Quota",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<RequestView>",
+      {
+        "sequence": {
+          "elements": "RequestView",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<Selector>",
+      {
+        "sequence": {
+          "elements": "Selector",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<String>",
+      {
+        "sequence": {
+          "elements": "String",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<Waiting>",
+      {
+        "sequence": {
+          "elements": "Waiting",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<u8>",
+      {
+        "sequence": {
+          "elements": "u8",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Waiting",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "ClassAhead",
+              "Waiting__ClassAhead"
+            ],
+            [
+              1,
+              "GroupAhead",
+              "Waiting__GroupAhead"
+            ],
+            [
+              2,
+              "OverQuota",
+              "Waiting__OverQuota"
+            ],
+            [
+              3,
+              "ClassRefuses",
+              "Waiting__ClassRefuses"
+            ],
+            [
+              4,
+              "NoOfferTakes",
+              "Waiting__NoOfferTakes"
+            ],
+            [
+              5,
+              "NoNotary",
+              "Waiting__NoNotary"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Waiting__ClassAhead",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "class",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Waiting__ClassRefuses",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Waiting__GroupAhead",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "group",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Waiting__NoNotary",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Waiting__NoOfferTakes",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Waiting__OverQuota",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "group",
+                "String"
+              ],
+              [
+                "meter",
+                "String"
+              ],
+              [
+                "until",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "WhyView",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "state",
+                "RequestState"
+              ],
+              [
+                "assignment",
+                "Option<Assignment>"
+              ],
+              [
+                "waiting",
+                "Vec<Waiting>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "[u8; 20]",
+      {
+        "sequence": {
+          "elements": "u8",
+          "length_range": {
+            "end": 20,
+            "start": 20
+          },
+          "length_width": 0
+        }
+      }
+    ],
+    [
+      "[u8; 32]",
+      {
+        "sequence": {
+          "elements": "u8",
+          "length_range": {
+            "end": 32,
+            "start": 32
+          },
+          "length_width": 0
+        }
+      }
+    ],
+    [
+      "bool",
+      {
+        "primitive": 1
+      }
+    ],
+    [
+      "u32",
+      {
+        "primitive": 4
+      }
+    ],
+    [
+      "u64",
+      {
+        "primitive": 8
+      }
+    ],
+    [
+      "u8",
+      {
+        "primitive": 1
+      }
+    ]
+  ]
+}

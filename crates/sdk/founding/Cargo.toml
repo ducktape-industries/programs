@@ -42,6 +42,7 @@ identity = { path = "../../system/identity" }
 model-routing = { path = "../../app/model-routing" }
 ownership = { path = "../../system/ownership" }
 programs = { path = "../../system/programs" }
+resources = { path = "../../app/resources" }
 scheduler = { path = "../../system/scheduler" }
 valset = { path = "../../system/valset" }
 wake = { path = "../../app/wake" }

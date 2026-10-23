@@ -2616,6 +2616,7 @@ dependencies = [
  "ownership",
  "program",
  "programs",
+ "resources",
  "scheduler",
  "serde_json",
  "tempfile",
@@ -5401,10 +5402,13 @@ dependencies = [
 name = "resources"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "borsh",
+ "chat",
  "describe",
  "ownership",
  "program",
+ "scheduler",
  "store",
 ]
 

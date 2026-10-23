@@ -3,11 +3,21 @@ name = "resources"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+program = []
+describe = []
+
 [dependencies]
+abi = { workspace = true }
 borsh = { workspace = true }
+chat = { path = "../chat" }
+describe = { path = "../../sdk/describe" }
 ownership = { path = "../../system/ownership" }
 program = { path = "../../sdk/program" }
 store = { path = "../../sdk/store" }
 
 [dev-dependencies]
-describe = { path = "../../sdk/describe" }
+scheduler = { path = "../../system/scheduler" }
