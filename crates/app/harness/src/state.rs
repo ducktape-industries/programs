@@ -13,9 +13,6 @@ use crate::{
     SettleWindow, Tally, ThreadRow, WaitRow, Window,
 };
 
-// Who may start an agent's conversations, of the kind `harness.agent-conversation`: its manager's
-// once they claim it (`ClaimConversations`). `NewThread` and `ForkThread` write it, so its policy
-// decides them; an agent whose manager never claimed it has none, and stays open.
 pub const CONVERSATIONS: Map<AccountNumber, Owned<Conversations>> = Map::new("conversations/");
 // Each provider's route is its owner's, of the kind `harness.route`: only its owner's ops write it.
 pub const PROVIDER_ROUTES: Map<String, Owned<ProviderRouteRow>> = Map::new("provider-route/");

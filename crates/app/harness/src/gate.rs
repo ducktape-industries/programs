@@ -1,7 +1,7 @@
 //! What each harness op needs of the access program, and who owns each key: an agent, its
-//! conversation and its threads by its manager. Close of a bound or closed conversation needs
-//! nothing (a closed one is refused as closed); of an open canonical one, its thread's key.
-use ::program::{Error, Need, Ownership, Party, QueryCtx, Resource, unexpected_reply};
+//! conversation and its threads by its manager. An agent's NewThread of itself needs nothing, nor
+//! Close of a bound or closed conversation; Close of an open canonical one needs its thread's key.
+use ::program::{Error, Need, Ownership, Party, Principal, QueryCtx, Resource, unexpected_reply};
 use abi::role::identity::{AccountNumber, Kind};
 
 use crate::Op;
@@ -21,12 +21,17 @@ pub fn thread_key(thread: u64) -> String {
     format!("threads/{thread}")
 }
 
+pub(crate) fn sent_by_agent(ctx: &QueryCtx, agent: AccountNumber) -> bool {
+    ctx.env().sender == Some(Principal::Account(agent))
+}
+
 pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
     Ok(match op {
         Op::Close { thread } => match open_to_anyone(ctx, *thread)? {
             true => Vec::new(),
             false => vec![Need::write(thread_key(*thread))],
         },
+        Op::NewThread { agent } if sent_by_agent(ctx, *agent) => Vec::new(),
         Op::NewThread { agent } | Op::ForkThread { agent } => match harnessed_agent(ctx, *agent)? {
             Some(_) => vec![Need::write(conversation_key(*agent))],
             None => Vec::new(),

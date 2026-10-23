@@ -85,7 +85,7 @@ pub enum Op {
         description = "From the program bound to the egress role only: one event of a model's streamed reply for a conversation waiting on it."
     )]
     Streamed { thread: u64, event: Event } = 4,
-    #[tool_op(description = "Start a fresh conversation for an agent, which becomes its current one. Its manager, or whom its conversation list allows. Returns the conversation's id.", returns = u64, example = examples::new_thread)]
+    #[tool_op(description = "Start a fresh conversation for an agent, which becomes its current one. The agent itself, its manager, or whom its conversation list allows. Returns the conversation's id.", returns = u64, example = examples::new_thread)]
     NewThread { agent: AccountNumber },
     #[tool_op(description = "Start a conversation that begins from the agent's current one (its frames, summary included), which becomes current. Its manager, or whom its conversation list allows. Returns the conversation's id.", returns = u64, example = examples::fork_thread)]
     ForkThread { agent: AccountNumber },
@@ -122,7 +122,7 @@ pub enum Op {
     Wait { thread: u64, event: WaitFor } = 18,
     #[tool_op(description = "Cancel an open wait. The agent that made it.", example = examples::unwait)]
     Unwait { wait: u64 },
-    #[tool_op(description = "Claim who may start an agent's conversations: the ownership role records the row as yours, and its policy decides each later NewThread and ForkThread. The agent's manager only.", example = examples::claim)]
+    #[tool_op(description = "Claim who may start an agent's conversations: the ownership role records the row as yours, and its policy decides each later ForkThread, and each NewThread but the agent's own. The agent's manager only.", example = examples::claim)]
     ClaimConversations { agent: AccountNumber } = 24,
     // one-time (J-011 ⑥): records owners for harness's owned rows from before the guard
     #[tool_op(description = "One-time backfill of owners for harness's rows from before ownership was recorded, a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt)]

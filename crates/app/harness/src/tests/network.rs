@@ -843,3 +843,58 @@ fn an_agents_own_as_reaches_chat_inside_harnesss_and_is_refused() {
     let refused = refusal(&world.chain, thread, "q_as");
     assert!(refused.contains("an As inside an As"), "{refused}");
 }
+
+#[test]
+fn an_agent_starts_itself_a_fresh_conversation_its_managers_list_and_policy_refuse_others() {
+    let mut world = world();
+    world.chain.seat::<Programs>(programs::PROGRAM);
+    world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
+    listed(
+        &world.chain,
+        &[(PROGRAM, code_with(&interface::<Harness>()))],
+    );
+    let chain = &world.chain;
+    let agent = world.agent;
+    let claim = Op::ClaimConversations { agent };
+    chain.submit(signed(ADA), PROGRAM, &claim).unwrap();
+    let strict = ownership::Op::Create {
+        name: "mine".into(),
+        write: ownership::Writers::Owner,
+    };
+    let made = chain
+        .submit(signed(ADA), ownership::PROGRAM, &strict)
+        .unwrap();
+    let relink = ownership::Op::Relink {
+        program: PROGRAM.into(),
+        key: crate::state::CONVERSATIONS.key(&agent),
+        policy: abi::decode(&made).unwrap(),
+    };
+    chain
+        .submit(signed(ADA), ownership::PROGRAM, &relink)
+        .unwrap();
+    let refused = chain
+        .submit(signed(BO), PROGRAM, &Op::NewThread { agent })
+        .unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED, "anyone else still asks");
+
+    let calls = [
+        (
+            "n_self",
+            "network_call",
+            json!({ "program": PROGRAM, "op": { "new_thread": { "agent": agent } } }),
+        ),
+        (
+            "f_self",
+            "network_call",
+            json!({ "program": PROGRAM, "op": { "fork_thread": { "agent": agent } } }),
+        ),
+    ];
+    let thread = called(&world, &calls);
+    let renewed = json_result(chain, thread, "n_self");
+    let fresh = renewed["returned"]
+        .as_u64()
+        .expect("the fresh conversation's id");
+    assert_ne!(fresh, thread);
+    let forked = refusal(chain, thread, "f_self");
+    assert!(forked.starts_with(code::UNAUTHORIZED), "{forked}");
+}

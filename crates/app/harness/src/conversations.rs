@@ -1,6 +1,6 @@
 //! An agent's conversations: a canonical thread that hears every input whose place no other is
-//! bound to, and threads anyone binds to a chat channel or thread (`OpenThread`). A canonical
-//! thread is renewed or forked by its manager, and closes once idle and no longer current.
+//! bound to, and threads anyone binds to a place (`OpenThread`). The agent or its manager renews
+//! the canonical one, its manager forks it, and it closes once idle and no longer current.
 use ::program::{
     Error, ExecCtx, Principal, QueryCtx, already_exists, not_found, unauthorized, unexpected_reply,
 };
@@ -188,7 +188,9 @@ fn touch_claimed_conversations(ctx: &ExecCtx, number: AccountNumber) -> Result<(
 
 pub(crate) fn new_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     let agent = managed(ctx, number)?;
-    touch_claimed_conversations(ctx, number)?;
+    if !crate::gate::sent_by_agent(ctx, number) {
+        touch_claimed_conversations(ctx, number)?;
+    }
     let previous = current(ctx, number)?;
     let row = open(ctx, &agent, String::new(), &Opening::Fresh)?;
     THREADS.put(ctx, &row.id, &row);
