@@ -57,10 +57,10 @@ sides to it.
   words, and for a limited or busy account the reset it waits for (seconds since the epoch).
 
 The optional `Request.compaction_instruction` replaces the appended Codex instruction on
-`POST /summary` only. Missing keeps the existing default. Blank values, overrides on ordinary
-turns and overrides on unsupported providers are refused by the adapter; Anthropic overrides
-are unsupported. Harness sends it only for summaries, outside the system prompt. `fit` preserves
-it. It is omitted from serialized requests when absent.
+`POST /summary` only. Missing keeps the existing default. On summary requests, blank values
+and overrides on unsupported providers are refused by the adapter; Anthropic overrides are
+unsupported. Ordinary turns do not consume this field. Harness sends it only for summaries,
+outside the system prompt. `fit` preserves it. It is omitted from serialized requests when absent.
 
 ## The lane rule (`fit`)
 
