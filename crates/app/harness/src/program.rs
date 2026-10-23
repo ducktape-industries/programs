@@ -180,6 +180,7 @@ impl Awaiting for Harness {
             }
             Op::PromiseDue { promise } => crate::promises::due(ctx, promise).await,
             Op::Sweep => crate::sweep::sweep(&ctx).await,
+            Op::Renew { thread } => crate::agents::renew(&ctx, thread),
         }
     }
 }

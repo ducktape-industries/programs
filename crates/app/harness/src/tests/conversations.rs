@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::{CURRENT, THREADS};
+use crate::state::{CURRENT, OPEN_BY_AGENT, THREADS, newest_first};
 
 fn answered(world: &World, id: &str, text: &str) -> u64 {
     let thread = world.opened(id, text, Some(WINDOW));
@@ -840,4 +840,161 @@ fn an_agents_own_post_reaches_its_conversation_bound_there_and_never_the_writer_
     );
     assert_eq!(frames(chain, canonical), before, "nor the canonical one");
     assert_eq!(posts(chain, b).len(), 1);
+}
+
+fn renew_of(world: &World, thread: u64) -> Result<u64, Error> {
+    renewed(&world.chain, ADA, &Op::Renew { thread })
+}
+
+fn open_at(world: &World, place: &str) -> Vec<u64> {
+    let chain = &world.chain;
+    bound(chain, world.agent)
+        .into_iter()
+        .filter(|&id| {
+            let row = thread_row(chain, id);
+            !row.closed && row.place == place
+        })
+        .collect()
+}
+
+#[test]
+fn a_renew_under_every_ordering_leaves_one_open_conversation_at_its_place() {
+    let orders: [&[&str]; 5] = [
+        &["renew"],
+        &["renew", "open"],
+        &["open", "renew"],
+        &["renew", "close"],
+        &["renew", "renew"],
+    ];
+    for order in orders {
+        let world = world();
+        let chain = &world.chain;
+        room(&world, "j-a");
+        let a = bind(&world, ADA, in_room("j-a")).unwrap();
+        for step in order {
+            let _ = match *step {
+                "renew" => renew_of(&world, a),
+                "open" => bind(&world, BO, in_room("j-a")),
+                _ => chain
+                    .submit(signed(BO), PROGRAM, &Op::Close { thread: a })
+                    .map(|_| a),
+            };
+        }
+        let open = open_at(&world, "chat/j-a");
+        let &[only] = &open[..] else {
+            panic!("{order:?}: {open:?}");
+        };
+        assert_ne!(only, a, "{order:?}");
+        assert!(thread_row(chain, a).closed, "{order:?}");
+        assert_eq!(
+            thread_at(chain, world.agent, "chat/j-a"),
+            Some(only),
+            "{order:?}"
+        );
+    }
+}
+
+#[test]
+fn a_refused_renew_leaves_the_conversation_as_it_was() {
+    let world = world();
+    let chain = &world.chain;
+    let canonical = answered(&world, "m1", "hello");
+    let unbound = renew_of(&world, canonical).unwrap_err();
+    assert!(
+        format!("{unbound:?}").contains("bound to no place"),
+        "{unbound:?}"
+    );
+    assert!(!thread_row(chain, canonical).closed);
+    assert_eq!(current(chain, world.agent), Some(canonical));
+
+    room(&world, "j-a");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread: a })
+        .unwrap();
+    let closed = renew_of(&world, a).unwrap_err();
+    assert!(
+        format!("{closed:?}").contains("closed already"),
+        "{closed:?}"
+    );
+    assert!(
+        open_at(&world, "chat/j-a").is_empty(),
+        "a refused renew opens nothing"
+    );
+    assert!(renew_of(&world, 999).is_err());
+}
+
+#[test]
+fn an_outsiders_renew_is_refused_and_starts_no_turn() {
+    let world = world();
+    let chain = &world.chain;
+    room(&world, "j-a");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    let asked = assigned(chain, SERVICE).len();
+    let refused = renewed(chain, BO, &Op::Renew { thread: a }).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED, "{}", refused.message);
+    assert!(!thread_row(chain, a).closed);
+    assert_eq!(open_at(&world, "chat/j-a"), [a]);
+    assert_eq!(assigned(chain, SERVICE).len(), asked, "no heir, no turn");
+    renew_of(&world, a).unwrap();
+    assert!(thread_row(chain, a).closed, "its manager may");
+}
+
+#[test]
+fn a_renewed_conversation_hears_its_place_and_is_told_what_it_renews() {
+    let world = world();
+    let chain = &world.chain;
+    room(&world, "j-a");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    say_in(&world, "j-a", "a1", "first");
+    let b = renew_of(&world, a).unwrap();
+    assert!(thread_row(chain, a).closed);
+    let told = posts(chain, b);
+    let renews = format!("renews conversation {a}");
+    assert!(told.iter().any(|text| text.contains(&renews)), "{told:?}");
+
+    say_in(&world, "j-a", "a2", "second");
+    let heard = posts(chain, b);
+    assert!(
+        heard.iter().any(|text| text.ends_with("second")),
+        "{heard:?}"
+    );
+    assert_eq!(
+        posts(chain, a).len(),
+        1,
+        "the renewed one hears nothing more"
+    );
+    assert_eq!(thread_at(chain, world.agent, "chat/j-a"), Some(b));
+}
+
+#[test]
+fn a_renewed_conversation_is_no_longer_listed_as_open() {
+    let world = world();
+    let chain = &world.chain;
+    room(&world, "j-a");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    let b = renew_of(&world, a).unwrap();
+    let live = Query::Sessions {
+        agent: world.agent,
+        status: Some(SessionStatus::Live),
+        page: PageRequest {
+            after: None,
+            limit: None,
+        },
+    };
+    let Reply::Sessions(page) = chain.query(PROGRAM, &live).unwrap() else {
+        panic!("sessions answer as a page")
+    };
+    let listed: Vec<u64> = page.items.iter().map(|session| session.row.id).collect();
+    assert!(listed.contains(&b), "{listed:?}");
+    assert!(!listed.contains(&a), "{listed:?}");
+    let host = chain.host(PROGRAM);
+    let host = host.borrow();
+    let state = &host.state;
+    let open = |id: u64| state.contains_key(&OPEN_BY_AGENT.key(&(world.agent, newest_first(id))));
+    assert!(open(b), "the heir is indexed as open");
+    assert!(
+        !open(a),
+        "the renewed conversation keeps no open-by-agent key"
+    );
 }

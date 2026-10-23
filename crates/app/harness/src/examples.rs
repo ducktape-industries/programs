@@ -13,6 +13,10 @@ pub(crate) fn close() -> Op {
     Op::Close { thread: 144 }
 }
 
+pub(crate) fn renew() -> Op {
+    Op::Renew { thread: 144 }
+}
+
 pub(crate) fn new_thread() -> Op {
     Op::NewThread { agent: 21 }
 }

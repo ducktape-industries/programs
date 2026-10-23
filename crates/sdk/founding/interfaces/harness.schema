@@ -2105,6 +2105,11 @@
               38,
               "Sweep",
               "Op__Sweep"
+            ],
+            [
+              39,
+              "Renew",
+              "Op__Renew"
             ]
           ]
         }
@@ -2379,6 +2384,21 @@
               [
                 "provider",
                 "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Renew",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "thread",
+                "u64"
               ]
             ]
           }
@@ -5303,6 +5323,10 @@
               ],
               [
                 "Promise",
+                "u64"
+              ],
+              [
+                "Renew",
                 "u64"
               ]
             ]

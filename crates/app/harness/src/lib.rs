@@ -78,7 +78,7 @@ pub const PART: &str = "part";
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum Op {
-    #[tool_op(description = "Close a conversation; it stays readable. Its agent's manager, or whom the manager lists; a conversation bound to a place (OpenThread) anyone may close. Closing one already closed is refused as wrong_state, whoever asks.", example = examples::close)]
+    #[tool_op(description = "Close a conversation; it stays readable. Its agent, the agent's manager, or whom the manager lists; a conversation bound to a place (OpenThread) anyone may close. Closing one already closed is refused as wrong_state, whoever asks.", example = examples::close)]
     Close { thread: u64 },
     #[tool_op(
         description = "From attribution only (and harness itself for one it held back): a change about an agent, such as a mention, a direct message or a reply in its thread, which reaches its conversation when the agent's list allows the author."
@@ -170,6 +170,8 @@ pub enum Op {
     PromiseDue { promise: u64 },
     #[tool_op(description = "Book every model retry no booking holds (the scheduler refused it in a frame at the kernel's nesting cap), each at its block or the next, then book the next Sweep DEFAULT_WAIT (64) blocks on unless one is booked already. Anyone may.", example = examples::sweep)]
     Sweep,
+    #[tool_op(description = "Close a conversation bound to a place and open its heir there in one op: the heir takes over its waits and unanswered messages and starts with a post naming the one it renews, so the place is never left without one. Its agent, the agent's manager, or whom the manager lists may, as for Close of a canonical one; a conversation bound to no place, or closed already, is refused and stays as it is. Returns the heir's id.", returns = u64, example = examples::renew)]
+    Renew { thread: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1524,6 +1526,10 @@ pub fn describe(op: &Op) -> describe::Description {
             "Book the model retries no booking holds".to_owned(),
             Vec::new(),
         ),
+        Op::Renew { thread } => (
+            format!("Renew conversation {thread} at its place"),
+            vec![field("thread", Value::count(*thread))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1574,6 +1580,7 @@ fn op_variants_only_append() {
             "Keep",
             "PromiseDue",
             "Sweep",
+            "Renew",
         ]
     );
 }

@@ -336,6 +336,18 @@ pub(crate) fn open_thread(ctx: &ExecCtx, number: AccountNumber, place: Place) ->
     Ok(())
 }
 
+pub(crate) fn rebound(ctx: &ExecCtx, old: &ThreadRow, place: Place) -> Result<ThreadRow, Error> {
+    let agent = agent_named(ctx, old.agent)?;
+    let key = (old.agent, place.key());
+    BOUND.remove(ctx, &key);
+    VACATED.put(ctx, &key, &old.id);
+    let row = open(ctx, &agent, place.key(), &Opening::Bound(place))?;
+    THREADS.put(ctx, &row.id, &row);
+    PLACES.put(ctx, &key, &row.id);
+    crate::unanswered::moved(ctx, old.id, row.id)?;
+    Ok(row)
+}
+
 fn located(ctx: &QueryCtx, agent: &Agent, place: &Place) -> Result<(), Error> {
     let channel = place.channel().to_owned();
     let asked = chat::Query::Channel {

@@ -279,6 +279,41 @@ pub(crate) async fn close(ctx: &Ctx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
+pub(crate) fn renew(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+    let mut old = thread(ctx, id)?;
+    if old.closed {
+        return Err(wrong_state(format!(
+            "conversation {id} is closed already: OpenThread opens its place afresh"
+        )));
+    }
+    let Some(place) = binding(ctx, &old)? else {
+        return Err(wrong_state(format!(
+            "conversation {id} is bound to no place: NewThread renews a canonical conversation"
+        )));
+    };
+    let mut heir = crate::conversations::rebound(ctx, &old, place)?;
+    old.closed = true;
+    crate::sessions::closed(ctx, &old);
+    if old.asking == crate::Asking::Idle {
+        crate::turns::let_go(ctx, &mut old)?;
+    }
+    THREADS.put(ctx, &id, &old);
+    let text = format!(
+        "This conversation renews conversation {id}, closed at block {}: its waits and \
+         unanswered messages are here now.",
+        ctx.env().height
+    );
+    let author = Principal::Root;
+    say(ctx, &mut heir, Body::Post { author, text });
+    THREADS.put(ctx, &heir.id, &heir);
+    for thread in [id, heir.id] {
+        let next = Op::Resume { thread };
+        ctx.emit(&ctx.env().program, &next, ::program::Reply::None);
+    }
+    ctx.set_return_data(abi::encode(&heir.id));
+    Ok(())
+}
+
 fn conversation_words(title: &str, bound: Option<&Place>) -> String {
     let Some(place) = bound else {
         return format!(

@@ -77,7 +77,13 @@ and the model answers each where it came from), when identity says the agent hea
 author (`identity::Query::Hears`: its manager always, anyone else as its `Answers`
 allows; a user of a linked network as its `Answers` allows `Party::Foreign` of them).
 With no current thread, the first input opens one. A conversation opened bound to a
-chat channel or thread (`OpenThread`) hears what reaches the agent there instead. An
+chat channel or thread (`OpenThread`) hears what reaches the agent there instead.
+`Renew { thread }` closes a bound conversation and opens its heir at the same place in
+one op (the agent, its manager, or whom its list at `harness::thread_key(thread)` allows,
+as for `Close` of a canonical one, since the heir starts a model turn): the heir takes over its waits and
+unanswered messages and starts its turn with a post naming the one it renews. A
+conversation bound to no place, or closed already, is refused and stays as it is, so a
+renew never leaves its place without a conversation. An
 input in a forge change's own room (`forge:<repo>:<n>`, `forge::change_of_room`) where
 no conversation of the agent is bound goes to the conversation that opened the change
 with `forge_change_open`, or to that one's heir once it has closed; with neither open,
@@ -232,7 +238,8 @@ nothing else for a wait itself: its own watchers' ops (`WaitDue`, `PodWait`, `Po
 retired, each tag kept and refused, so a network takes this harness only after the one
 before it ran `MoveWaits` until it answered null. A conversation that takes a closed one's
 place is its heir: for a canonical one, the next canonical (`NewThread`, `ForkThread`, or the
-fresh one an input opens after a `Close`); for a bound one, the next `OpenThread` at its place.
+fresh one an input opens after a `Close`); for a bound one, the one `Renew` opens there, else
+the next `OpenThread` at its place.
 A wait, a wake or a booked run's report for a conversation that has closed reaches its heir,
 whose `Armed` lists the waits it took over. `Wakes` lists a pending booked run under the
 open conversation its report will reach, following closed predecessors through their heirs,
