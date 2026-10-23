@@ -10,6 +10,7 @@ use gitcore::{Tree, TreeEntry, pack};
 use crate::*;
 
 mod enqueue;
+mod train;
 
 const OWNER: &[u8] = b"owner-key";
 const OWNER_ACCOUNT: u64 = 11;

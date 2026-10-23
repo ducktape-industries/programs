@@ -465,6 +465,8 @@ fn judge(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Judgement>, Error>
         true => changed(ctx, repo, &preview.into_head, &preview.merge),
         false => None,
     };
+    let stacked = stacked_under_a_train(ctx, repo, n, &preview)?;
+    let mut whole_train_patch: Option<Option<Patch>> = None;
     let mut judged = Vec::new();
     for ((reporter, context), found) in reported {
         let Found {
@@ -478,8 +480,22 @@ fn judge(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Judgement>, Error>
             true => Vec::new(),
             false => differing_paths(ctx, repo, &key, &preview.merge)?,
         };
-        let same_reach_elsewhere = earlier && differs.is_empty();
-        if same_reach_elsewhere {
+        let reach_held = differs.is_empty();
+        let same_reach_elsewhere = earlier && reach_held;
+        let tree_reported_elsewhere = !patch && gated != preview.merge;
+        let status_context = format!("{reporter}/{context}");
+        let for_the_whole_train = stacked.as_ref().filter(|train| {
+            let in_a_tip_context = train.tip_contexts.contains(&status_context);
+            tree_reported_elsewhere && reach_held && in_a_tip_context
+        });
+        if let Some(train) = for_the_whole_train {
+            let base = train.branch_base.as_deref();
+            let whole = whole_train_patch.get_or_insert_with(|| {
+                base.and_then(|base| changed(ctx, repo, base, &preview.merge))
+            });
+            let theirs = base.and_then(|base| patch_of(ctx, repo, &gated, base));
+            differs = patch_differs(theirs.as_ref(), whole.as_ref());
+        } else if same_reach_elsewhere {
             let theirs = patch_of(ctx, repo, &gated, &preview.into_head);
             differs = patch_differs(theirs.as_ref(), ours.as_ref());
         }
@@ -497,6 +513,61 @@ fn judge(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Judgement>, Error>
         });
     }
     Ok(Some((preview, judged)))
+}
+
+struct StackedOnATrain {
+    tip_contexts: Vec<String>,
+    branch_base: Option<String>,
+}
+
+fn stacked_under_a_train(
+    ctx: &QueryCtx,
+    repo: &str,
+    n: u64,
+    preview: &PreviewInfo,
+) -> Result<Option<StackedOnATrain>, Error> {
+    let Some(branch) = target_of(ctx, repo, n)? else {
+        return Ok(None);
+    };
+    let tip_contexts = train_tip_contexts(ctx, repo, &branch)?;
+    if tip_contexts.is_empty() {
+        return Ok(None);
+    }
+    let branch_base = branch_base_of(ctx, repo, &preview.merge, branch);
+    let stands_on_the_branch = branch_base.as_deref() == Some(preview.into_head.as_str());
+    if stands_on_the_branch {
+        return Ok(None);
+    }
+    Ok(Some(StackedOnATrain {
+        tip_contexts,
+        branch_base,
+    }))
+}
+
+fn train_tip_contexts(ctx: &QueryCtx, repo: &str, branch: &[u8]) -> Result<Vec<String>, Error> {
+    let asked = forge::Query::Train {
+        repo: repo.to_owned(),
+        branch: branch.to_vec(),
+    };
+    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+        forge::Reply::Train { train, .. } => Ok(train.map(|train| train.tip).unwrap_or_default()),
+        other => Err(unexpected_reply(forge::PROGRAM, "Train", &other)),
+    }
+}
+
+fn branch_base_of(ctx: &QueryCtx, repo: &str, merge: &str, branch: Vec<u8>) -> Option<String> {
+    let asked = forge::Query::Compare {
+        repo: repo.to_owned(),
+        from: Revision::Oid(merge.to_owned()),
+        into: Revision::Ref(branch),
+    };
+    let reply = ctx
+        .query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)
+        .ok()?;
+    let forge::Reply::Compare { comparison, .. } = reply else {
+        return None;
+    };
+    comparison.base
 }
 
 pub(crate) fn verdict(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<PreviewVerdict>, Error> {

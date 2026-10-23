@@ -113,7 +113,7 @@ pub enum Query {
     #[ask(Reply::Verdict(Option<PreviewVerdict>))]
     #[reads(REPORTS, REACH, HEADS, PATCHES)]
     #[reads(forge::Forge: forge::tables::PREVIEWS, forge::tables::REPOS)]
-    #[tool_query(description = "How each result reported for change n's head, or on an earlier head of it for a reporter with none on the head, stands on its latest Preview: carried with its state, or Pending with the paths that differ there (a reached path, or a path the patch of an earlier head and the Preview's patch change differently). Null while the change has no Preview.", example = crate::examples::verdict)]
+    #[tool_query(description = "How each result reported for change n's head, or on an earlier head of it for a reporter with none on the head, stands on its latest Preview: carried with its state, or Pending with the paths that differ there (a reached path, or a path the patch of an earlier head and the Preview's patch change differently, or, for a result in a train's tip context reported off a Preview stacked on the one ahead, a path its patch and the Preview's patch from the branch change differently). Null while the change has no Preview.", example = crate::examples::verdict)]
     Verdict { repo: String, n: u64 },
     #[ask(Reply::Wanted(PageResponse<Rerun>))]
     #[reads(WANTED)]
