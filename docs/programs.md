@@ -717,7 +717,11 @@ event arrives as that op. It checks the sender is the program bound to the
 egress role. Egress hands it each `seq` once and in order, and a `seq` back
 at 0 means the node called the model again. The call's answer, an
 empty-bodied `http::Response`, comes after the last event and says the
-stream ended.
+stream ended. Request expiry uses the exported `egress::EXPIRED`
+(`egress_expired`) error code, and `EndStream::Cut` uses
+`egress::STREAM_CUT` (`egress_stream_cut`). `Answer::Failed` keeps
+`wrong_state`, so callers can distinguish a service failure from expiry or a
+cut without parsing prose. HTTP error statuses remain HTTP responses.
 
 **A read off the block path.** A query whose cost grows with what it reads
 (a grep over a tree, a whole file) is asked of the kernel instead of run in

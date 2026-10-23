@@ -106,7 +106,7 @@ fn an_expiry_while_events_wait_closes_the_request_and_clears_its_stream() {
     assert_eq!(kept(&chain).1, 2);
     chain.at(2 + 3 + 1, 0);
     let [expired] = answers(&chain).try_into().unwrap();
-    assert_eq!(expired.unwrap_err().code, code::WRONG_STATE);
+    assert_eq!(expired.unwrap_err().code, EXPIRED);
     assert_eq!(request_row(&chain, 1), None);
     assert_eq!(kept(&chain), (None, 0));
 }

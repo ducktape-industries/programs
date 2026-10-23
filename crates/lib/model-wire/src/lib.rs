@@ -302,6 +302,17 @@ pub struct Summarized {
     pub tokens: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SummaryEvent {
+    Summary(Summarized),
+    Failed(Failure),
+}
+
+pub fn summary_sse(event: &SummaryEvent) -> Result<String, serde_json::Error> {
+    Ok(format!("data: {}\n\n", serde_json::to_string(event)?))
+}
+
 pub fn page_words(body: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(body);
     let lower = text.to_ascii_lowercase();

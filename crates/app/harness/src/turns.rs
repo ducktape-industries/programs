@@ -125,7 +125,7 @@ pub(crate) fn settle(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error>
     Ok(())
 }
 
-fn unhold(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
+pub(crate) fn unhold(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
     for index in 0..thread.held {
         let key = (thread.id, index);
         if let Some(body) = HELD.get(ctx, &key)? {
@@ -825,11 +825,21 @@ fn plan_turn(ctx: &ExecCtx, thread: &mut ThreadRow, turn: Turn) -> Result<Option
 
 fn plan_summary(ctx: &ExecCtx, thread: &mut ThreadRow, turn: Turn) -> Result<Option<Step>, Error> {
     let Some((through, parts)) = summarize_parts(ctx, thread, &turn)? else {
+        if thread.compact_before.is_some() {
+            crate::summaries::failed(
+                ctx,
+                thread,
+                "no settled prefix fits the model's summary request: start a new conversation or choose a model with a larger context window".into(),
+            )?;
+            thread.compact_before = None;
+            return Ok(None);
+        }
         return match thread.context {
             Context::Measured(_) => plan_turn(ctx, thread, turn),
             Context::Overflowed => plan_without_largest(ctx, thread, turn),
         };
     };
+    crate::summaries::clear(ctx, thread.id);
     thread.asking = Asking::Compacting { through };
     Ok(Some(Step::Compact {
         asked: turn.asked,
@@ -962,38 +972,54 @@ async fn compact(
     parts: Vec<BlobId>,
 ) -> Result<(), Error> {
     let head = wire::summary_head(asked.wire);
-    let sent = ctx.env().height;
-    let answer = call_model(ctx, &asked, head, parts, egress::Delivery::Whole).await;
+    let delivery = egress::Delivery::Events {
+        deliver: streamed_as(id),
+    };
+    let answer = call_model(ctx, &asked, head, parts, delivery).await;
     let mut thread = thread(ctx, id)?;
-    let waited = ctx.env().height.saturating_sub(sent);
-    let expired = waited >= asked.wait.unwrap_or(egress::DEFAULT_WAIT);
-    let read = answer.map(|response| (wire::summarized(asked.wire, &response), response));
-    let again = match read {
+    let read = answer.map(|response| {
+        let read = crate::summaries::read(ctx, id, asked.wire, &response);
+        (read, response)
+    });
+    let mut again = None;
+    match read {
         Ok((Summarized::Summary(summary), _)) => {
             summarize(ctx, &mut thread, asked.wire, through, summary)?;
-            None
         }
         Ok((Summarized::Overflow, _)) => {
             thread.compact_before = Some(through);
-            None
         }
-        Ok((Summarized::Pictures(text), response)) => match unpictured(ctx, &mut thread, &text)? {
-            true => None,
-            false => failed(ctx, &mut thread, Failure::answered(text, &response))?,
-        },
+        Ok((Summarized::Pictures(text), _)) => {
+            if !unpictured(ctx, &mut thread, &text)? {
+                crate::summaries::failed(ctx, &mut thread, text)?;
+            }
+        }
         Ok((Summarized::Failed(text), response)) => {
-            failed(ctx, &mut thread, Failure::answered(text, &response))?
+            let failure = Failure::answered(text, &response);
+            match failure.again {
+                Some(_) => again = failed(ctx, &mut thread, failure)?,
+                None => crate::summaries::failed(ctx, &mut thread, failure.text)?,
+            }
         }
-        Ok((Summarized::TooLarge(text), response)) => match lightened(ctx, &mut thread, &text)? {
-            true => None,
-            false => failed(ctx, &mut thread, Failure::answered(text, &response))?,
-        },
-        Err(_) if expired => {
-            thread.compact_before = Some(through);
-            None
+        Ok((Summarized::TooLarge(text), _)) => {
+            if !lightened(ctx, &mut thread, &text)? {
+                crate::summaries::failed(ctx, &mut thread, text)?;
+            }
         }
-        Err(failure) => failed(ctx, &mut thread, failure)?,
-    };
+        Err(failure) => {
+            let terminal = failure.cause.as_ref().is_some_and(|error| {
+                matches!(
+                    error.code.as_str(),
+                    ::egress::EXPIRED | ::egress::STREAM_CUT
+                )
+            });
+            match terminal {
+                true => crate::summaries::failed(ctx, &mut thread, failure.text)?,
+                false => again = failed(ctx, &mut thread, failure)?,
+            }
+        }
+    }
+    crate::summaries::clear(ctx, id);
     settle(ctx, &mut thread)?;
     THREADS.put(ctx, &id, &thread);
     retried(ctx, id, again).await

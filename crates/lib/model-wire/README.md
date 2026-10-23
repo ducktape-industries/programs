@@ -13,7 +13,7 @@ adapters. A provider's field names appear only in its adapter's module: `anthrop
 | | request | answer |
 |---|---|---|
 | `POST /turn` | a `Request` | server-sent events, each `data:` one `Event`; the stream ends with exactly one `reply` or `failed`. A comment line (`: <name>`) carries no `Event`: the adapter sends one for each provider event that makes none, so egress hears a model that thinks in silence |
-| `POST /summary` | a `Request` | a `Summarized` (200), else a `Failure` |
+| `POST /summary` | a `Request`; `Accept: text/event-stream` asks for progress | a `Summarized` (200), else a `Failure`; a streaming provider sends progress comments and one `SummaryEvent` (`summary` or `failed`), then ends |
 | `GET /models/{name}` | | a `Model` (200), else a `Failure` |
 
 An answer that is no reply carries a `Failure` as its body, under the provider's own status, with

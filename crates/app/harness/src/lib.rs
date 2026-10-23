@@ -32,6 +32,7 @@ mod runs;
 mod schema;
 mod state;
 mod streams;
+mod summaries;
 mod sweep;
 mod tallies;
 #[cfg(test)]
@@ -1321,10 +1322,13 @@ pub fn awaited(
             let call = String::from_utf8(note.clone()).ok()?;
             Some(Awaited::Relay { call })
         }
-        (Request::Http { .. }, Delivery::Events { deliver }) => {
+        (Request::Http { head, .. }, Delivery::Events { deliver }) => {
             let bytes: [u8; 8] = deliver.get(1..)?.try_into().ok()?;
             let thread = u64::from_le_bytes(bytes);
-            (streamed_as(thread) == *deliver).then_some(Awaited::Reply { thread })
+            if streamed_as(thread) != *deliver {
+                return None;
+            }
+            wire::harness::awaited(head).or(Some(Awaited::Reply { thread }))
         }
         (Request::Http { head, .. }, Delivery::Whole) => wire::awaited(head),
         (Request::Crosspond { .. }, _) => None,

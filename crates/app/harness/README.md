@@ -176,8 +176,14 @@ which the harness wire's reply carries as `context`), and when that count reache
 agent's `compact_at`, or the next answer would not fit, or the model says the request
 was too long, it has the model summarize the thread so far in its wire (Anthropic's
 compaction) and sends that summary in place of the messages it covers; a summary frame
-names the wire that wrote it, and another wire is handed only its text. A summary ends
-after an input, never between a tool call and its result, nor between a server tool's
+names the wire that wrote it, and another wire is handed only its text. A summary asks for streamed delivery: a provider
+that streams compaction forwards upstream progress to keep the request alive, and
+harness commits only its completed summary after the stream ends successfully. An
+expired, broken or invalid summary leaves the conversation idle with a final error; it
+is not treated as a context overflow. A summary refused with HTTP 429/5xx or a
+retryable egress failure keeps the model-call retry path. Only an actual overflow
+retries a smaller settled prefix, and exhausting those prefixes reports a final error.
+A summary ends after an input, never between a tool call and its result, nor between a server tool's
 use and a result the API sends in a later turn; if the API finds the summary request
 itself too long, the next one covers less. When nothing the model already answered is
 left to summarize and the request is still too long, harness leaves the largest new

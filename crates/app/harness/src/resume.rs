@@ -47,6 +47,7 @@ impl Wait {
 }
 
 pub(crate) struct Failure {
+    pub cause: Option<Error>,
     pub text: String,
     pub again: Option<Again>,
     pub wait: Option<Wait>,
@@ -56,6 +57,7 @@ pub(crate) struct Failure {
 impl Failure {
     fn new(text: impl Into<String>, again: Option<Again>) -> Failure {
         Failure {
+            cause: None,
             text: text.into(),
             again,
             wait: None,
@@ -116,13 +118,17 @@ impl Failure {
         let text = format!("the model was not reached: {}", refusal(error));
         let unchanged = error.code == code::INVALID_INPUT || error.code == code::UNAUTHORIZED;
         let framed = error.code == code::CAPACITY;
-        match (unchanged, framed) {
+        let failure = match (unchanged, framed) {
             (true, _) => Failure::last(text),
             (false, true) => Failure::lost(text),
             (false, false) => Failure {
                 moves: true,
                 ..Failure::lost(text)
             },
+        };
+        Failure {
+            cause: Some(error.clone()),
+            ..failure
         }
     }
 }
@@ -560,6 +566,9 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
 }
 
 fn still_streaming(ctx: &QueryCtx, row: &ThreadRow) -> Result<bool, Error> {
+    if matches!(row.asking, Asking::Compacting { .. }) {
+        return held_by_egress(ctx, row.id);
+    }
     let asked = matches!(row.asking, Asking::Asked { .. });
     let whole = PARTIALS
         .get(ctx, &row.id)?
@@ -662,7 +671,16 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
     };
     match row.asking {
         Asking::Idle => Ok(()),
-        Asking::Learning | Asking::Compacting { .. } => {
+        Asking::Compacting { .. } => {
+            let mut row = row;
+            crate::summaries::clear(ctx, id);
+            crate::summaries::failed(ctx, &mut row, text)?;
+            settle(ctx, &mut row)?;
+            THREADS.put(ctx, &id, &row);
+            answered(ctx, id);
+            Ok(())
+        }
+        Asking::Learning => {
             let mut row = row;
             settle(ctx, &mut row)?;
             THREADS.put(ctx, &id, &row);

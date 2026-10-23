@@ -16,6 +16,12 @@ pub(crate) async fn streamed(ctx: &Ctx, thread: u64, event: Event) -> Result<(),
             "only the program bound to the egress role streams a model's reply",
         ));
     }
+    let row = THREADS.get(ctx, &thread)?;
+    let compacting = row.is_some_and(|row| matches!(row.asking, Asking::Compacting { .. }));
+    if compacting {
+        crate::summaries::streamed(ctx, thread, &event)?;
+        return crate::resume::moved(ctx, thread);
+    }
     let asked = THREADS
         .get(ctx, &thread)?
         .is_some_and(|row| matches!(row.asking, Asking::Asked { .. }));

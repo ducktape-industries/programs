@@ -26,6 +26,8 @@ pub mod tables {
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 pub const PROGRAM: &str = "egress";
+pub const EXPIRED: &str = "egress_expired";
+pub const STREAM_CUT: &str = "egress_stream_cut";
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Op {

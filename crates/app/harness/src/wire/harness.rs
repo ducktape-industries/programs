@@ -35,7 +35,10 @@ pub(crate) fn turn_head() -> Head {
 }
 
 pub(crate) fn summary_head() -> Head {
-    json_head(Method::Post, model_wire::SUMMARY.into())
+    let mut head = json_head(Method::Post, model_wire::SUMMARY.into());
+    head.headers
+        .push(("accept".into(), "text/event-stream".into()));
+    head
 }
 
 pub(crate) fn model(name: &str) -> Head {

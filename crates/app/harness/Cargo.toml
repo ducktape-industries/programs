@@ -16,6 +16,7 @@ program = []
 describe = []
 
 [dependencies]
+egress = { path = "../egress" }
 ownership = { path = "../../system/ownership" }
 access = { path = "../../system/access" }
 abi = { workspace = true }
@@ -54,7 +55,6 @@ toml = { workspace = true }
 criterion = "=0.8.2"
 proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
 blobs = { path = "../../system/blobs" }
-egress = { path = "../egress" }
 halo = { path = "../../system/halo" }
 programs = { path = "../../system/programs" }
 awaits = { path = "../../system/awaits" }

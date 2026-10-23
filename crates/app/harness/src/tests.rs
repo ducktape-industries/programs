@@ -10,6 +10,7 @@ mod chat_channels;
 mod chat_messages;
 mod chat_search;
 mod compact_at;
+mod compaction_progress;
 mod config;
 mod continued;
 mod conversations;
@@ -2046,66 +2047,6 @@ fn a_summary_refused_as_too_long_covers_less_and_never_ends_on_the_models_turn()
         ["assistant", "assistant", "user", "assistant", "user"]
     );
     assert_eq!(messages[0]["content"][0]["type"], "compaction");
-}
-
-fn summarizes_at_most(chain: &MockChain, most: usize, summary: &str) {
-    let (request, head) = open_request(chain);
-    assert_eq!(path(&head), model_wire::SUMMARY);
-    let covered = sent_messages(chain).len();
-    if covered > most {
-        chain.at(request.made + egress::DEFAULT_WAIT + 1, 0);
-    } else {
-        chain.at(request.made + 1, 0);
-        summarized(chain, summary);
-    }
-}
-
-#[test]
-fn a_summary_call_that_expires_covers_less_and_the_conversation_answers() {
-    let world = world();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "one", Some(WINDOW));
-    chain.at(3, 0);
-    model_says(
-        chain,
-        json!([{ "type": "text", "text": "Ok one." }]),
-        "end_turn",
-    );
-    world.mention("m2", "two");
-    chain.at(4, 0);
-    model_says(
-        chain,
-        json!([{ "type": "text", "text": "Ok two." }]),
-        "end_turn",
-    );
-    world.mention("m3", "three");
-    chain.at(5, 0);
-    refused_as_too_long(chain);
-    assert_eq!(sent_messages(chain).len(), 3);
-    summarizes_at_most(chain, 1, "Ada said one.");
-    assert_eq!(
-        thread_row(chain, thread).compact_before,
-        Some(3),
-        "a summary call that expired backs off as one refused as too long does"
-    );
-    assert_eq!(
-        sent_messages(chain).len(),
-        1,
-        "the next summary covers the first input alone"
-    );
-    summarizes_at_most(chain, 1, "Ada said one.");
-    assert_eq!(thread_row(chain, thread).compact_before, None);
-    let (turn, _) = open_request(chain);
-    chain.at(turn.made + 1, 0);
-    model_says(
-        chain,
-        json!([{ "type": "text", "text": "Ok three." }]),
-        "end_turn",
-    );
-    let answered = frames(chain, thread).into_iter().any(|body| {
-        matches!(body, Body::Turn { said, .. } if said.contains(&Said::Text("Ok three.".into())))
-    });
-    assert!(answered, "{:?}", frames(chain, thread));
 }
 
 #[test]

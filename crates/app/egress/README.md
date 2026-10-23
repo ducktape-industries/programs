@@ -8,6 +8,14 @@ Three services are egress's own and never registered: `http`, `relay` and
 each is asked only as its own `Request` variant (`Http`, `Relay`,
 `Crosspond`).
 
+## Request failures
+
+Expiry resolves a request with error code `egress::EXPIRED` (`egress_expired`).
+`EndStream::Cut` resolves it with `egress::STREAM_CUT` (`egress_stream_cut`).
+`Answer::Failed` keeps `wrong_state`; it reports the serving node's failure,
+not an expiry or a cut. Callers classify these by code, never by message text.
+HTTP errors such as 429 or 503 remain HTTP responses, not egress errors.
+
 ## Who may call each op
 
 | Op | Who may call it |
@@ -48,8 +56,9 @@ request's call answers an encoded `http::Response`. One that asks for its reply 
 events (`Delivery::Events { deliver }`) hears each event of a `text/event-stream` reply
 (`Event`) as its own op, `deliver` followed by the encoded event, and its call answers
 the stream's end (`EndStream`): `Complete` as the `http::Response` with its status and
-headers and an empty body, a cut as a refusal; each event moves its expiry `wait` blocks
-on, and any other reply comes whole. An event's `seq` counts from 0 per call the node
+headers and an empty body, a cut as a refusal (`egress::STREAM_CUT`, `egress_stream_cut`);
+`Answer::Failed` keeps `wrong_state`, and expiry uses `egress::EXPIRED`
+(`egress_expired`). Each event moves its expiry `wait` blocks on, and any other reply comes whole. An event's `seq` counts from 0 per call the node
 makes: a repeated `seq` is a repeat, and a `seq` back at 0 is the node calling the
 service again (it restarted), which voids what came before; egress passes `seq` through
 unchecked, for the requester to act on. A relay is answered whole, and asking one with

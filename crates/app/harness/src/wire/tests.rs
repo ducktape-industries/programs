@@ -254,6 +254,8 @@ fn each_request_harness_makes_reads_back_as_what_it_waits_for() {
     assert_eq!(awaited(&window, &Delivery::Whole), learning);
     let summary = http(super::summary_head(wire));
     assert_eq!(awaited(&summary, &Delivery::Whole), Some(Awaited::Summary));
+    let adapted_summary = http(super::summary_head(Wire::Harness));
+    assert_eq!(awaited(&adapted_summary, &events), Some(Awaited::Summary));
     let relay = Request::Relay {
         note: b"toolu_1".to_vec(),
     };

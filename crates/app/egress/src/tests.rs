@@ -506,10 +506,7 @@ fn an_unanswered_request_expires_by_its_own_run_and_a_late_answer_is_refused() {
     chain.at(5, 0);
     let [expired] = answers(&chain).try_into().unwrap();
     let expired = expired.unwrap_err();
-    assert_eq!(
-        (expired.code.as_str(), expired.message.as_str()),
-        (code::WRONG_STATE, "request 1 expired after 3 blocks")
-    );
+    assert_eq!(expired.code.as_str(), EXPIRED);
     assert_eq!(request_row(&chain, 1), None);
     assert!(assigned(&chain, ADA).is_empty());
     let ran = entry(&chain, row.expiry)
@@ -821,13 +818,7 @@ fn a_cut_stream_fails_its_call_and_a_whole_request_takes_no_event_or_end() {
     submit(&chain, &ADA, &broken).unwrap();
     let [failed] = answers(&chain).try_into().unwrap();
     let failed = failed.unwrap_err();
-    assert_eq!(
-        (failed.code.as_str(), failed.message.as_str()),
-        (
-            code::WRONG_STATE,
-            "the http service failed: the stream broke off, the node sent 0 events: stream_broken"
-        )
-    );
+    assert_eq!(failed.code.as_str(), STREAM_CUT);
     assert_eq!(request_row(&chain, 2), None);
     assert!(request_row(&chain, 1).is_some());
 }

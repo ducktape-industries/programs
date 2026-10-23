@@ -550,9 +550,9 @@ async fn finish(ctx: &Ctx, stored: Stored, ending: Ending) -> Result<(), Error> 
             headers: headers.clone(),
             body: Vec::new(),
         })),
-        StreamEnd::Cut { reason } => Err(failed(
-            stored.row.request.service(),
-            &format!("the stream broke off, the node sent {events} events: {reason}"),
+        StreamEnd::Cut { reason } => Err(Error::new(
+            crate::STREAM_CUT,
+            format!("the stream broke off, the node sent {events} events: {reason}"),
         )),
     };
     close(ctx, stored, ended)
@@ -583,7 +583,10 @@ pub(crate) fn expire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
         )));
     }
     let waited = env.height.saturating_sub(stored.row.made);
-    let expired = wrong_state(format!("request {id} expired after {waited} blocks"));
+    let expired = Error::new(
+        crate::EXPIRED,
+        format!("request {id} expired after {waited} blocks"),
+    );
     close(ctx, stored, Err(expired))
 }
 
