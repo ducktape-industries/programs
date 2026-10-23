@@ -13,19 +13,22 @@ pub(super) fn transactions(
     theme: &Theme,
 ) -> AnyElement {
     let blocks = view.chain.blocks.len() as u64;
-    let matching = sent_to(&view.chain.txs, program.as_deref()).count() as u64;
-    let title = match &program {
-        Some(program) => words::transactions_to(program),
-        None => "Transactions".into(),
+    let (of, title) = match &program {
+        Some(program) => (TxList::To(program.clone()), words::transactions_to(program)),
+        None => (TxList::Window, "Transactions".into()),
     };
+    let matching = view.shown_count(&of);
+    let counted = match &of {
+        TxList::To(_) => {
+            let read = view.shown_read(&of) as u64;
+            words::transactions_read(read, view.shown_ended(&of), blocks)
+        }
+        TxList::Block { .. } | TxList::Window => words::transactions_in(matching as u64, blocks),
+    };
+    let refused = shown_refused(view, &of, cx, theme, &design::POINTER);
     let list = rows("explorer-transactions-list", "Transactions", view);
-    let rows = (matching > 0).then(|| {
-        tx_rows(list, view, move |view| {
-            sent_to(&view.chain.txs, program.as_deref()).collect()
-        })
-        .build(cx)
-    });
-    let count = caption(words::transactions_in(matching, blocks), theme);
+    let rows = (matching > 0).then(|| tx_list(list, of, matching).build(cx));
+    let count = caption(counted, theme);
     let empty =
         (matching == 0).then(|| quiet("explorer-no-txs", words::no_transactions_in(blocks), theme));
     let older = match view.chain.unlisted_below().filter(|_| view.chain.complete) {
@@ -43,18 +46,11 @@ pub(super) fn transactions(
             heading("explorer-transactions-heading", &title, Some(count), theme)
                 .mr(design::size::SCROLLBAR),
         )
+        .children(refused)
         .children(rows)
         .children(empty)
         .children(older)
         .into_any_element()
-}
-
-fn sent_to<'a, 'p>(
-    txs: &'a [TxRow],
-    program: Option<&'p str>,
-) -> impl Iterator<Item = &'a TxRow> + use<'a, 'p> {
-    txs.iter()
-        .filter(move |tx| program.is_none_or(|program| tx.target == program))
 }
 
 pub(super) fn tx(

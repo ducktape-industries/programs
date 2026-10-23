@@ -12,12 +12,12 @@ use view::{Div, Stateful};
 
 use crate::decode::{grouped, plural};
 use crate::words::{self, unindexed};
-use crate::{Cx, Explorer, Route, TxRow};
+use crate::{Cx, Explorer, Route, TxList};
 
 use super::Look;
 use super::parts::{
     Fact, Who, aside, block_lines, caption, chevron, column, face, facts, list_row, more_link,
-    opens, quiet, refused, scroller, section, tail, title_and_caption, tx_line,
+    opens, quiet, refused, scroller, section, tail, title_and_caption, tx_line, tx_window,
 };
 
 const LATEST: usize = 12;
@@ -54,15 +54,13 @@ fn held(view: &Explorer) -> u64 {
 }
 
 fn overview(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
-    let txs = if view.chain.txs.is_empty() {
+    let txs = if view.chain.transactions() == 0 {
         quiet("explorer-no-txs", words::no_transactions_in(held(view)), k)
     } else {
         column(
             "explorer-latest-txs-list",
-            view.chain
-                .txs
-                .iter()
-                .take(LATEST)
+            (0..LATEST)
+                .filter_map(|index| view.shown_at(&TxList::Window, index))
                 .map(|tx| tx_line(view, tx, Who::Signer, cx, k))
                 .collect(),
         )
@@ -166,37 +164,50 @@ fn blocks(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
 }
 
 pub(super) fn transactions(view: &Explorer, program: Option<&str>, cx: Cx, k: &Look) -> AnyElement {
-    let matching: Vec<&TxRow> = view
-        .chain
-        .txs
-        .iter()
-        .filter(|tx| program.is_none_or(|program| tx.target == program))
-        .collect();
-    let title = match program {
-        Some(program) => words::transactions_to(program),
-        None => "Transactions".to_owned(),
+    let (of, title) = match program {
+        Some(program) => (
+            TxList::To(program.to_owned()),
+            words::transactions_to(program),
+        ),
+        None => (TxList::Window, "Transactions".to_owned()),
     };
-    let count = words::transactions_in(matching.len() as u64, held(view));
-    let list = if matching.is_empty() {
-        quiet("explorer-no-txs", words::no_transactions_in(held(view)), k)
-    } else {
-        column(
+    let matching = view.shown_count(&of);
+    let count = match &of {
+        TxList::To(_) => {
+            let read = view.shown_read(&of) as u64;
+            words::transactions_read(read, view.shown_ended(&of), held(view))
+        }
+        TxList::Block { .. } | TxList::Window => {
+            words::transactions_in(matching as u64, held(view))
+        }
+    };
+    let refusal = view
+        .shown_failed(&of)
+        .map(|sentence| refused(sentence, cx, k));
+    let list = match matching {
+        0 => quiet("explorer-no-txs", words::no_transactions_in(held(view)), k),
+        _ => tx_window(
             "explorer-transactions-list",
-            matching
-                .into_iter()
-                .take(LIST_ROWS)
-                .map(|tx| tx_line(view, tx, Who::Signer, cx, k))
-                .collect(),
-        )
-        .into_any_element()
+            of,
+            matching,
+            Who::Signer,
+            cx,
+            k,
+        ),
     };
-    scroller("explorer-page")
+    div()
+        .id("explorer-page")
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
         .child(section(
             "explorer-transactions-heading",
             title,
             Some(aside(count)),
             k,
         ))
+        .children(refusal)
         .child(list)
         .into_any_element()
 }

@@ -244,7 +244,7 @@ fn a_refused_window_says_why_and_offers_retry() {
     let mut cx = TestAppContext::new();
     quiet_host(&cx);
     cx.host()
-        .refuse::<ChainBlocks>("unavailable", "the node is catching up");
+        .refuse::<ChainFacts>("unavailable", "the node is catching up");
     cx.open::<Explorer>();
     phone(&mut cx);
     shows(&cx, "the node is catching up");
@@ -321,8 +321,8 @@ fn the_accounts_page_lists_each_account_and_what_it_is() {
 fn the_blocks_page_says_where_the_nodes_archive_stops() {
     let mut cx = TestAppContext::new();
     node(&mut cx, Rc::new(RefCell::new(30)));
-    cx.host().handle::<ChainBlocks>(|ask| {
-        let mut listed = page(&chain(30), &ask);
+    cx.host().handle::<ChainFacts>(|ask| {
+        let mut listed = view::rig::facts_page(&chain(30), &ask);
         listed.blocks.retain(|block| block.height >= 20);
         listed.listed_from = Some(20);
         Ok(listed)
@@ -430,13 +430,13 @@ fn a_page_read_past_the_window_says_reading_then_refused_and_retry_asks_again() 
         ),
     ] {
         let cx = opened_over(path, |cx| {
-            cx.host().never::<ChainBlock>();
+            cx.host().never::<ChainFacts>();
             cx.host().never::<ChainTx>();
         });
         shows(&cx, reading);
         let mut cx = opened_over(path, |cx| {
             cx.host()
-                .refuse::<ChainBlock>("unavailable", "the archive is offline");
+                .refuse::<ChainFacts>("unavailable", "the archive is offline");
             cx.host()
                 .refuse::<ChainTx>("unavailable", "the archive is offline");
         });
@@ -608,7 +608,7 @@ fn a_program_whose_view_asks_nothing_counts_none_and_says_so() {
 #[test]
 fn a_program_page_opens_the_programs_transactions() {
     let mut cx = opened("program/chat");
-    shows(&cx, "2 transactions in the last 13 blocks →");
+    shows(&cx, "Transactions →");
     click(&mut cx, "explorer-program-txs");
     shows(&cx, "Transactions · chat");
     assert!(

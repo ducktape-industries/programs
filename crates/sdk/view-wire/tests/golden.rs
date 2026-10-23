@@ -843,6 +843,80 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
         ),
         exchange::<Watch<Golden>>((7, "q".into()), Some(vec![1, 2, 3])),
         exchange::<Watch<Golden>>((7, "q".into()), None),
+        exchange::<methods::ChainFacts>(
+            methods::FactsAsk {
+                before: Some(10),
+                limit: 2,
+            },
+            methods::FactsPage {
+                blocks: vec![methods::Facts {
+                    height: 9,
+                    id: [4; 32],
+                    parent: [5; 32],
+                    time: 1,
+                    epoch: 0,
+                    proposer: Some(vec![6; 32]),
+                    txs: 3,
+                }],
+                listed_from: Some(0),
+            },
+        ),
+        exchange::<methods::ChainTxs>(
+            methods::TxRange {
+                before: Some(methods::TxPlace {
+                    height: 9,
+                    position: 2,
+                }),
+                oldest: 0,
+                target: Some("chat".into()),
+                limit: 1,
+            },
+            methods::TxPage {
+                txs: vec![methods::TxSummary {
+                    height: 9,
+                    position: 1,
+                    time: 1,
+                    hash: [7; 32],
+                    signer: vec![8; 32],
+                    anchor: methods::Tip {
+                        height: 8,
+                        id: [3; 32],
+                    },
+                    target: "chat".into(),
+                    size: 1,
+                    applied: Some(false),
+                }],
+                next: Some(methods::TxPlace {
+                    height: 9,
+                    position: 1,
+                }),
+            },
+        ),
+        exchange::<methods::ChainTxs>(
+            methods::TxRange {
+                before: None,
+                oldest: 9,
+                target: None,
+                limit: 1,
+            },
+            methods::TxPage {
+                txs: vec![methods::TxSummary {
+                    height: 9,
+                    position: 0,
+                    time: 1,
+                    hash: [7; 32],
+                    signer: vec![8; 32],
+                    anchor: methods::Tip {
+                        height: 8,
+                        id: [3; 32],
+                    },
+                    target: "chat".into(),
+                    size: 1,
+                    applied: None,
+                }],
+                next: None,
+            },
+        ),
     ]
     .into_iter()
     .chain(

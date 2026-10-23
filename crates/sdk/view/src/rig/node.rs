@@ -346,6 +346,32 @@ fn respond(net: &Network, method: &str, path: &str, body: Vec<u8>) -> Response {
                 Err(error) => Response::refused(refusal(&error)),
             }
         }
+        ("POST", route::BLOCK_FACTS) => {
+            let ask: methods::FactsAsk = match abi::decode(&body) {
+                Ok(ask) => ask,
+                Err(error) => return malformed(error.sentence),
+            };
+            match net.answer("chain.facts", None, &methods::encode(&ask)) {
+                Ok(bytes) => {
+                    let page: methods::FactsPage = methods::decode(&bytes).expect("own bytes");
+                    Response::borsh(&page)
+                }
+                Err(error) => Response::refused(refusal(&error)),
+            }
+        }
+        ("POST", route::TXS) => {
+            let range: methods::TxRange = match abi::decode(&body) {
+                Ok(range) => range,
+                Err(error) => return malformed(error.sentence),
+            };
+            match net.answer("chain.txs", None, &methods::encode(&range)) {
+                Ok(bytes) => {
+                    let page: methods::TxPage = methods::decode(&bytes).expect("own bytes");
+                    Response::borsh(&page)
+                }
+                Err(error) => Response::refused(refusal(&error)),
+            }
+        }
         ("POST", route::BLOCK) => {
             let ask: wire::BlockAsk = match abi::decode(&body) {
                 Ok(ask) => ask,

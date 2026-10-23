@@ -20,6 +20,8 @@ pub mod route {
     pub const BLOCKS: &str = "/v1/blocks";
     pub const BLOCK: &str = "/v1/block";
     pub const TX: &str = "/v1/tx";
+    pub const BLOCK_FACTS: &str = "/v1/blocks/facts";
+    pub const TXS: &str = "/v1/txs";
     pub const NETWORK: &str = "/v1/network";
     /// JSON, the one route the app reaches through `ducktape-rpc`.
     pub const INVITE: &str = "/v1/invite";

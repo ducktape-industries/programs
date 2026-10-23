@@ -38,11 +38,10 @@ fn the_overview_shows_the_head_and_the_latest_blocks_and_transactions() {
         "block 8 is folded: {texts:?}"
     );
     assert_eq!(
-        cx.host().requests::<ChainBlocks>(),
-        vec![BlockPage {
+        cx.host().requests::<ChainFacts>(),
+        vec![FactsAsk {
             before: None,
             limit: WINDOW as u32,
-            most: 0,
         }],
         "13 blocks is the whole archive: one page"
     );
@@ -592,7 +591,7 @@ fn the_transactions_list_lowers_only_the_rows_the_host_shows() {
     use view::wire::Node;
     use view::wire::list::UniformListScrollStrategy as Strategy;
     let mut cx = TestAppContext::new();
-    heavy(&mut cx);
+    let asked = heavy(&mut cx);
     cx.open::<Explorer>();
     cx.run_until_parked();
     cx.simulate_click("explorer-tab-transactions");
@@ -623,6 +622,9 @@ fn the_transactions_list_lowers_only_the_rows_the_host_shows() {
     assert!(cx.find(&row(5)).is_none(), "{:?}", list(&cx));
     assert!(cx.find(&row(0)).is_some(), "the row the host measures");
 
+    asked.borrow_mut().clear();
+    cx.simulate_range("explorer-transactions-list", 0..14);
+    cx.run_until_parked();
     cx.simulate_focus("explorer-transactions-list");
     cx.simulate_key_down("explorer-transactions-list", "down");
     let (_, _, request) = list(&cx);
@@ -638,6 +640,7 @@ fn the_transactions_list_lowers_only_the_rows_the_host_shows() {
 
     cx.simulate_click("explorer-tab-blocks");
     cx.run_until_parked();
+    asked.borrow_mut().clear();
     cx.simulate_click("explorer-tab-transactions");
     cx.run_until_parked();
     assert!(cx.interactivity(&row(0)).aria.active_descendant);
@@ -676,7 +679,7 @@ fn the_transactions_list_reaches_the_panes_edge_and_writes_no_gutter() {
 }
 
 #[test]
-fn an_accounts_activity_and_a_blocks_transactions_are_drawn_whole() {
+fn an_accounts_activity_is_drawn_whole_and_a_blocks_transactions_are_a_window() {
     let mut cx = TestAppContext::new();
     heavy(&mut cx);
     cx.open::<Explorer>();
@@ -687,8 +690,8 @@ fn an_accounts_activity_and_a_blocks_transactions_are_drawn_whole() {
     assert!(cx.find("explorer-block").is_some(), "{:?}", cx.texts());
     assert!(cx.find(&format!("explorer-tx-{WINDOW}-0")).is_some());
     assert!(
-        cx.find("explorer-block-txs-rows").is_none(),
-        "a block's transactions are no window"
+        cx.find("explorer-block-txs-rows").is_some(),
+        "a block's transactions are a window of the rows shown"
     );
     cx.simulate_input("explorer-search", "ada");
     cx.simulate_submit("explorer-search");

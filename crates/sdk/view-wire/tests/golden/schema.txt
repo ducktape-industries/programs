@@ -4,10 +4,12 @@ blob.manifest None String -> Option<Manifested>
 camera.devices None () -> Vec<CameraDevice>
 chain.block None BlockAsk -> Option<Block>
 chain.blocks None BlockPage -> BlockList
+chain.facts None FactsAsk -> FactsPage
 chain.heads None () -> Head
 chain.network None () -> NetworkStatus
 chain.status None () -> NodeStatus
 chain.tx None TxAsk -> Option<Located>
+chain.txs None TxRange -> TxPage
 clipboard.files None () -> Pasted
 clipboard.read None () -> Clipboard
 clipboard.write None String -> ()
@@ -117,6 +119,9 @@ Facing = Enum { tag_width: 1, variants: [(0, "Front", "Facing__Front"), (1, "Bac
 Facing__Back = Struct { fields: Empty }
 Facing__External = Struct { fields: Empty }
 Facing__Front = Struct { fields: Empty }
+Facts = Struct { fields: NamedFields([("height", "u64"), ("id", "[u8; 32]"), ("parent", "[u8; 32]"), ("time", "u64"), ("epoch", "u64"), ("proposer", "Option<Vec<u8>>"), ("txs", "u32")]) }
+FactsAsk = Struct { fields: NamedFields([("before", "Option<u64>"), ("limit", "u32")]) }
+FactsPage = Struct { fields: NamedFields([("blocks", "Vec<Facts>"), ("listed_from", "Option<u64>")]) }
 Field = Struct { fields: NamedFields([("label", "String"), ("value", "Value")]) }
 Float = Struct { fields: NamedFields([("width", "u32"), ("height", "u32"), ("min_width", "u32"), ("min_height", "u32"), ("on_top", "bool")]) }
 Head = Struct { fields: NamedFields([("height", "u64"), ("time", "u64"), ("id", "[u8; 32]")]) }
@@ -160,7 +165,9 @@ Option<Manifested> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Som
 Option<ProgramReply> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "ProgramReply")] }
 Option<Receipt> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Receipt")] }
 Option<String> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "String")] }
+Option<TxPlace> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "TxPlace")] }
 Option<Vec<u8>> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Vec<u8>")] }
+Option<bool> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "bool")] }
 Option<u32> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "u32")] }
 Option<u64> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "u64")] }
 Outcome = Enum { tag_width: 1, variants: [(0, "Applied", "Outcome__Applied"), (1, "Rejected", "Outcome__Rejected")] }
@@ -217,9 +224,13 @@ Tint__Violet = Struct { fields: Empty }
 Tip = Struct { fields: NamedFields([("height", "u64"), ("id", "[u8; 32]")]) }
 Tx = Struct { fields: NamedFields([("hash", "[u8; 32]"), ("signer", "Vec<u8>"), ("anchor", "Tip"), ("target", "String"), ("size", "u32"), ("payload", "Option<Vec<u8>>"), ("receipt", "Option<Receipt>")]) }
 TxAsk = Struct { fields: NamedFields([("tx", "TxRef"), ("most", "u32")]) }
+TxPage = Struct { fields: NamedFields([("txs", "Vec<TxSummary>"), ("next", "Option<TxPlace>")]) }
+TxPlace = Struct { fields: NamedFields([("height", "u64"), ("position", "u32")]) }
+TxRange = Struct { fields: NamedFields([("before", "Option<TxPlace>"), ("oldest", "u64"), ("target", "Option<String>"), ("limit", "u32")]) }
 TxRef = Enum { tag_width: 1, variants: [(0, "At", "TxRef__At"), (1, "Hash", "TxRef__Hash")] }
 TxRef__At = Struct { fields: NamedFields([("height", "u64"), ("position", "u32")]) }
 TxRef__Hash = Struct { fields: UnnamedFields(["[u8; 32]"]) }
+TxSummary = Struct { fields: NamedFields([("height", "u64"), ("position", "u32"), ("time", "u64"), ("hash", "[u8; 32]"), ("signer", "Vec<u8>"), ("anchor", "Tip"), ("target", "String"), ("size", "u32"), ("applied", "Option<bool>")]) }
 Value = Enum { tag_width: 1, variants: [(0, "Text", "Value__Text"), (1, "Account", "Value__Account"), (2, "Key", "Value__Key"), (3, "Program", "Value__Program"), (4, "Hash", "Value__Hash"), (5, "Amount", "Value__Amount"), (6, "Time", "Value__Time"), (7, "Bytes", "Value__Bytes"), (8, "List", "Value__List")] }
 Value__Account = Struct { fields: UnnamedFields(["u64"]) }
 Value__Amount = Struct { fields: NamedFields([("value", "u128"), ("decimals", "u8")]) }
@@ -235,6 +246,7 @@ Vec<Block> = Sequence { length_width: 4, length_range: 0..=4294967295, elements:
 Vec<CameraDevice> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "CameraDevice" }
 Vec<Capability> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Capability" }
 Vec<Error> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Error" }
+Vec<Facts> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Facts" }
 Vec<Field> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Field" }
 Vec<Need> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Need" }
 Vec<NewBlob> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "NewBlob" }
@@ -243,6 +255,7 @@ Vec<Picked> = Sequence { length_width: 4, length_range: 0..=4294967295, elements
 Vec<Receipt> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Receipt" }
 Vec<String> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "String" }
 Vec<Tx> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Tx" }
+Vec<TxSummary> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "TxSummary" }
 Vec<Value> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Value" }
 Vec<Vec<u8>> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Vec<u8>" }
 Vec<[u8; 32]> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "[u8; 32]" }

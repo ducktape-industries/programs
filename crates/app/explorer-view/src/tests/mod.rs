@@ -6,6 +6,7 @@ mod describe;
 mod detail;
 mod faces;
 mod follow;
+mod large_blocks;
 mod pages;
 mod phone;
 mod search;
@@ -23,9 +24,9 @@ pub(crate) use programs::Programs;
 pub(crate) use valset::Valset;
 pub(crate) use view::host::Error;
 pub(crate) use view::methods::{
-    BlobManifest, Block, BlockAsk, BlockList, BlockPage, BlockRef, Capability, CarriedView,
-    ChainBlock, ChainBlocks, ChainHeads, ChainStatus, ChainTx, Changes, ClipboardWrite,
-    Description, Head, HostRoute, HostSession, Located, Manifested, NodeStatus, Outcome,
+    BlobManifest, Block, BlockAsk, BlockRef, Capability, CarriedView, ChainBlock, ChainBlocks,
+    ChainFacts, ChainHeads, ChainStatus, ChainTx, ChainTxs, Changes, ClipboardWrite, Description,
+    FactsAsk, Head, HostRoute, HostSession, Located, Manifested, NodeStatus, Outcome,
     ProgramDescribe, Query, Receipt, Session, Tip, Tx, TxAsk, TxRef, Value,
 };
 pub(crate) use view::testing::TestAppContext;
@@ -123,22 +124,6 @@ pub(crate) fn chain(tip: u64) -> Vec<Block> {
         .collect()
 }
 
-pub(crate) fn page(chain: &[Block], ask: &BlockPage) -> BlockList {
-    let top = chain.len() as u64 - 1;
-    let start = ask.before.map_or(Some(top), |before| before.checked_sub(1));
-    let blocks = start.map_or_else(Vec::new, |start| {
-        (0..=start.min(top))
-            .rev()
-            .take(ask.limit as usize)
-            .map(|height| listed(&chain[height as usize], ask.most))
-            .collect()
-    });
-    BlockList {
-        blocks,
-        listed_from: Some(0),
-    }
-}
-
 pub(crate) fn listed(block: &Block, most: u32) -> Block {
     Block {
         txs: block.txs.iter().map(|tx| capped(tx, most)).collect(),
@@ -173,7 +158,9 @@ fn located(chain: &[Block], ask: TxAsk) -> Option<Located> {
 pub(crate) fn serve(cx: &TestAppContext, chain: impl Fn() -> Vec<Block> + Clone + 'static) {
     let host = cx.host();
     let held = chain.clone();
-    host.handle::<ChainBlocks>(move |ask| Ok(page(&held(), &ask)));
+    host.handle::<ChainFacts>(move |ask| Ok(view::rig::facts_page(&held(), &ask)));
+    let held = chain.clone();
+    host.handle::<ChainTxs>(move |range| Ok(view::rig::tx_page(&held(), &range)));
     let held = chain.clone();
     host.handle::<ChainBlock>(move |ask| {
         let held = held();
@@ -184,6 +171,31 @@ pub(crate) fn serve(cx: &TestAppContext, chain: impl Fn() -> Vec<Block> + Clone 
         Ok(found.map(|block| listed(block, ask.most)))
     });
     host.handle::<ChainTx>(move |ask| Ok(located(&chain(), ask)));
+}
+
+pub(crate) type Asked = Rc<RefCell<Vec<view::methods::TxRange>>>;
+
+pub(crate) fn answer_once(
+    cx: &TestAppContext,
+    chain: impl Fn() -> Vec<Block> + 'static,
+    page: u32,
+) -> Asked {
+    let asked: Asked = Rc::new(RefCell::new(Vec::new()));
+    let seen = asked.clone();
+    cx.host().handle::<ChainTxs>(move |range| {
+        let repeated = seen.borrow().contains(&range);
+        assert!(
+            !repeated,
+            "chain.txs asked {range:?} again while its rows are still wanted, so the list reads it again and again"
+        );
+        seen.borrow_mut().push(range.clone());
+        let clamped = view::methods::TxRange {
+            limit: range.limit.min(page),
+            ..range
+        };
+        Ok(view::rig::tx_page(&chain(), &clamped))
+    });
+    asked
 }
 
 pub(crate) fn name(cx: &TestAppContext, id: &str) -> Option<String> {
@@ -556,7 +568,7 @@ pub(crate) fn describes(cx: &mut TestAppContext) {
     });
 }
 
-pub(crate) fn heavy(cx: &mut TestAppContext) {
+pub(crate) fn heavy(cx: &mut TestAppContext) -> Asked {
     let tip = WINDOW as u64;
     let chain: Vec<Block> = (0..=tip)
         .map(|height| {
@@ -588,6 +600,7 @@ pub(crate) fn heavy(cx: &mut TestAppContext) {
     host.handle::<ChainStatus>(move |()| Ok(status(tip)));
     let indexed = chain.clone();
     index(cx, move || indexed.clone());
+    let answered = chain.clone();
     serve(cx, move || chain.clone());
     host.handle::<Query<Identity>>(|_| {
         Ok(identity::Reply::Accounts(programs::PageResponse {
@@ -600,12 +613,14 @@ pub(crate) fn heavy(cx: &mut TestAppContext) {
     respond(cx);
     describes(cx);
     manifests(cx);
+    answer_once(cx, move || answered.clone(), u32::MAX)
 }
 
 pub(crate) fn quiet_host(cx: &TestAppContext) {
     let host = cx.host();
     host.never::<ChainStatus>();
-    host.never::<ChainBlocks>();
+    host.never::<ChainFacts>();
+    host.never::<ChainTxs>();
     host.never::<ChainTx>();
     host.never::<Query<Identity>>();
     host.never::<Query<Valset>>();

@@ -3,13 +3,13 @@
 use view::design::Pages;
 use view::prelude::*;
 
-use crate::Explorer;
-use crate::chain::rows;
+use crate::chain::{self, block_row};
 use crate::state::{Linked, Note, Route, hash_of};
+use crate::{BlockRow, Explorer};
 
 enum Found {
-    Block,
-    Tx { position: u32 },
+    Block(BlockRow),
+    Tx(Located),
 }
 
 impl Explorer {
@@ -118,38 +118,28 @@ impl Explorer {
                 most: 0,
             };
             if let Some(block) = host.ask::<ChainBlock>(by_id).await? {
-                return Ok::<_, Error>(Some((block, Found::Block)));
+                return Ok::<_, Error>(Some(Found::Block(block_row(block))));
             }
             let by_hash = TxAsk {
                 tx: TxRef::Hash(hash),
                 most: 0,
             };
-            let Some(located) = host.ask::<ChainTx>(by_hash).await? else {
-                return Ok(None);
-            };
-            let carrying = BlockAsk {
-                by: BlockRef::Height(located.height),
-                most: 0,
-            };
-            let block = host.ask::<ChainBlock>(carrying).await?;
-            let found = Found::Tx {
-                position: located.position,
-            };
-            Ok(block.map(|block| (block, found)))
+            Ok(host.ask::<ChainTx>(by_hash).await?.map(Found::Tx))
         };
         let listed_from = self.chain.listed_from;
         cx.land(found, move |view, found, cx| {
             match found {
-                Ok(Some((block, found))) => {
-                    let (row, txs) = rows(block);
-                    let route = match found {
-                        Found::Block => Route::Block(row.height),
-                        Found::Tx { position } => Route::Tx {
-                            height: row.height,
-                            position,
-                        },
+                Ok(Some(Found::Block(row))) => {
+                    let route = Route::Block(row.height);
+                    view.opened = Loadable::Ready(Some(row));
+                    view.go(route, cx);
+                }
+                Ok(Some(Found::Tx(located))) => {
+                    let route = Route::Tx {
+                        height: located.height,
+                        position: located.position,
                     };
-                    view.opened = Loadable::Ready(Some((row, txs)));
+                    view.located = Loadable::Ready(Some(chain::located(located)));
                     view.go(route, cx);
                 }
                 Ok(None) => view.note = Some(Note::NoSuchHash { listed_from, link }),

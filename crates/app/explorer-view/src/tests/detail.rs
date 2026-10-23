@@ -56,10 +56,7 @@ fn a_program_row_opens_its_page_with_its_capabilities_first() {
         cx.has_text("Nothing is scheduled for it.") && !cx.has_text("forge"),
         "forge's removal is another program's: {texts:?}"
     );
-    assert!(
-        cx.has_text("2 transactions in the last 13 blocks →"),
-        "{texts:?}"
-    );
+    assert!(cx.has_text("Transactions →"), "{texts:?}");
 }
 
 #[test]

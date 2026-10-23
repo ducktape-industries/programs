@@ -182,12 +182,14 @@ fn latest_txs(view: &Explorer, side: bool, cx: Cx, theme: &Theme) -> impl IntoEl
 
 // The newest of the window's transactions.
 fn latest(view: &Explorer, list: Rows, cx: Cx, theme: &Theme) -> AnyElement {
-    if view.chain.txs.is_empty() {
+    if view.chain.transactions() == 0 {
         let blocks = view.chain.blocks.len() as u64;
         return quiet("explorer-no-txs", words::no_transactions_in(blocks), theme);
     }
     tx_rows(list, view, |view| {
-        view.chain.txs.iter().take(LATEST).collect()
+        (0..LATEST)
+            .filter_map(|index| view.shown_at(&TxList::Window, index))
+            .collect()
     })
     .whole(view, cx, theme)
     .build(cx)

@@ -311,8 +311,8 @@ fn a_pushed_head_asks_for_the_blocks_since_the_top() {
     let bytes = Rc::new(RefCell::new(0usize));
     {
         let (tip, bytes) = (tip.clone(), bytes.clone());
-        cx.host().handle::<ChainBlocks>(move |ask| {
-            let page = page(&chain(*tip.borrow()), &ask);
+        cx.host().handle::<ChainFacts>(move |ask| {
+            let page = view::rig::facts_page(&chain(*tip.borrow()), &ask);
             *bytes.borrow_mut() += borsh::to_vec(&page).unwrap().len();
             Ok(page)
         });
@@ -322,7 +322,7 @@ fn a_pushed_head_asks_for_the_blocks_since_the_top() {
     cx.simulate_click("explorer-tab-transactions");
     cx.run_until_parked();
     for head in 13..=15u64 {
-        let asked = cx.host().requests::<ChainBlocks>().len();
+        let asked = cx.host().requests::<ChainFacts>().len();
         let bytes_before = *bytes.borrow();
         *tip.borrow_mut() = head;
         heads.send(Head {
@@ -331,26 +331,26 @@ fn a_pushed_head_asks_for_the_blocks_since_the_top() {
             id: [(head as u8).wrapping_add(100); 32],
         });
         cx.run_until_parked();
-        let new: Vec<_> = cx.host().requests::<ChainBlocks>()[asked..]
+        let new: Vec<_> = cx.host().requests::<ChainFacts>()[asked..]
             .iter()
             .map(|ask| (ask.before, ask.limit))
             .collect();
         eprintln!(
-            "AUDIT head {head}: {} chain.blocks asks {new:?}, {} block bytes carried for 1 new block",
+            "AUDIT head {head}: {} chain.facts asks {new:?}, {} block bytes carried for 1 new block",
             new.len(),
             *bytes.borrow() - bytes_before
         );
         assert_eq!(new, [(None, 1)]);
     }
     *tip.borrow_mut() = 18;
-    let asked = cx.host().requests::<ChainBlocks>().len();
+    let asked = cx.host().requests::<ChainFacts>().len();
     heads.send(Head {
         height: 18,
         time: T0 + 18_000,
         id: [118; 32],
     });
     cx.run_until_parked();
-    let new: Vec<_> = cx.host().requests::<ChainBlocks>()[asked..]
+    let new: Vec<_> = cx.host().requests::<ChainFacts>()[asked..]
         .iter()
         .map(|ask| (ask.before, ask.limit))
         .collect();

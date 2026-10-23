@@ -23,9 +23,11 @@
 
 mod node;
 mod pack;
+mod ranges;
 mod run;
 mod wire;
 
+pub use ranges::{facts_of, facts_page, summary_of, tx_page};
 pub use run::run;
 
 pub use crate::host::Error;
@@ -471,6 +473,8 @@ impl Network {
             "chain.blocks",
             "chain.block",
             "chain.tx",
+            "chain.facts",
+            "chain.txs",
             "blob.get",
             "blob.manifest",
             "invite.create",
@@ -621,6 +625,18 @@ impl Network {
                     blocks,
                     listed_from,
                 }))
+            }
+            "chain.facts" => {
+                let ask: methods::FactsAsk =
+                    methods::decode(payload).map_err(|error| malformed(&error))?;
+                let state = self.0.borrow();
+                Ok(methods::encode(&ranges::facts_page(&state.blocks, &ask)))
+            }
+            "chain.txs" => {
+                let range: methods::TxRange =
+                    methods::decode(payload).map_err(|error| malformed(&error))?;
+                let state = self.0.borrow();
+                Ok(methods::encode(&ranges::tx_page(&state.blocks, &range)))
             }
             "chain.block" => {
                 let ask: methods::BlockAsk =

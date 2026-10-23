@@ -10,6 +10,7 @@ use crate::{Network, Note};
 
 pub(crate) const READING_CHAIN: &str = "Reading the chain…";
 pub(crate) const READING_BLOCK: &str = "Reading the block…";
+pub(crate) const READING_TXS: &str = "Reading transactions…";
 pub(crate) const READING_TX: &str = "Reading the transaction…";
 pub(crate) const READING_ACCOUNTS: &str = "Reading accounts…";
 pub(crate) const READING_ACCOUNT: &str = "Reading the account…";
@@ -229,10 +230,17 @@ pub(crate) fn no_transactions_in(blocks: u64) -> String {
     format!("No transactions in {}.", last_blocks(blocks))
 }
 
-pub(crate) fn to_transactions(sent: u64, blocks: u64) -> String {
-    match blocks {
-        0 => "Transactions →".into(),
-        _ => format!("{} →", transactions_in(sent, blocks)),
+pub(crate) const TO_TRANSACTIONS: &str = "Transactions →";
+
+pub(crate) fn transactions_read(read: u64, ended: bool, blocks: u64) -> String {
+    match (ended, read) {
+        (true, _) => transactions_in(read, blocks),
+        (false, 0) => READING_TXS.into(),
+        (false, _) => format!(
+            "{} and more in {}",
+            plural(read, "transaction", "transactions"),
+            last_blocks(blocks)
+        ),
     }
 }
 

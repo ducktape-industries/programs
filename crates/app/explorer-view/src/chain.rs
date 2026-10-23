@@ -1,8 +1,9 @@
-//! The recent window: the last [`WINDOW`] finalized blocks and the
-//! transactions they carry, folded in a page at a time.
+//! The recent window: the facts of the last [`WINDOW`] finalized blocks, folded in a page at a
+//! time, and the transaction rows the list on screen shows, read for the range it shows.
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell};
+use std::ops::Range;
 use view::prelude::*;
 
 use crate::{WINDOW, decode};
@@ -33,6 +34,7 @@ pub struct TxRow {
     pub payload: Option<Vec<u8>>,
     pub(crate) op: OnceCell<Description>,
     pub(crate) asked: Cell<bool>,
+    pub applied: Option<bool>,
     /// how its run ended, where the node kept its receipt
     pub receipt: Option<Receipt>,
 }
@@ -50,6 +52,13 @@ impl TxRow {
             (None, None) => decode::sized(&self.target, u64::from(self.size)),
         }
     }
+
+    pub(crate) fn place(&self) -> TxPlace {
+        TxPlace {
+            height: self.height,
+            position: self.index,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -65,6 +74,8 @@ struct StoredTx<'a> {
     op: Option<Description>,
     payload: Option<Cow<'a, [u8]>>,
     receipt: Cow<'a, Option<Receipt>>,
+    #[serde(default)]
+    applied: Option<bool>,
 }
 
 impl Serialize for TxRow {
@@ -85,6 +96,7 @@ impl Serialize for TxRow {
             op,
             payload,
             receipt: Cow::Borrowed(&self.receipt),
+            applied: self.applied,
         }
         .serialize(s)
     }
@@ -93,6 +105,9 @@ impl Serialize for TxRow {
 impl<'de> Deserialize<'de> for TxRow {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let stored = StoredTx::deserialize(d)?;
+        let applied = stored
+            .applied
+            .or_else(|| applied(stored.receipt.as_ref().as_ref()));
         Ok(TxRow {
             hash: stored.hash,
             height: stored.height,
@@ -105,13 +120,30 @@ impl<'de> Deserialize<'de> for TxRow {
             payload: stored.payload.map(Cow::into_owned),
             op: stored.op.map(Into::into).unwrap_or_default(),
             asked: Default::default(),
+            applied,
             receipt: stored.receipt.into_owned(),
         })
     }
 }
 
-pub(crate) fn rows(block: Block) -> (BlockRow, Vec<TxRow>) {
-    let row = BlockRow {
+fn applied(receipt: Option<&Receipt>) -> Option<bool> {
+    receipt.map(|run| matches!(run.outcome, Outcome::Applied { .. }))
+}
+
+pub(crate) fn facts_row(facts: Facts) -> BlockRow {
+    BlockRow {
+        height: facts.height,
+        id: facts.id,
+        parent: facts.parent,
+        time: facts.time,
+        epoch: facts.epoch,
+        proposer: facts.proposer,
+        txs: facts.txs as usize,
+    }
+}
+
+pub(crate) fn block_row(block: Block) -> BlockRow {
+    BlockRow {
         height: block.height,
         id: block.id,
         parent: block.parent,
@@ -119,27 +151,16 @@ pub(crate) fn rows(block: Block) -> (BlockRow, Vec<TxRow>) {
         epoch: block.epoch,
         proposer: block.proposer,
         txs: block.txs.len(),
-    };
-    let txs = block
-        .txs
-        .into_iter()
-        .enumerate()
-        .rev()
-        .map(|(index, tx)| tx_row(block.height, index as u32, block.time, tx))
-        .collect();
-    (row, txs)
+    }
 }
 
 pub(crate) fn located(located: Located) -> TxRow {
-    tx_row(located.height, located.position, located.time, located.tx)
-}
-
-fn tx_row(height: u64, index: u32, time: u64, tx: Tx) -> TxRow {
+    let tx = located.tx;
     TxRow {
         hash: tx.hash,
-        height,
-        index,
-        time,
+        height: located.height,
+        index: located.position,
+        time: located.time,
         signer: tx.signer,
         anchor: tx.anchor.height,
         target: tx.target,
@@ -147,7 +168,26 @@ fn tx_row(height: u64, index: u32, time: u64, tx: Tx) -> TxRow {
         payload: tx.payload,
         op: Default::default(),
         asked: Default::default(),
+        applied: applied(tx.receipt.as_ref()),
         receipt: tx.receipt,
+    }
+}
+
+pub(crate) fn summary_row(summary: TxSummary) -> TxRow {
+    TxRow {
+        hash: summary.hash,
+        height: summary.height,
+        index: summary.position,
+        time: summary.time,
+        signer: summary.signer,
+        anchor: summary.anchor.height,
+        target: summary.target,
+        size: summary.size,
+        payload: None,
+        op: Default::default(),
+        asked: Default::default(),
+        applied: summary.applied,
+        receipt: None,
     }
 }
 
@@ -155,7 +195,6 @@ fn tx_row(height: u64, index: u32, time: u64, tx: Tx) -> TxRow {
 #[derive(Default, Serialize, Deserialize)]
 pub struct Chain {
     pub blocks: Vec<BlockRow>,
-    pub txs: Vec<TxRow>,
     /// the archive ends inside the window: nothing older to read
     pub complete: bool,
     pub listed_from: Option<u64>,
@@ -166,6 +205,10 @@ pub struct Chain {
 impl Chain {
     pub(crate) fn top(&self) -> Option<u64> {
         self.blocks.first().map(|block| block.height)
+    }
+
+    pub(crate) fn bottom(&self) -> Option<u64> {
+        self.blocks.last().map(|block| block.height)
     }
 
     /// Now, as the chain tells it: the newest block's time.
@@ -184,7 +227,27 @@ impl Chain {
         self.listed_from.filter(|from| *from > 0)
     }
 
-    pub(crate) fn land(&mut self, before: Option<u64>, page: BlockList) {
+    pub fn transactions(&self) -> usize {
+        self.blocks.iter().map(|block| block.txs).sum()
+    }
+
+    pub(crate) fn place(&self, index: usize) -> Option<TxPlace> {
+        let mut above = 0;
+        for block in &self.blocks {
+            let within = index - above < block.txs;
+            if within {
+                let position = block.txs - 1 - (index - above);
+                return Some(TxPlace {
+                    height: block.height,
+                    position: position as u32,
+                });
+            }
+            above += block.txs;
+        }
+        None
+    }
+
+    pub(crate) fn land(&mut self, before: Option<u64>, page: FactsPage) {
         self.failed = None;
         self.listed_from = page.listed_from;
         let Some(oldest) = page.blocks.last().map(|block| block.height) else {
@@ -192,12 +255,10 @@ impl Chain {
             return;
         };
         let reached_bottom = page.listed_from.is_none_or(|from| oldest <= from);
-        let (blocks, txs): (Vec<_>, Vec<_>) = page.blocks.into_iter().map(rows).unzip();
-        let txs = txs.into_iter().flatten();
+        let blocks: Vec<BlockRow> = page.blocks.into_iter().map(facts_row).collect();
         match (before, self.top()) {
             (Some(_), _) => {
                 self.blocks.extend(blocks);
-                self.txs.extend(txs);
                 self.complete = reached_bottom;
             }
             (None, Some(top)) if blocks.last().is_some_and(|b| b.height <= top + 1) => {
@@ -205,19 +266,81 @@ impl Chain {
                 let mut merged: Vec<_> = blocks.into_iter().take(fresh).collect();
                 merged.append(&mut self.blocks);
                 self.blocks = merged;
-                let mut merged: Vec<_> = txs.filter(|tx| tx.height > top).collect();
-                merged.append(&mut self.txs);
-                self.txs = merged;
             }
             (None, _) => {
                 self.blocks = blocks;
-                self.txs = txs.collect();
                 self.complete = reached_bottom;
             }
         }
         self.blocks.truncate(WINDOW);
-        let oldest = self.blocks.last().map_or(0, |block| block.height);
-        self.txs.retain(|tx| tx.height >= oldest);
+    }
+}
+
+/// A transaction list a page shows, newest first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TxList {
+    /// One block's transactions, `count` of them.
+    Block { height: u64, count: usize },
+    /// Every transaction in the window.
+    Window,
+    /// The window's transactions sent to one program, read on a page at a time.
+    To(String),
+}
+
+/// The rows of the list on screen: those of the ranges its last frame lowered, or for a list
+/// read on by cursor, every page read so far.
+#[derive(Default)]
+pub struct Shown {
+    pub(crate) list: Option<TxList>,
+    pub(crate) rows: Vec<TxRow>,
+    pub(crate) read: bool,
+    pub(crate) next: Option<TxPlace>,
+    pub(crate) seen: Range<usize>,
+    pub(crate) wanted: Vec<Range<usize>>,
+    pub(crate) reads: Vec<TxRange>,
+    pub(crate) failed: Option<String>,
+}
+
+impl Shown {
+    pub(crate) fn of(&self, list: &TxList) -> bool {
+        self.list.as_ref() == Some(list)
+    }
+
+    pub(crate) fn ended(&self) -> bool {
+        self.read && self.next.is_none()
+    }
+
+    pub(crate) fn at(&self, place: TxPlace) -> Option<&TxRow> {
+        let found = self
+            .rows
+            .binary_search_by(|row| place.cmp(&row.place()))
+            .ok()?;
+        self.rows.get(found)
+    }
+
+    pub(crate) fn landed(&mut self, ask: &TxRange) -> bool {
+        let reading = self.reads.len();
+        self.reads.retain(|asked| asked != ask);
+        self.reads.len() < reading
+    }
+
+    pub(crate) fn merge(
+        &mut self,
+        rows: impl Iterator<Item = TxRow>,
+        spans: &[(TxPlace, TxPlace)],
+    ) {
+        for row in rows {
+            let place = row.place();
+            if let Err(at) = self.rows.binary_search_by(|held| place.cmp(&held.place())) {
+                self.rows.insert(at, row);
+            }
+        }
+        self.rows.retain(|row| {
+            let place = row.place();
+            spans
+                .iter()
+                .any(|(newest, oldest)| *oldest <= place && place <= *newest)
+        });
     }
 }
 

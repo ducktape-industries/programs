@@ -12,7 +12,7 @@ use view::prelude::*;
 use view::wire::manifest::Manifest;
 
 use crate::acting::Acting;
-use crate::chain::{BlockRow, Chain, TxRow};
+use crate::chain::{BlockRow, Chain, Shown, TxRow};
 
 /// Where the explorer is: a list under a tab, or one thing opened from it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -265,7 +265,8 @@ pub struct Explorer {
     #[serde(skip)]
     pub(crate) acted: Option<(u64, Listing)>,
     /// a block opened outside the window
-    pub(crate) opened: Loadable<Option<(BlockRow, Vec<TxRow>)>>,
+    #[serde(skip)]
+    pub(crate) opened: Loadable<Option<BlockRow>>,
     /// what the code of the program page on screen declares (`blob.manifest`),
     /// and the id of the code it was asked of; read again when the page
     /// names other code (`read_manifest`)
@@ -281,7 +282,10 @@ pub struct Explorer {
     /// the account and the places of the frames `acted_rows` was read for
     #[serde(skip)]
     pub(crate) rows_of: Option<(u64, Vec<(u64, u32)>)>,
-    /// a `chain.blocks` page is in flight
+    #[serde(skip)]
+    pub(crate) shown: Shown,
+    #[serde(skip)]
+    pub(crate) rows_fit: usize,
     #[serde(skip)]
     pub(crate) pulling: bool,
     /// the newest height `chain.heads` announced; the status moves to it
@@ -507,11 +511,6 @@ impl Explorer {
             .collect();
         used.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
         Some(used)
-    }
-
-    /// How many of the window's transactions went to `name`.
-    pub(crate) fn sent_to(&self, name: &str) -> u64 {
-        self.chain.txs.iter().filter(|tx| tx.target == name).count() as u64
     }
 
     /// What account `number` did, as far as it is read; `None` while no

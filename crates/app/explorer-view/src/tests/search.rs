@@ -44,8 +44,12 @@ fn search_finds_heights_hashes_accounts_and_programs() {
     assert!(cx.has_text("No block 1,000"), "{:?}", cx.texts());
     assert_eq!(
         cx.host().requests::<ChainBlock>(),
-        [BlockRef::Id([0xee; 32]), BlockRef::Height(1000)].map(summary)
+        [summary(BlockRef::Id([0xee; 32]))]
     );
+    assert!(cx.host().requests::<ChainFacts>().contains(&FactsAsk {
+        before: Some(1001),
+        limit: 1,
+    }));
     search(&mut cx, "nobody");
     assert!(cx.has_text("Nothing here is called “nobody”."));
 }
@@ -80,13 +84,7 @@ fn a_transaction_past_the_window_is_found_by_its_hash() {
     assert!(cx.has_text("In block 12"), "{:?}", cx.texts());
     assert_eq!(
         cx.host().requests::<ChainBlock>(),
-        [
-            BlockRef::Id([0xa1; 32]),
-            BlockRef::Height(11),
-            BlockRef::Id([0xb2; 32]),
-            BlockRef::Height(12)
-        ]
-        .map(summary)
+        [BlockRef::Id([0xa1; 32]), BlockRef::Id([0xb2; 32])].map(summary)
     );
 }
 
@@ -94,8 +92,8 @@ fn a_transaction_past_the_window_is_found_by_its_hash() {
 fn a_node_that_lists_from_a_later_block_says_so() {
     let mut cx = TestAppContext::new();
     node(&mut cx, Rc::new(RefCell::new(30)));
-    cx.host().handle::<ChainBlocks>(|ask| {
-        let mut listed = page(&chain(30), &ask);
+    cx.host().handle::<ChainFacts>(|ask| {
+        let mut listed = view::rig::facts_page(&chain(30), &ask);
         listed.blocks.retain(|block| block.height >= 20);
         listed.listed_from = Some(20);
         Ok(listed)

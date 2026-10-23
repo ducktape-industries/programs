@@ -1,13 +1,14 @@
-//! The loaders: the head and the window it pulls (`chain.status`, `chain.blocks`), the lists the
+//! The loaders: the head and the window it pulls (`chain.status`, `chain.facts`), the lists the
 //! system programs answer, and what an op says it does (`program.describe`). A list is read with
 //! `cx.load`, which keeps what is on screen while it reads again and draws only what changed.
 use std::future::Future;
+use std::ops::Range;
 
 use view::Paged;
 use view::host::Page;
 use view::prelude::*;
 
-use crate::chain::{self, BlockRow, TxRow};
+use crate::chain::{self, BlockRow, Shown, TxList, TxRow};
 use crate::state::{Listing, Route, blob_ref};
 use crate::{Explorer, WINDOW, decode, queries};
 
@@ -16,6 +17,8 @@ const ROW_PAYLOAD: u32 = 4 << 10;
 
 impl Explorer {
     pub(crate) fn read_all(&mut self, cx: &mut Context<Self>) {
+        self.shown.reads.clear();
+        self.shown.failed = None;
         self.read_head(cx);
         self.read_accounts(cx);
         self.read_validators(cx);
@@ -226,13 +229,7 @@ impl Explorer {
         self.pulling = true;
         let (host, top) = (cx.host(), self.chain.top());
         let read = async move {
-            let mut page = host
-                .ask::<ChainBlocks>(BlockPage {
-                    before,
-                    limit,
-                    most: 0,
-                })
-                .await?;
+            let mut page = host.ask::<ChainFacts>(FactsAsk { before, limit }).await?;
             let Some(top) = top.filter(|_| before.is_none()) else {
                 return Ok(page);
             };
@@ -242,10 +239,9 @@ impl Explorer {
                 && newest.saturating_sub(top) <= WINDOW as u64
             {
                 let below = host
-                    .ask::<ChainBlocks>(BlockPage {
+                    .ask::<ChainFacts>(FactsAsk {
                         before: Some(oldest),
                         limit: u32::try_from(oldest - top - 1).unwrap_or(u32::MAX),
-                        most: 0,
                     })
                     .await?;
                 match below.blocks.last() {
@@ -273,6 +269,9 @@ impl Explorer {
                     {
                         status.height = top.height;
                         status.tip = top.id;
+                    }
+                    if view.chain.top() != was.0 {
+                        view.follow_shown(cx);
                     }
                     if (view.chain.top(), view.chain.blocks.len()) != was {
                         view.pull(cx);
@@ -350,18 +349,9 @@ impl Explorer {
     }
 
     fn held(&self) -> impl Iterator<Item = &TxRow> {
-        let opened = match self.opened.ready() {
-            Some(Some((_, txs))) => txs.as_slice(),
-            _ => &[],
-        };
         let located = self.located.ready().and_then(Option::as_ref);
         let acted = self.acted_rows.ready().map_or(&[][..], Vec::as_slice);
-        self.chain
-            .txs
-            .iter()
-            .chain(opened)
-            .chain(located)
-            .chain(acted)
+        self.shown.rows.iter().chain(located).chain(acted)
     }
 
     pub(crate) fn tx(&self, hash: &[u8; 32]) -> Option<&TxRow> {
@@ -369,7 +359,11 @@ impl Explorer {
     }
 
     pub(crate) fn tx_at(&self, height: u64, position: u32) -> Option<&TxRow> {
-        self.held()
+        let located = self.located.ready().and_then(Option::as_ref);
+        let acted = self.acted_rows.ready().map_or(&[][..], Vec::as_slice);
+        located
+            .into_iter()
+            .chain(acted)
             .find(|tx| (tx.height, tx.index) == (height, position))
     }
 
@@ -424,18 +418,22 @@ impl Explorer {
 
     fn open_block(&mut self, height: u64, cx: &mut Context<Self>) {
         let held = self.chain.block(height).is_some();
-        let opened = matches!(self.opened.ready(), Some(Some((row, _))) if row.height == height);
+        let opened = matches!(self.opened.ready(), Some(Some(row)) if row.height == height);
         if held || opened {
             return;
         }
-        let ask = cx.host().ask::<ChainBlock>(BlockAsk {
-            by: BlockRef::Height(height),
-            most: 0,
+        let ask = cx.host().ask::<ChainFacts>(FactsAsk {
+            before: Some(height.saturating_add(1)),
+            limit: 1,
         });
         self.opened = Loadable::Idle;
         cx.load(
             self,
-            async move { ask.await.map(|block| block.map(chain::rows)) },
+            async move {
+                let page = ask.await?;
+                let found = page.blocks.into_iter().find(|facts| facts.height == height);
+                Ok::<_, Error>(found.map(chain::facts_row))
+            },
             |view| &mut view.opened,
         );
     }
@@ -458,17 +456,219 @@ impl Explorer {
         );
     }
 
-    pub(crate) fn block(&self, height: u64) -> Option<(BlockRow, Vec<&TxRow>)> {
+    pub(crate) fn block(&self, height: u64) -> Option<BlockRow> {
         if let Some(row) = self.chain.block(height) {
-            let txs = self.chain.txs.iter().filter(|tx| tx.height == height);
-            return Some((row.clone(), txs.collect()));
+            return Some(row.clone());
         }
         match self.opened.ready() {
-            Some(Some((row, txs))) if row.height == height => {
-                Some((row.clone(), txs.iter().collect()))
-            }
+            Some(Some(row)) if row.height == height => Some(row.clone()),
             _ => None,
         }
+    }
+
+    pub(crate) fn place_at(&self, list: &TxList, index: usize) -> Option<TxPlace> {
+        match list {
+            TxList::Block { height, count } => {
+                let position = count.checked_sub(index + 1)?;
+                Some(TxPlace {
+                    height: *height,
+                    position: position as u32,
+                })
+            }
+            TxList::Window => self.chain.place(index),
+            TxList::To(_) => self.shown_at(list, index).map(TxRow::place),
+        }
+    }
+
+    pub(crate) fn shown_at(&self, list: &TxList, index: usize) -> Option<&TxRow> {
+        if !self.shown.of(list) {
+            return None;
+        }
+        match list {
+            TxList::To(_) => self.shown.rows.get(index),
+            TxList::Block { .. } | TxList::Window => self.shown.at(self.place_at(list, index)?),
+        }
+    }
+
+    pub(crate) fn shown_read(&self, list: &TxList) -> usize {
+        match self.shown.of(list) {
+            true => self.shown.rows.len(),
+            false => 0,
+        }
+    }
+
+    pub(crate) fn shown_ended(&self, list: &TxList) -> bool {
+        self.shown.of(list) && self.shown.ended()
+    }
+
+    pub(crate) fn shown_count(&self, list: &TxList) -> usize {
+        match list {
+            TxList::Block { count, .. } => *count,
+            TxList::Window => self.chain.transactions(),
+            TxList::To(_) => {
+                let more = match self.shown_ended(list) {
+                    true => 0,
+                    false => self.rows_fit.max(1),
+                };
+                self.shown_read(list) + more
+            }
+        }
+    }
+
+    pub(crate) fn shown_failed(&self, list: &TxList) -> Option<&str> {
+        self.shown.failed.as_deref().filter(|_| self.shown.of(list))
+    }
+
+    pub(crate) fn read_latest(&mut self, cx: &mut Context<Self>) {
+        let on_overview = matches!(self.pages.top(), Route::Overview);
+        if !on_overview {
+            return;
+        }
+        let latest = crate::ui::LATEST.min(self.chain.transactions());
+        self.want(TxList::Window, 0..latest, cx);
+    }
+
+    pub(crate) fn want(&mut self, list: TxList, range: Range<usize>, cx: &mut Context<Self>) {
+        if !self.shown.of(&list) {
+            self.shown = Shown {
+                list: Some(list.clone()),
+                ..Shown::default()
+            };
+        }
+        self.shown.seen = range.clone();
+        if !self.shown.wanted.contains(&range) {
+            self.shown.wanted.push(range.clone());
+        }
+        let appends = matches!(list, TxList::To(_));
+        let paging = appends && !self.shown.reads.is_empty();
+        let held_back = paging || self.shown.failed.is_some();
+        if held_back {
+            return;
+        }
+        let Some(ask) = self.range_ask(&list, range) else {
+            return;
+        };
+        if self.shown.reads.contains(&ask) {
+            return;
+        }
+        self.read_shown(list, ask, appends, cx);
+    }
+
+    fn wanted_spans(&self, list: &TxList) -> Vec<(TxPlace, TxPlace)> {
+        let span = |range: &Range<usize>| {
+            let last = range.end.checked_sub(1)?;
+            Some((
+                self.place_at(list, range.start)?,
+                self.place_at(list, last)?,
+            ))
+        };
+        self.shown.wanted.iter().filter_map(span).collect()
+    }
+
+    fn range_ask(&self, list: &TxList, range: Range<usize>) -> Option<TxRange> {
+        if range.is_empty() {
+            return None;
+        }
+        if let TxList::To(program) = list {
+            let wanted = range.end.saturating_sub(self.shown.rows.len());
+            let nothing_more = wanted == 0 || self.shown.ended();
+            if nothing_more {
+                return None;
+            }
+            return Some(TxRange {
+                before: self.shown.next.filter(|_| self.shown.read),
+                oldest: self.chain.bottom()?,
+                target: Some(program.clone()),
+                limit: u32::try_from(wanted.max(self.rows_fit)).unwrap_or(u32::MAX),
+            });
+        }
+        let held = range
+            .clone()
+            .all(|index| self.shown_at(list, index).is_some());
+        if held {
+            return None;
+        }
+        let newest = self.place_at(list, range.start)?;
+        let oldest = self.place_at(list, range.end - 1)?;
+        Some(TxRange {
+            before: Some(TxPlace {
+                height: newest.height,
+                position: newest.position + 1,
+            }),
+            oldest: oldest.height,
+            target: None,
+            limit: u32::try_from(range.len()).unwrap_or(u32::MAX),
+        })
+    }
+
+    pub(crate) fn follow_shown(&mut self, cx: &mut Context<Self>) {
+        let Some(TxList::To(program)) = self.shown.list.clone() else {
+            return;
+        };
+        let at_the_top = self.shown.seen.start == 0;
+        if !at_the_top {
+            return;
+        }
+        let Some(oldest) = self.chain.bottom() else {
+            return;
+        };
+        let limit = self.shown.seen.len().max(self.rows_fit).max(1);
+        let ask = TxRange {
+            before: None,
+            oldest,
+            target: Some(program.clone()),
+            limit: u32::try_from(limit).unwrap_or(u32::MAX),
+        };
+        self.shown.reads.clear();
+        self.read_shown(TxList::To(program), ask, false, cx);
+    }
+
+    fn read_shown(&mut self, list: TxList, ask: TxRange, appends: bool, cx: &mut Context<Self>) {
+        self.shown.reads.push(ask.clone());
+        self.shown.failed = None;
+        let asked = ask.clone();
+        let host = cx.host();
+        let read = async move {
+            let wanted = ask.limit as usize;
+            let mut range = ask;
+            let mut rows = Vec::new();
+            loop {
+                let page = host.ask::<ChainTxs>(range.clone()).await?;
+                rows.extend(page.txs);
+                let unfilled = rows.len() < wanted;
+                match page.next {
+                    Some(next) if unfilled => {
+                        range.before = Some(next);
+                        range.limit = u32::try_from(wanted - rows.len()).unwrap_or(u32::MAX);
+                    }
+                    next => return Ok::<_, Error>((rows, next)),
+                }
+            }
+        };
+        cx.land(read, move |view, read, cx| {
+            let current = view.shown.of(&list) && view.shown.landed(&asked);
+            if !current {
+                return;
+            }
+            match read {
+                Ok((rows, next)) => {
+                    let rows = rows.into_iter().map(chain::summary_row);
+                    match &list {
+                        TxList::To(_) if appends => view.shown.rows.extend(rows),
+                        TxList::To(_) => view.shown.rows = rows.collect(),
+                        TxList::Block { .. } | TxList::Window => {
+                            let spans = view.wanted_spans(&list);
+                            view.shown.merge(rows, &spans);
+                        }
+                    }
+                    view.shown.next = next;
+                    view.shown.read = true;
+                }
+                Err(refusal) => view.shown.failed = Some(design::sentence(&refusal)),
+            }
+            cx.notify();
+        })
+        .detach();
     }
 }
 

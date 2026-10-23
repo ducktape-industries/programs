@@ -38,7 +38,7 @@ pub(super) fn block(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let Some((block, txs)) = view.block(height) else {
+    let Some(block) = view.block(height) else {
         return match &view.opened {
             Loadable::Ready(None) | Loadable::Reloading(None, _) => {
                 let unlisted = view.chain.unlisted_below().filter(|from| height < *from);
@@ -66,20 +66,19 @@ pub(super) fn block(
         };
     };
     let now = view.chain.now();
-    let count = txs.len() as u64;
-    let empty = txs
-        .is_empty()
-        .then(|| quiet("explorer-block-empty", words::NO_BLOCK_TRANSACTIONS, theme));
+    let count = block.txs;
+    let empty =
+        (count == 0).then(|| quiet("explorer-block-empty", words::NO_BLOCK_TRANSACTIONS, theme));
+    let of = TxList::Block { height, count };
+    let refused = shown_refused(view, &of, cx, theme, ladder);
     let list = rows("explorer-block-txs", "Transactions", view);
-    let rows = (!txs.is_empty()).then(|| {
-        tx_rows(list, view, move |view| {
-            view.block(height).map_or_else(Vec::new, |(_, txs)| txs)
-        })
-        .whole(view, cx, theme)
-        .build(cx)
-    });
+    let rows = (count > 0).then(|| tx_list(list, of, count).build(cx));
     div()
         .id("explorer-block")
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
         .child(title(view, height, cx, theme))
         .child(field("Hash", mono(abi::hex(&block.id)), theme))
         .child(field("Parent", parent(&block, cx, theme), theme))
@@ -97,9 +96,10 @@ pub(super) fn block(
         .child(heading(
             "explorer-block-txs-heading",
             "Transactions",
-            Some(caption(grouped(count), theme)),
+            Some(caption(grouped(count as u64), theme)),
             theme,
         ))
+        .children(refused)
         .children(rows)
         .children(empty)
         .into_any_element()

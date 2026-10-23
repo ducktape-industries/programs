@@ -68,7 +68,7 @@ fn detail(
         .child(section("explorer-about-header", "About", None, k))
         .children(about(view, network, name, code, cx, k))
         .children(scheduled(view, network, name, k))
-        .children((!listed).then(|| transactions(view, name, cx, k)))
+        .children((!listed).then(|| transactions(name, cx, k)))
         .into_any_element()
 }
 
@@ -261,9 +261,8 @@ fn scheduled(view: &Explorer, network: &Network, name: &str, k: &Look) -> Vec<An
         .collect()
 }
 
-fn transactions(view: &Explorer, name: &str, cx: Cx, k: &Look) -> Stateful<Div> {
-    let blocks = view.chain.blocks.len() as u64;
-    let title = words::to_transactions(view.sent_to(name), blocks);
+fn transactions(name: &str, cx: Cx, k: &Look) -> Stateful<Div> {
+    let title = words::TO_TRANSACTIONS.to_owned();
     let row = design::row("explorer-program-txs", &k.ladder, &k.theme);
     opens(
         row,

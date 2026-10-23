@@ -2,6 +2,7 @@
 //! (`lib.rs`; the phone's are `ui/phone/`). Square corners, rows split by one-pixel rules, hashes
 //! and numbers in the data face.
 use std::ops::Range;
+use std::rc::Rc;
 
 use view::prelude::*;
 use view::{Div, FontWeight, Paged, Stateful};
@@ -10,15 +11,15 @@ use crate::chain::{Line, lines};
 use crate::decode::{ago, date, grouped, plural, short};
 use crate::state::landed;
 use crate::words::{self, unindexed};
-use crate::{BlockRow, Cx, Explorer, Route, TxRow};
+use crate::{BlockRow, Cx, Explorer, Route, TxList, TxRow};
 use design::{empty_state, mono};
 
-const LATEST: usize = 12;
+pub(crate) const LATEST: usize = 12;
 
 const BAR_H: Pixels = px(44.);
 const SEARCH_W: Pixels = px(360.);
 const SEARCH_MIN_W: Pixels = px(160.);
-const ROW_H: Pixels = px(40.);
+pub(crate) const ROW_H: Pixels = px(40.);
 const PRESS_TARGET: Pixels = px(24.);
 const SIGNER_W: Pixels = px(180.);
 const HEIGHT_W: Pixels = px(72.);
@@ -75,7 +76,9 @@ pub fn render(view: &Explorer, cx: Cx) -> AnyElement {
     }
     let scroller = div().id("explorer-page").flex_1().flex().flex_col();
     let scroller = match view.pages.top() {
-        Route::Transactions(_) | Route::Blocks | Route::Accounts => scroller.min_h_0(),
+        Route::Transactions(_) | Route::Blocks | Route::Accounts | Route::Block(_) => {
+            scroller.min_h_0()
+        }
         _ => scroller.overflow_y_scroll(),
     };
     root.child(scroller.child(page(view, cx, &theme, ladder)))
@@ -270,11 +273,16 @@ struct Rows {
     active: usize,
     scroll: UniformListScrollHandle,
     routes: Vec<Route>,
+    count: Option<usize>,
+    route_at: Option<RouteAt>,
+    want: Option<Want>,
     children: Vec<AnyElement>,
     paint: Option<Painter>,
 }
 
 type Painter = Box<dyn Fn(&Explorer, Range<usize>, Cx, &Theme) -> Vec<Stateful<Div>>>;
+type RouteAt = Rc<dyn Fn(&Explorer, usize) -> Option<Route>>;
+type Want = Rc<dyn Fn(&mut Explorer, Range<usize>, Cx)>;
 
 fn rows(id: &'static str, label: &'static str, view: &Explorer) -> Rows {
     let active = match view.cursor {
@@ -287,6 +295,9 @@ fn rows(id: &'static str, label: &'static str, view: &Explorer) -> Rows {
         active,
         scroll: view.scroll.clone(),
         routes: Vec::new(),
+        count: None,
+        route_at: None,
+        want: None,
         children: Vec::new(),
         paint: None,
     }
@@ -314,6 +325,19 @@ impl Rows {
         self.paint = Some(Box::new(paint));
         self
     }
+    fn ranged(
+        mut self,
+        count: usize,
+        route_at: impl Fn(&Explorer, usize) -> Option<Route> + 'static,
+        want: impl Fn(&mut Explorer, Range<usize>, Cx) + 'static,
+        paint: impl Fn(&Explorer, Range<usize>, Cx, &Theme) -> Vec<Stateful<Div>> + 'static,
+    ) -> Self {
+        self.count = Some(count);
+        self.route_at = Some(Rc::new(route_at));
+        self.want = Some(Rc::new(want));
+        self.paint = Some(Box::new(paint));
+        self
+    }
     /// The painted rows built now, drawn whole: for a list in a page that
     /// scrolls (the Overview's panels, a block's transactions, an account's
     /// activity), which is laid out by its rows; a list sized by its box
@@ -337,10 +361,13 @@ impl Rows {
             active,
             scroll,
             routes,
+            count,
+            route_at,
+            want,
             children,
             paint,
         } = self;
-        let count = routes.len();
+        let count = count.unwrap_or(routes.len());
         let active = active.min(count.saturating_sub(1));
         let mut list = design::composite(id, Role::ListBox, label).active(active, count);
         if paint.is_some() {
@@ -355,7 +382,13 @@ impl Rows {
             )
             .on_press(
                 cx.processor(move |view: &mut Explorer, index: usize, _, cx| {
-                    view.go(routes[index].clone(), cx)
+                    let route = match &route_at {
+                        Some(route_at) => route_at(view, index),
+                        None => routes.get(index).cloned(),
+                    };
+                    if let Some(route) = route {
+                        view.go(route, cx)
+                    }
                 }),
             )
             .build()
@@ -368,6 +401,9 @@ impl Rows {
             SharedString::from(format!("{id}-rows")),
             count,
             cx.processor(move |view: &mut Explorer, range: Range<usize>, _, cx| {
+                if let Some(want) = &want {
+                    want(view, range.clone(), cx);
+                }
                 paint(view, range.clone(), cx, &theme)
                     .into_iter()
                     .zip(range)
@@ -501,10 +537,7 @@ fn tx_row(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> Stateful<Div> {
     let (height, position) = (tx.height, tx.index);
     let id = SharedString::from(format!("explorer-tx-{height}-{position}"));
     let place = format!("{} · {position}", grouped(height));
-    let applied = tx
-        .receipt
-        .as_ref()
-        .map(|run| matches!(run.outcome, Outcome::Applied { .. }));
+    let applied = tx.applied;
     let label = match applied {
         Some(applied) => activity::view::label(&tx.target, applied, &grouped(height), position),
         None => format!("{}, block {place}", tx.target),
@@ -526,6 +559,57 @@ fn tx_row(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> Stateful<Div> {
         .child(div().flex_1().truncate().child(tx.target.clone()))
         .child(signer(view, &tx.signer, cx, theme))
         .child(mono(place).text_color(theme.muted))
+}
+
+fn tx_list(list: Rows, of: TxList, count: usize) -> Rows {
+    let (at, wanted) = (of.clone(), of.clone());
+    list.ranged(
+        count,
+        move |view, index| view.place_at(&at, index).map(place_route),
+        move |view, range, cx| view.want(wanted.clone(), range, cx),
+        move |view, range, cx, theme| {
+            range
+                .map(|index| match view.shown_at(&of, index) {
+                    Some(tx) => tx_row(view, tx, cx, theme),
+                    None => reading_row(index, theme),
+                })
+                .collect()
+        },
+    )
+}
+
+fn place_route(place: TxPlace) -> Route {
+    Route::Tx {
+        height: place.height,
+        position: place.position,
+    }
+}
+
+fn reading_row(index: usize, theme: &Theme) -> Stateful<Div> {
+    div()
+        .id(SharedString::from(format!("explorer-tx-reading-{index}")))
+        .flex()
+        .items_center()
+        .w_full()
+        .h(ROW_H)
+        .px_5()
+        .border_b_1()
+        .border_color(theme.border)
+        .text_color(theme.faint)
+        .aria_label(words::READING_TX.to_owned())
+        .aria_selected(false)
+        .child(words::READING_TX)
+}
+
+fn shown_refused(
+    view: &Explorer,
+    of: &TxList,
+    cx: Cx,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<AnyElement> {
+    view.shown_failed(of)
+        .map(|sentence| failed(sentence, cx, theme, ladder))
 }
 
 fn tx_route(tx: &TxRow) -> Route {

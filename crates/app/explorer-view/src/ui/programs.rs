@@ -318,12 +318,10 @@ pub(super) fn program(
         }
         words
     });
-    let blocks = view.chain.blocks.len() as u64;
-    let sent = view.sent_to(name);
     let transactions = (!listed).then(|| {
         line("explorer-program-transactions".into(), theme).child(link(
             "explorer-program-txs".into(),
-            words::to_transactions(sent, blocks),
+            words::TO_TRANSACTIONS.into(),
             Route::Transactions(Some(name.to_owned())),
             cx,
             theme,

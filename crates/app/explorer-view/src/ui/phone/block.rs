@@ -9,12 +9,12 @@ use view::{Div, Stateful};
 
 use crate::decode::{grouped, short};
 use crate::words::{self, unindexed};
-use crate::{BlockRow, Cx, Explorer, Note, Route, TxRow};
+use crate::{BlockRow, Cx, Explorer, Note, Route, TxList};
 
 use super::Look;
 use super::parts::{
-    Press, Who, aside, column, copy_link, data, empty, gone, key_value, linked, over, quiet,
-    refused, scroller, section, small, time_and_age, tx_line,
+    Press, Who, aside, copy_link, data, empty, gone, key_value, linked, over, quiet, refused,
+    section, small, time_and_age, tx_window,
 };
 
 pub(super) fn block(view: &Explorer, height: u64, cx: Cx, k: &Look) -> AnyElement {
@@ -25,7 +25,7 @@ pub(super) fn block(view: &Explorer, height: u64, cx: Cx, k: &Look) -> AnyElemen
         None => page,
     };
     let body = match view.block(height) {
-        Some((block, txs)) => found(view, &block, &txs, cx, k),
+        Some(block) => found(view, &block, cx, k),
         None => missing(view, height, cx, k),
     };
     page.child(body).into_any_element()
@@ -64,20 +64,26 @@ fn missing(view: &Explorer, height: u64, cx: Cx, k: &Look) -> AnyElement {
     }
 }
 
-fn found(view: &Explorer, block: &BlockRow, txs: &[&TxRow], cx: Cx, k: &Look) -> AnyElement {
+fn found(view: &Explorer, block: &BlockRow, cx: Cx, k: &Look) -> AnyElement {
     let now = view.chain.now();
-    let list = if txs.is_empty() {
-        quiet("explorer-block-empty", words::NO_BLOCK_TRANSACTIONS, k)
-    } else {
-        column(
-            "explorer-block-txs",
-            txs.iter()
-                .map(|tx| tx_line(view, tx, Who::Signer, cx, k))
-                .collect(),
-        )
-        .into_any_element()
+    let count = block.txs;
+    let of = TxList::Block {
+        height: block.height,
+        count,
     };
-    scroller("explorer-page")
+    let refusal = view
+        .shown_failed(&of)
+        .map(|sentence| refused(sentence, cx, k));
+    let list = match count {
+        0 => quiet("explorer-block-empty", words::NO_BLOCK_TRANSACTIONS, k),
+        _ => tx_window("explorer-block-txs", of, count, Who::Signer, cx, k),
+    };
+    div()
+        .id("explorer-page")
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
         .child(key_value(
             "explorer-field-hash",
             "Hash",
@@ -107,9 +113,10 @@ fn found(view: &Explorer, block: &BlockRow, txs: &[&TxRow], cx: Cx, k: &Look) ->
         .child(section(
             "explorer-block-txs-heading",
             "Transactions",
-            Some(aside(grouped(txs.len() as u64))),
+            Some(aside(grouped(count as u64))),
             k,
         ))
+        .children(refusal)
         .child(list)
         .into_any_element()
 }

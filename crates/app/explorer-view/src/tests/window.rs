@@ -4,19 +4,15 @@ use super::*;
 fn the_window_follows_the_head_and_stops_where_the_archive_does() {
     let mut window = Chain::default();
     let blocks = chain(30);
-    let ask = |before| BlockPage {
-        before,
-        limit: 20,
-        most: 0,
-    };
-    window.land(None, page(&blocks, &ask(None)));
+    let ask = |before| view::methods::FactsAsk { before, limit: 20 };
+    window.land(None, view::rig::facts_page(&blocks, &ask(None)));
     assert_eq!((window.top(), window.blocks.len()), (Some(30), 20));
     assert!(!window.complete, "a full page may have more below it");
-    window.land(Some(11), page(&blocks, &ask(Some(11))));
+    window.land(Some(11), view::rig::facts_page(&blocks, &ask(Some(11))));
     assert_eq!(window.blocks.len(), 31);
     assert!(window.complete);
     let more = chain(32);
-    window.land(None, page(&more, &ask(None)));
+    window.land(None, view::rig::facts_page(&more, &ask(None)));
     assert_eq!((window.top(), window.blocks.len()), (Some(32), 33));
     assert!(
         window
@@ -24,29 +20,29 @@ fn the_window_follows_the_head_and_stops_where_the_archive_does() {
             .windows(2)
             .all(|pair| pair[0].height == pair[1].height + 1)
     );
-    assert_eq!(window.txs.len(), 3, "no transaction is folded in twice");
+    assert_eq!(
+        window.transactions(),
+        3,
+        "no transaction is folded in twice"
+    );
     assert_eq!(window.block(11).map(|block| block.txs), Some(2));
     let far = chain(400);
-    window.land(None, page(&far, &ask(None)));
+    window.land(None, view::rig::facts_page(&far, &ask(None)));
     assert_eq!((window.top(), window.blocks.len()), (Some(400), 20));
-    assert!(!window.complete && window.txs.is_empty());
+    assert!(!window.complete && window.transactions() == 0);
 }
 
 #[test]
 fn a_page_cut_short_reads_on_until_the_lowest_listed_block() {
     let mut window = Chain::default();
     let blocks = chain(30);
-    let ask = |before| BlockPage {
-        before,
-        limit: 20,
-        most: 0,
-    };
-    let mut short = page(&blocks, &ask(None));
+    let ask = |before| view::methods::FactsAsk { before, limit: 20 };
+    let mut short = view::rig::facts_page(&blocks, &ask(None));
     short.blocks.truncate(5);
     window.land(None, short);
     assert_eq!((window.top(), window.blocks.len()), (Some(30), 5));
     assert!(!window.complete, "a page cut by its bytes is not the end");
-    let mut listed = page(&blocks, &ask(Some(26)));
+    let mut listed = view::rig::facts_page(&blocks, &ask(Some(26)));
     listed.blocks.retain(|block| block.height >= 20);
     listed.listed_from = Some(20);
     window.land(Some(26), listed);
@@ -77,7 +73,7 @@ fn a_pushed_head_reads_only_the_new_blocks() {
         "the Height stat moved with the page: {:?}",
         cx.texts()
     );
-    let explorer_asked = cx.host().requests::<ChainBlocks>();
+    let explorer_asked = cx.host().requests::<ChainFacts>();
     assert_eq!(explorer_asked.len(), 2, "{explorer_asked:?}");
     assert!(explorer_asked.iter().all(|ask| ask.before.is_none()));
     assert_eq!(
@@ -95,13 +91,12 @@ fn a_long_archive_is_read_only_as_far_as_the_window() {
     node(&mut cx, tip.clone());
     cx.open::<Explorer>();
     cx.run_until_parked();
-    let window = BlockPage {
+    let window = FactsAsk {
         before: None,
         limit: WINDOW as u32,
-        most: 0,
     };
     assert_eq!(
-        cx.host().requests::<ChainBlocks>(),
+        cx.host().requests::<ChainFacts>(),
         std::slice::from_ref(&window)
     );
     assert!(cx.has_text("52,000"), "the Height stat: {:?}", cx.texts());
@@ -112,10 +107,7 @@ fn a_long_archive_is_read_only_as_far_as_the_window() {
         id: [4; 32],
     });
     cx.run_until_parked();
-    assert_eq!(
-        cx.host().requests::<ChainBlocks>(),
-        [window.clone(), window]
-    );
+    assert_eq!(cx.host().requests::<ChainFacts>(), [window.clone(), window]);
     assert!(cx.has_text("104,000"), "the Height stat: {:?}", cx.texts());
 }
 
@@ -128,7 +120,7 @@ fn a_pushed_head_is_drawn_with_the_page_it_brings_not_before() {
     cx.open::<Explorer>();
     cx.run_until_parked();
     assert!(cx.has_text("12"), "the Height stat: {:?}", cx.texts());
-    cx.host().never::<ChainBlocks>();
+    cx.host().never::<ChainFacts>();
     heads.send(Head {
         height: 40,
         time: T0 + 40_000,
@@ -136,7 +128,7 @@ fn a_pushed_head_is_drawn_with_the_page_it_brings_not_before() {
     });
     cx.run_until_parked();
     assert_eq!(
-        cx.host().requests::<ChainBlocks>().len(),
+        cx.host().requests::<ChainFacts>().len(),
         2,
         "the head is pulled"
     );
@@ -165,7 +157,7 @@ fn a_tip_past_the_pushed_head_keeps_the_overviews_rows_on_every_frame() {
         "{:?}",
         cx.texts()
     );
-    let asked = cx.host().requests::<ChainBlocks>().len();
+    let asked = cx.host().requests::<ChainFacts>().len();
     *tip.borrow_mut() = 14;
     heads.send(Head {
         height: 13,
@@ -194,7 +186,7 @@ fn a_tip_past_the_pushed_head_keeps_the_overviews_rows_on_every_frame() {
             .collect::<Vec<_>>()
     });
     assert_eq!(heights, (0..=14).rev().collect::<Vec<_>>());
-    let new: Vec<_> = cx.host().requests::<ChainBlocks>()[asked..]
+    let new: Vec<_> = cx.host().requests::<ChainFacts>()[asked..]
         .iter()
         .map(|ask| (ask.before, ask.limit))
         .collect();
@@ -209,14 +201,13 @@ fn a_read_below_that_reaches_no_lower_stops_and_keeps_the_window() {
     node(&mut cx, tip.clone());
     let explorer = cx.open::<Explorer>();
     cx.run_until_parked();
-    let asked = cx.host().requests::<ChainBlocks>().len();
-    cx.host().handle::<ChainBlocks>(|_| {
-        let top = BlockPage {
+    let asked = cx.host().requests::<ChainFacts>().len();
+    cx.host().handle::<ChainFacts>(|_| {
+        let top = FactsAsk {
             before: None,
             limit: 1,
-            most: 0,
         };
-        Ok(page(&chain(14), &top))
+        Ok(view::rig::facts_page(&chain(14), &top))
     });
     let head = |height: u64| Head {
         height,
@@ -225,7 +216,7 @@ fn a_read_below_that_reaches_no_lower_stops_and_keeps_the_window() {
     };
     heads.send(head(13));
     cx.run_until_parked();
-    let new: Vec<_> = cx.host().requests::<ChainBlocks>()[asked..]
+    let new: Vec<_> = cx.host().requests::<ChainFacts>()[asked..]
         .iter()
         .map(|ask| (ask.before, ask.limit))
         .collect();
@@ -254,13 +245,13 @@ fn a_refused_window_says_why_and_retry_reads_again() {
     let tip = Rc::new(RefCell::new(12));
     node(&mut cx, tip);
     cx.host()
-        .refuse::<ChainBlocks>("not_found", "this node serves no blocks");
+        .refuse::<ChainFacts>("not_found", "this node serves no blocks");
     cx.open::<Explorer>();
     cx.run_until_parked();
     assert!(cx.has_text("this node serves no blocks"));
     let chain_ = chain(12);
     cx.host()
-        .handle::<ChainBlocks>(move |ask| Ok(page(&chain_, &ask)));
+        .handle::<ChainFacts>(move |ask| Ok(view::rig::facts_page(&chain_, &ask)));
     cx.simulate_click("explorer-retry");
     cx.run_until_parked();
     assert!(cx.has_text("Latest activity"));
@@ -272,12 +263,21 @@ fn a_snapshot_restores_without_reading_the_window_again() {
     let bytes = cx.snapshot().unwrap();
     let mut restored = TestAppContext::new();
     quiet_host(&restored);
+    restored
+        .host()
+        .handle::<ChainTxs>(|range| Ok(view::rig::tx_page(&chain(12), &range)));
     restored.restore::<Explorer>(&bytes).unwrap();
     restored.run_until_parked();
     assert!(restored.has_text("6f6f6f6f…6f6f"), "{:?}", restored.texts());
     assert!(restored.find("explorer-block-12").is_some());
-    assert!(restored.host().requests::<ChainBlocks>().is_empty());
-    // the latest transactions are the window's: restored with it
+    assert!(restored.host().requests::<ChainFacts>().is_empty());
+    let latest = restored.host().requests::<ChainTxs>();
+    assert!(
+        latest
+            .iter()
+            .all(|range| range.limit as usize <= crate::ui::LATEST),
+        "only the latest rows are read again: {latest:?}"
+    );
     assert!(
         restored.find("explorer-tx-12-0").is_some(),
         "{:?}",

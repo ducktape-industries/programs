@@ -528,6 +528,95 @@ pub struct Head {
     pub time: u64,
     pub id: [u8; 32],
 }
+/// A page of block facts, newest first, below `before` when it is given.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct FactsAsk {
+    pub before: Option<u64>,
+    pub limit: u32,
+}
+/// One finalized block without its transactions: `txs` counts them.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct Facts {
+    pub height: u64,
+    pub id: [u8; 32],
+    pub parent: [u8; 32],
+    pub time: u64,
+    pub epoch: u64,
+    pub proposer: Option<Vec<u8>>,
+    pub txs: u32,
+}
+/// The facts a `FactsAsk` reaches, and the lowest height the node lists.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct FactsPage {
+    pub blocks: Vec<Facts>,
+    pub listed_from: Option<u64>,
+}
+/// A transaction's place on the chain: its block's height and its position in that block.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct TxPlace {
+    pub height: u64,
+    pub position: u32,
+}
+/// The transactions older than `before` down to block `oldest`, newest first, sent to `target` when it is given.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct TxRange {
+    pub before: Option<TxPlace>,
+    pub oldest: u64,
+    pub target: Option<String>,
+    pub limit: u32,
+}
+/// A transaction as a list shows it: no payload, and of its receipt only whether it applied.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct TxSummary {
+    pub height: u64,
+    pub position: u32,
+    pub time: u64,
+    pub hash: [u8; 32],
+    pub signer: Vec<u8>,
+    pub anchor: Tip,
+    pub target: String,
+    pub size: u32,
+    pub applied: Option<bool>,
+}
+/// The rows a `TxRange` page answers, and the `before` that reads on while the range holds more.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct TxPage {
+    pub txs: Vec<TxSummary>,
+    pub next: Option<TxPlace>,
+}
 // ---------- the host ----------
 
 /// The session facts every view is handed: the connection, the
@@ -1397,6 +1486,8 @@ methods! {
     NotifyNeeds, "notify.needs", Needs, ();
     HostDebug, "host.debug", (), bool;
     KeySign, "key.sign", Signing, Vec<u8>;
+    ChainFacts, "chain.facts", FactsAsk, FactsPage;
+    ChainTxs, "chain.txs", TxRange, TxPage;
 }
 
 // The `<capability>` half of every kind in [`ALL`]: what a view's manifest

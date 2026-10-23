@@ -6,6 +6,8 @@
 //! through the model's actions (`go`, `copy`, `read_all`).
 //!
 //! The Expo line numbers below are mobile dev 266633c.
+use std::ops::Range;
+
 use view::design::{Face, mono, space};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
@@ -13,7 +15,7 @@ use view::{Div, FontWeight, Stateful};
 use crate::chain::{Line, lines};
 use crate::decode::{ago, clip, date, grouped, short, sized};
 use crate::words;
-use crate::{BlockRow, Cx, Explorer, Note, Route, TxRow};
+use crate::{BlockRow, Cx, Explorer, Note, Route, TxList, TxRow};
 
 use super::{Look, back};
 
@@ -586,13 +588,53 @@ pub(super) enum Who {
     Block,
 }
 
+pub(super) fn tx_window(
+    id: &'static str,
+    of: TxList,
+    count: usize,
+    who: Who,
+    cx: Cx,
+    k: &Look,
+) -> AnyElement {
+    let look = *k;
+    let rows = uniform_list(
+        SharedString::from(format!("{id}-rows")),
+        count,
+        cx.processor(move |view: &mut Explorer, range: Range<usize>, _, cx| {
+            view.want(of.clone(), range.clone(), cx);
+            range
+                .map(|index| match view.shown_at(&of, index) {
+                    Some(tx) => tx_line(view, tx, who, cx, &look),
+                    None => reading_line(index, &look),
+                })
+                .collect::<Vec<_>>()
+        }),
+    )
+    .flex_1()
+    .min_h_0();
+    div()
+        .id(id)
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .child(rows)
+        .into_any_element()
+}
+
+fn reading_line(index: usize, k: &Look) -> Stateful<Div> {
+    list_row(
+        SharedString::from(format!("explorer-tx-reading-{index}")),
+        k,
+    )
+    .text_color(k.theme.faint)
+    .child(words::READING_TX)
+}
+
 pub(super) fn tx_line(view: &Explorer, tx: &TxRow, who: Who, cx: Cx, k: &Look) -> Stateful<Div> {
     view.describe(tx, cx);
     let (height, position) = (tx.height, tx.index);
-    let applied = tx
-        .receipt
-        .as_ref()
-        .map(|run| matches!(run.outcome, Outcome::Applied { .. }));
+    let applied = tx.applied;
     let label = match applied {
         Some(applied) => activity::view::label(&tx.target, applied, &grouped(height), position),
         None => format!("{}, block {} · {position}", tx.target, grouped(height)),
