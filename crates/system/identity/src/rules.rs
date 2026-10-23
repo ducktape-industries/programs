@@ -479,6 +479,7 @@ pub(crate) fn remove_key(ctx: &ExecCtx, number: AccountNumber, key: &Vec<u8>) ->
 
 fn editable(ctx: &ExecCtx, number: AccountNumber) -> Result<Account, Error> {
     let account = account(ctx, number)?;
+    stewarded(ctx, &account)?;
     let revoked_for_good = matches!(
         account.control,
         Control::Program {
@@ -523,19 +524,39 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
     let Some(account) = ACCOUNTS.get(ctx, &number)? else {
         return Ok(Resource::default());
     };
-    let itself = Ownership::Listed(vec![Party::Account(number)]);
-    let (owner, default) = match account.control {
-        Control::User { .. } | Control::System { .. } => (Party::Account(number), Ownership::Owner),
-        Control::Program { manager, .. } if manager == number => {
-            let validators = ctx.env().role(abi::role::VALIDATORS)?.clone();
-            (Party::Program(validators), itself)
-        }
-        Control::Program { manager, .. } => (Party::Account(manager), itself),
-    };
+    let (owner, default) = stewards(ctx, &account)?;
     Ok(Resource {
         owner: Some(owner),
         default: Some(default),
     })
+}
+
+fn stewards(ctx: &QueryCtx, account: &Account) -> Result<(Party, Ownership), Error> {
+    let number = account.number;
+    let itself = Ownership::Listed(vec![Party::Account(number)]);
+    Ok(match &account.control {
+        Control::User { .. } | Control::System { .. } => (Party::Account(number), Ownership::Owner),
+        Control::Program { manager, .. } if *manager == number => {
+            let validators = ctx.env().role(abi::role::VALIDATORS)?.clone();
+            (Party::Program(validators), itself)
+        }
+        Control::Program { manager, .. } => (Party::Account(*manager), itself),
+    })
+}
+
+fn stewarded(ctx: &QueryCtx, account: &Account) -> Result<(), Error> {
+    if ctx.env().kernel().is_ok() {
+        return Ok(());
+    }
+    let (owner, default) = stewards(ctx, account)?;
+    let actor = ctx.env().actor();
+    if default.allows(Some(&owner), &actor) {
+        return Ok(());
+    }
+    Err(unauthorized(format!(
+        "account {} is changed by {owner:?} or whom {default:?} names, not by {actor:?}",
+        account.number
+    )))
 }
 
 pub(crate) fn set_name(ctx: &ExecCtx, number: AccountNumber, name: String) -> Result<(), Error> {
@@ -567,6 +588,7 @@ fn relive(
 ) -> Result<(), Error> {
     let mut account = account(ctx, number)?;
     governed(ctx, &account)?;
+    stewarded(ctx, &account)?;
     let Control::Program { life, .. } = &mut account.control else {
         return Err(not_managed(number));
     };
@@ -612,6 +634,7 @@ pub(crate) fn set_script(
     script: Option<Script>,
 ) -> Result<(), Error> {
     let mut account = account(ctx, number)?;
+    stewarded(ctx, &account)?;
     let Control::Program {
         life,
         script: current,

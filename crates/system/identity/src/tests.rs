@@ -673,7 +673,59 @@ fn an_agent_is_suspended_resumed_or_revoked_and_its_manager_owns_it() {
     let alice = refused(&store, &signed(&store, ALICE), Op::Suspend { account: 1 });
     assert_eq!(alice.code, code::WRONG_STATE);
     let bob = refused(&store, &signed(&store, BOB), Op::Suspend { account: 1 });
-    assert_eq!(bob.code, code::WRONG_STATE);
+    assert_eq!(bob.code, code::UNAUTHORIZED);
+}
+
+#[test]
+fn a_stranger_changes_no_account_it_neither_is_nor_manages() {
+    let store = memory();
+    create(&store, ALICE, "Alice");
+    create(&store, BOB, "Bob");
+    let agent = create_agent(&store, ALICE, "Scout");
+    add_agent_key(&store, ALICE, agent, BOT).unwrap();
+    let rename = |account: u64| Op::SetName {
+        account,
+        name: "Mallory".into(),
+    };
+    let bio = |account: u64| Op::SetProfile {
+        account,
+        avatar: None,
+        bio: Some("taken".into()),
+    };
+    let ops = [
+        rename(1),
+        bio(1),
+        rename(agent),
+        bio(agent),
+        Op::SetOwnership {
+            account: agent,
+            ownership: Ownership::Owner,
+        },
+        Op::SetScript {
+            account: agent,
+            script: None,
+        },
+        Op::Suspend { account: agent },
+        Op::Resume { account: agent },
+        Op::Revoke { account: agent },
+    ];
+    for op in ops {
+        let why = format!("{op:?}");
+        let refused = refused(&store, &signed(&store, BOB), op);
+        assert_eq!(refused.code, code::UNAUTHORIZED, "{why}");
+    }
+    let its_manager = refused(&store, &signed(&store, BOT), rename(1));
+    assert_eq!(its_manager.code, code::UNAUTHORIZED);
+    assert_eq!(get(&store, 1).card.name, "Alice");
+    assert_eq!(get(&store, agent).card.name, "Scout");
+    assert_eq!(signed(&store, BOT).sender, Some(Principal::Account(agent)));
+    run(
+        &store,
+        &signed(&store, ALICE),
+        Op::Revoke { account: agent },
+    )
+    .unwrap();
+    assert_eq!(design::note(&get(&store, agent).kind()), Some("revoked"));
 }
 
 #[test]
@@ -709,8 +761,10 @@ fn the_system_registers_a_program_which_alone_names_its_account() {
         },
     );
     assert_eq!(remove.code, code::WRONG_STATE);
-    let suspend = refused(&store, &signed(&store, ALICE), Op::Suspend { account: 2 });
+    let suspend = refused(&store, &forge, Op::Suspend { account: 2 });
     assert_eq!(suspend.code, code::WRONG_STATE);
+    let stranger = refused(&store, &signed(&store, ALICE), Op::Suspend { account: 2 });
+    assert_eq!(stranger.code, code::UNAUTHORIZED);
 }
 
 #[test]
@@ -986,8 +1040,11 @@ fn only_a_program_account_answers_and_not_once_revoked() {
         account,
         ownership: Ownership::Owner,
     };
-    for account in [alice, forge] {
-        let why = refused(&store, &signed(&store, ALICE), narrow(account));
+    for (account, by) in [
+        (alice, signed(&store, ALICE)),
+        (forge, from_program(&store, "forge")),
+    ] {
+        let why = refused(&store, &by, narrow(account));
         assert_eq!(why.code, code::WRONG_STATE, "{account}");
         assert_eq!(answers(&store, account), None);
         let asked = hears(&store, account, alice).unwrap_err();

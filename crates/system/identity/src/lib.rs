@@ -190,7 +190,7 @@ pub enum Op {
         account: AccountNumber,
         key: Vec<u8>,
     },
-    #[tool_op(description = "Rename an account. Whoever may write its key in the access program: a user or a system account itself, a program account's manager, and whom they list; not a revoked account.", example = examples::set_name)]
+    #[tool_op(description = "Rename an account: a user or a system account itself, a program account's manager or the account itself; not a revoked account.", example = examples::set_name)]
     SetName {
         account: AccountNumber,
         name: String,
@@ -203,20 +203,20 @@ pub enum Op {
     },
     /// A program account stops acting; its keys stay for `Resume`. Its
     /// manager's.
-    #[tool_op(description = "Stop a program account acting; its keys stay for Resume. Its manager, or whom the manager lists. For an account that manages itself, only the validators' vote.", example = examples::suspend)]
+    #[tool_op(description = "Stop a program account acting; its keys stay for Resume. Its manager or the account itself. For an account that manages itself, only the validators' vote.", example = examples::suspend)]
     Suspend { account: AccountNumber },
-    #[tool_op(description = "Let a suspended program account act again. Its manager, or whom the manager lists. For an account that manages itself, only the validators' vote.", example = examples::resume)]
+    #[tool_op(description = "Let a suspended program account act again. Its manager or the account itself. For an account that manages itself, only the validators' vote.", example = examples::resume)]
     Resume { account: AccountNumber },
     /// A program account stops for good: its keys are dropped. Its
     /// manager's.
-    #[tool_op(description = "Stop a program account for good: its keys are dropped. Its manager, or whom the manager lists. For an account that manages itself, only the validators' vote.", example = examples::revoke)]
+    #[tool_op(description = "Stop a program account for good: its keys are dropped. Its manager or the account itself. For an account that manages itself, only the validators' vote.", example = examples::revoke)]
     Revoke { account: AccountNumber },
-    #[tool_op(description = "Set whom a program account answers: Anyone (the default), Owner (its manager only) or Listed (its manager and these accounts or programs). Whoever may write the account's key, not once revoked.", example = examples::set_ownership)]
+    #[tool_op(description = "Set whom a program account answers: Anyone (the default), Owner (its manager only) or Listed (its manager and these accounts or programs). Its manager or the account itself, not once revoked.", example = examples::set_ownership)]
     SetOwnership {
         account: AccountNumber,
         ownership: Ownership,
     },
-    #[tool_op(description = "Name the program that runs a program account's actions (calls) and the config it reads (harness: the agent's config file in files), or null to take it back. Whoever may write the account's key, not once revoked.", example = examples::set_script)]
+    #[tool_op(description = "Name the program that runs a program account's actions (calls) and the config it reads (harness: the agent's config file in files), or null to take it back. Its manager or the account itself, not once revoked.", example = examples::set_script)]
     SetScript {
         account: AccountNumber,
         script: Option<Script>,
