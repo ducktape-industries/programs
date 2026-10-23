@@ -15,17 +15,23 @@ pub const PROVIDER: &str = "openai";
 pub const INSTRUCTIONS: &str = "The developer message that opens this conversation, when there is one, carries your instructions.";
 pub const RESPONSES: &str = "/backend-api/codex/responses";
 const RETRY_AFTER: &str = "retry-after";
+const SESSION_HEADERS: [&str; 3] = ["session-id", "thread-id", "x-client-request-id"];
 
-pub fn headers() -> Vec<(String, String)> {
-    let headers = [
+pub fn headers(request: &Request) -> Vec<(String, String)> {
+    let fixed = [
         ("content-type", "application/json"),
         ("accept", "text/event-stream"),
         ("openai-beta", "responses=experimental"),
     ];
-    headers
+    let fixed = fixed
         .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()));
+    let session = request.cache_key.iter().flat_map(|key| {
+        SESSION_HEADERS
+            .iter()
+            .map(move |name| ((*name).to_owned(), key.clone()))
+    });
+    fixed.chain(session).collect()
 }
 
 fn effort(thinking: Thinking) -> &'static str {

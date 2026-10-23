@@ -1,6 +1,6 @@
 //! The Codex adapter against streams in the shape of OpenAI's documented Responses events (no live
 //! Codex stream is recorded yet): text, a function call, reasoning summaries, usage with a cached
-//! share, a refusal, an incomplete reply, a failure, a stream cut short, and a request under the surface's rules.
+//! share, a refusal, an incomplete reply, a failure, a stream cut short, and a request and its headers under the surface's rules.
 use model_wire::budget::{Budget, Window};
 use model_wire::codex::{self, Fold};
 use model_wire::{
@@ -300,6 +300,37 @@ fn a_request_goes_out_under_the_codex_surfaces_rules() {
         "another provider's reasoning never goes out, as words or sealed"
     );
     assert_eq!(input[3]["output"], "read");
+}
+
+#[test]
+fn a_keyed_request_names_its_key_in_each_header_the_codex_cli_sends_for_its_session() {
+    let keyed = Request {
+        model: MODEL.into(),
+        cache_key: Some("979".into()),
+        ..Request::default()
+    };
+    let unkeyed = Request {
+        model: MODEL.into(),
+        ..Request::default()
+    };
+    let named = |headers: Vec<(String, String)>, name: &str| -> Option<String> {
+        headers
+            .into_iter()
+            .find(|(header, _)| header == name)
+            .map(|(_, value)| value)
+    };
+    for name in ["session-id", "thread-id", "x-client-request-id"] {
+        assert_eq!(
+            named(codex::headers(&keyed), name).as_deref(),
+            Some("979"),
+            "{name}"
+        );
+        assert_eq!(named(codex::headers(&unkeyed), name), None, "{name}");
+    }
+    assert_eq!(
+        named(codex::headers(&keyed), "openai-beta").as_deref(),
+        Some("responses=experimental")
+    );
 }
 
 #[test]
