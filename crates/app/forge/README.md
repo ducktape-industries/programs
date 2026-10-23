@@ -598,3 +598,24 @@ version proves atomic record+queue and next-block delivery, including restart.
 
 See [the fixture manifest](fixtures/FIXTURES.md) for the program's real
 response bytes and the regeneration command.
+
+## Repository overview
+
+the git server as a program, the same shape as `chat`: a push is one op carrying git's
+ref commands and naming its pack, a held blob, a merge is an op that lands the commit
+the client built, fetch and the ref advertisement are queries; a git object's blob id is
+its oid. It links `gitcore` for git operations. `Merge` lands a client-built commit;
+`SquashMerge`, `Rebase` and `Preview` build their merges in forge. The program runs
+natively over `MemorySandbox` (forge and chat seated on a `MockChain`), which is where
+`fixtures/` comes from; `forge-view` links `forge` with `program` off. A program that
+sends `Watch { deliver }` hears every ref forge moves (push, merge, squash), every
+change it opens, every Preview it makes and every `Dispatch { repo, event_type, payload,
+at }` a writer sends (held to the gate a push answers to, heard as `Watched::Dispatched`
+at the commit `at` resolves to: a branch's head or a full commit id forge holds), each
+as `deliver ++ borsh(Watched)`; its refusal never fails forge's write. A branch with
+required checks (`RequireChecks`) moves only by a merge of a change whose latest Preview
+(`Preview`, the squash the merge would land on the target's head) its reporter's
+`Status`es mark Passed; a change in its merge queue (`Enqueue`) lands in the op that
+turns its Preview green, as the very commit the checks ran on. `forge-view` says who can
+edit a repository (its Settings) and a change (its details) through `policy-view`'s
+item, and what it offers follows their policies

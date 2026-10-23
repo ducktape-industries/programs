@@ -32,3 +32,8 @@ test holds it over `variants`: the variant names in tag order, read from the
 enum's borsh schema (the tags and names schema-diff reads), a tag no variant
 holds written `-`, up to the last tag. An op the module cannot read, a retired
 tag among them, is `None`, and the reader falls back to its bytes.
+
+## Repository overview
+
+what an op means to a person: the pure wasm module a program ships in its
+`ducktape.describe` section, and the sandbox that runs it

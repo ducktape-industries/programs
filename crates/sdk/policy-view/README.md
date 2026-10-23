@@ -55,3 +55,12 @@ with `program` off, and `view`; its writes are the item sheets' `Relink` and `Tr
   nothing once it's unbound. `link::list`/`link::writers` convert between
   access's lists and ownership's writers. files-view, forge-view and
   harness-view narrow who writes through it.
+
+## Repository overview
+
+what a view shows of the ownership role's policies, once for every view: each kind of
+owned item and what a person calls it (held to the kinds the programs' owned tables
+claim by a test), a policy, a party and a default's scope in words, and one owner's
+policies, open policy and defaults read whole (`holdings`), with `items` counting the
+items on one policy, and `item`: "Who can edit" on one item (its row, and for its owner
+the Relink and Transfer sheets), generic over the view

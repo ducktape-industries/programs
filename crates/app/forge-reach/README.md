@@ -46,3 +46,16 @@ Known limit: forge's `RequireChecks` names one reporter per branch, so a branch 
 ## Cost
 
 Each result on a Preview costs, per reached path, one forge `Tree` read of the path's parent folder at the reported commit and one at the Preview (a page at a time, at forge's founded page size), or one read of the root for `""`. A result reported for the Preview's own commit, or of the patch at the Preview's head, compares nothing. A result taken from an earlier head whose reach holds also costs one forge `Compare` and its `DiffStat` pages, and the Preview's own `DiffStat` pages once per Verdict, and, at each of a patch's two sides, one `Tree` listing (a page at a time) of each folder holding a path that patch changes, however many of its files the patch changes. A Preview with a result gone stale also reads the change (forge `Change`, whose room a first ask posts its notice to), the repository's required checks a page at a time (forge `Required`) and forge-reach's own account (identity `OfProgram`). A merge reads the same for the merged change, and forge `Change` once for each other open change whose kept results all passed.
+
+## Repository overview
+
+A check's result carried to a change's Preview when nothing it read changed, as a GitHub
+Checks app reports on a pull request; forge knows nothing of it. A reporter (a lane, a
+CI runner) sends `Report` with the commit, its context, state and url, and its reach:
+the paths its check read (`""` is the whole tree). On each forge Preview (forge's
+`Watch` event, or a `Report` naming the change) it compares every reached path between
+the reported commit and the Preview through forge's `Tree` reads, and sends forge
+`Status` as its own account in `<reporter>/<context>`: the reported state when all are
+the same, `Pending` with a link to `Verdict { repo, n }` (the paths that differ) when
+one is not. A branch requires it by naming its account as `RequireChecks`' reporter;
+deployed per network, never founded. README: its contract

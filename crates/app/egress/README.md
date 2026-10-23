@@ -27,3 +27,37 @@ an agent's tool call), else the sending program's own, or `None` when the frame
 acted as no account. Its row goes when the request closes. A service the request
 reaches reads it to know who asked, unforgeably, by the `ducktape-request` number
 the node puts on the call.
+
+## Repository overview
+
+a program's call to something outside the chain, bound to the egress role
+(`abi::role::egress`, whose `Op` and leading queries it speaks). A `Request` names a
+service: `Relay` carries a note and is answered with nothing, a later block's call back;
+`Http` names a service, an `http::Head` (a method, a target, headers) and the body as
+blob parts. For the reserved `http` service the target is a full `http://` or `https://`
+URL on the public internet; any other service is registered (`Register`) by an account,
+which owns the name and assigns the node keys that may serve it (`Assign`), and its
+target is a path under the base the serving node's operator gives it. A member node's
+key says which services it serves (`Serve`). A program calls egress with a request and
+awaits it; egress checks the head (the framing headers and every `ducktape-` header are
+the node's to set) and that its parts are on the network, then elects in turn among the
+member nodes serving that service, and for a registered service only those its owner
+assigned; that node alone answers (`Answer`), in a later block than the request, and its
+answer, or its reported failure as a refusal, resolves the program's call. An `Http`
+request's call answers an encoded `http::Response`. One that asks for its reply as
+events (`Delivery::Events { deliver }`) hears each event of a `text/event-stream` reply
+(`Event`) as its own op, `deliver` followed by the encoded event, and its call answers
+the stream's end (`EndStream`): `Complete` as the `http::Response` with its status and
+headers and an empty body, a cut as a refusal; each event moves its expiry `wait` blocks
+on, and any other reply comes whole. An event's `seq` counts from 0 per call the node
+makes: a repeated `seq` is a repeat, and a `seq` back at 0 is the node calling the
+service again (it restarted), which voids what came before; egress passes `seq` through
+unchecked, for the requester to act on. A relay is answered whole, and asking one with
+`Delivery::Events` is refused. A request waits `wait` blocks, `DEFAULT_WAIT` (64) when
+the caller names none: egress schedules its own `Expire` for that height through the
+scheduler role as it records the request (a network with no scheduler role refuses every
+request), cancels it when the answer comes, and an `Expire` from that scheduled run
+alone drops the request and answers the call with a refusal that says it expired; a
+later answer is refused. The node itself does the answering: ducktape's `noded` reads
+this program after each block, calls what it was elected for with the services its
+`egress.toml` names, and signs `Answer` and `Serve` with its key

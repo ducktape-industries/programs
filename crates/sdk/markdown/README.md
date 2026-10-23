@@ -32,3 +32,14 @@ its `parse` feature, pulldown-cmark. It reads nothing from a network and writes 
   opens one in a paragraph.
 - Element ids: a document named `name` keys block `i` as `name-i`; a heading's box is `-h`, a
   table `-table` (cell `-r-c`), a code block `-code` (line `-n`), a list item `-li`.
+
+## Repository overview
+
+markdown as a document every view draws the same way: the block model (`Block`, `Text`
+and its `Marks`), `parse` (pulldown-cmark, behind the `parse` feature a view that keeps
+its own blocks leaves off), the `highlight`er (a small scanner per language family), and
+both designs' drawing (`desktop`, `phone`: a document, one block, a code panel, a
+table), links pressed through the caller's `OnLink`. forge-view's documents and
+chat-view's code blocks, tables and headings draw through it;
+[docs/sdk.md](../../../docs/sdk.md) says what else the SDK and the views already
+provide; see its [README](README.md)

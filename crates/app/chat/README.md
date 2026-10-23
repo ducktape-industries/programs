@@ -340,3 +340,55 @@ A direct room between two people can be sealed, so what they write is ciphertext
 **Reading.** Every existing read shows a sealed post as one paragraph, `chat::SEALED` ("🔒 Sealed message"), so an older reader sees that line. `Sealed { channel_id, seqs }` answers each post's author, message id, epoch, nonce and ciphertext, `Wraps { channel_id, devices }` those devices' wraps, and `Sealing { channel_ids }` each sealed room's current epoch. `TextSearch` and `TagSearch` leave sealed rooms out, history from before the seal included. Deleting a sealed post drops its ciphertext.
 
 What came before `Seal` stays plaintext in every block anyone kept.
+
+## Repository overview
+
+the reference app program: `chat` is one crate whose types, rules and `Chat` program are
+always built (native, tested over `MockHost`), and whose wasm exports sit behind its
+`program` feature. `chat-view` links `chat` with the feature off: the types, no host
+import, no program export. A mention is a span marked `Mark::Mention`: picking an
+account in the composer writes `<@n>`, and chat itself, as a message is posted or
+edited, turns a typed `@name` into the same span when exactly one account holds that
+name (the identity role's profiles, compared after NFC and lowercasing). A typed name is
+an `@` at the start of a word (not after a letter, a digit, `-`, `_`, `.` or `@`)
+followed by letters, digits, `-`, `_` and `.`, less any trailing `.`, so `@chief,` and
+`@chief.` name `chief`; it is read in paragraph and quote text, never in code or a link.
+A name that no account or several hold stays text, and a name with any other character
+(a space) is picked, not typed. Chat tells attribution (`chat::attributed`) each
+message's mentions, a direct message's counterpart (`DIRECT`), and for a thread reply
+each account that took part in the thread before it (`THREAD`): the root's author and
+every account whose first reply there came earlier. chat-view also draws widgets: TOML
+files in files that a channel's meta names (`widget.header`, `widget.pinned`,
+`widget.side`), each one program's query read by that program's schema and drawn as a
+list, columns, a table, a stat or a checklist ([widgets.md](../../../docs/widgets.md)).
+A channel's `rules` meta says how to talk in the room: the text, or a files path whose
+file holds it, which people and agents read alike through `Query::Channel` and nothing
+enforces; chat-view shows them in the room's details, where they are set and cleared,
+and says "This room has rules" over the composer ([chat's README](README.md)). Someone
+answering in a room before they post keeps a draft there (`Drafting`, `Undraft`,
+`Query::Drafts`), which tells nobody, which their post in the room takes down, and which
+chat-view draws at the foot of the list it answers in ("tech is answering…" and what
+they are doing, muted, over their text so far, drawn as their post will be) ([chat's
+README](README.md), "Drafts"). An account about to answer in a place (a channel's foot
+or one thread) takes it with `Take`, granted while no one else holds it or drafts there;
+its post there, `Release`, `Break` by whoever may rename the channel, or an archive or
+unseat that takes its posting there ends it, each end told, a hold never refuses a post,
+`Query::Busy` names whoever else is there, and a program that sends `WatchPlaces {
+deliver }` hears each hold or draft that ends as `deliver ++ borsh(PlaceEvent::Cleared)`
+([chat's README](README.md), "Holding a place"). A module's status line is a notice
+(`Notify`, open to whoever may post in the room): a message of one `Block::Notice`
+(kind, group, subject, link, status, detail, concerns), never edited and refused as a
+block of any other message; chat tells attribution of it only the accounts it concerns
+(`NOTICE`) and a wait watching the room, never its listeners, `Unread` counts it only
+for those it concerns, and chat-view draws it as one quiet line ([chat's
+README](README.md), "Notices"). A user of a linked network (`Principal::Foreign`) posts,
+is seated, owns their messages and is mentioned as an account is; a typed `@18@network`
+or `@name@network` resolves through crosspond, and chat-view and harness name them
+`name@network` (`Query::Foreigners`). A channel linked to its peer on another network
+(`Link`, by whoever may rename it, never a direct room, only to a link crosspond holds
+open) sends every post, notice, edit, delete and reaction an account of this network
+makes there to the peer through crosspond's `SendFor`, as `FromPeer`, which chat takes
+only from a user of the network the channel is linked to (`Principal::Foreign`, as
+crosspond runs a delivered packet) and runs as that author under the room's rules; what
+arrives from another network is never sent on. `Peer` and `Foreigners` answer anyone
+([chat's README](README.md), "Users of other networks", "Linked channels")

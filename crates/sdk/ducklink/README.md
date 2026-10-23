@@ -38,3 +38,8 @@ anything: `A` and `a` in a tail segment are two names.
   program, which can't name its chain (`@o/forge/programs/213`).
 - `tail(path)`, `number(segment)`: a tail read alone, and a segment's one spelling of a number.
 - `bare_end(run)`: the length of a link typed in prose, less the sentence's punctuation.
+
+## Repository overview
+
+the `duck://` link: `duck://<chain>/<program>/<tail…>`, one spelling per name, no
+program names known here

@@ -134,3 +134,10 @@ takes the next id; a lane the genesis pins is never paused or closed (both
 refused `invalid_input`), while a `Set` that keeps it served moves its cap;
 `Open` lists a lane unpinned. The fixture is only the host: the role leaves
 nothing to the program's own ops.
+
+## Repository overview
+
+proof that a program fills a role the kernel calls (`programs`, `validators`,
+`identity`, `awaits`, `halo`, `scheduler`), native over `MockHost`: a program takes it
+as a dev-dependency, implements the role's `Fixture` and calls its `run` in a test; see
+its [README](README.md)

@@ -38,3 +38,16 @@ Every op: any account (`sender_account`), written in that account's namespace.
 ## Cost
 
 A `Pin` or `Resolve` reads one pool row per listed service, the pin, and one episode row per candidate it passes. `Pool` scans the episodes of that one gateway when the pool changed; `Forget` scans that conversation's pins.
+
+## Repository overview
+
+which gateway account each conversation calls a model provider on, so every conversation
+of a caller learns at once what one of them met: a caller records each gateway's pool
+(`Pool`: the account labels an egress service reaches for a provider, in the gateway's
+order) and each account a quota 429 made full (`Full`, until the provider's reset or
+`Unknown`, ended early by `Available`); `Pin { conversation, provider, services }`
+answers the account to call on, kept while it is in its pool and not full and moved only
+when it goes full or leaves its pool, `Discover(service)` for a pool never recorded and
+`Wait(reset)` when no account has room. Every row lives in the namespace of the account
+that wrote it; nothing is written unless it changes. Deployed per network, never
+founded. README: its contract

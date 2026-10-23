@@ -64,3 +64,15 @@ Answered for anyone: `Wake { id }` (the row, `null` for a cancelled or unknown w
 
 ## Interface
 `Op`, `Query`, `Reply` and `WaitFor` grow only at their end (`op_variants_only_append`, `wait_for_variants_only_append`).
+
+## Repository overview
+
+wakes an account once on one event, for an agent, a bridge or any client alike: a
+block's height, a pod's end, a forge ref or change (moving, or settling merged or
+closed), a files path, or a program's next scheduled code change (`WakeOn`, `Cancel`).
+It hears each from the program that has it (the scheduler role, the pods service through
+egress, forge's and files' watchers, the programs role) and tells the account through
+attribution, as a `Result` on its object `wake/<id>`, so a follower of attribution's
+`to/<account>` rows hears it and `ChangesTo` reads it back; a chat message is refused,
+since attribution already tells it. Every network founds it, since harness arms its
+agents' waits as wakes ([wake's README](README.md))

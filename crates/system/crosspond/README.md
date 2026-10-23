@@ -66,3 +66,18 @@ Packets name networks by the digest of their genesis block. At founding, init wi
 
 ## Builds
 The rules and the light client build only with the `program` feature, which the program's own build turns on. Without it the crate is crosspond's contract: its `Program` impl with its types and its queries. A view links that and nothing of the light client's commonware crates. A test that runs crosspond's ops on a mock chain turns `program` on in its dev-dependency.
+
+## Repository overview
+
+the crosspond role: links to other ducktape networks. The validators' vote opens a link
+with the other network's validator set, closes it, opens a closed one again from fresh
+trust with its sequence numbers kept, and opens a port (a role here whose program takes
+the other network's packets). An account's `Send` commits a packet as crosspond's state,
+and crosspond's own scheduled `Pump` asks egress to relay it and takes back the acks the
+other network proves: its settled rows, each under that network's crosspond root and
+naming the very packet owed. Anyone submits the other network's `Header` and
+`DeliverProven`: a light client checks the header's certificate, block, settled roots
+and validator set, proves each packet under the header's crosspond root, and runs it on
+the port's program as `Principal::Foreign`; a proven low-water mark of the other
+network's acks prunes the receipts below it. Who may call each op is in its
+[README](README.md)
