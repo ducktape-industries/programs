@@ -45,6 +45,11 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
     }
 }
 
+pub(crate) fn retell(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+    heard_preview(ctx, repo, n)?;
+    tell(ctx, repo, n)
+}
+
 fn heard_preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     forget_preview(ctx, repo, n)?;
     let Some(preview) = latest_preview(ctx, repo, n)? else {

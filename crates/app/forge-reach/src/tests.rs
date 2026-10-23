@@ -1454,3 +1454,168 @@ fn a_train_that_forms_inside_a_landing_takes_every_member_whatever_its_length() 
         assert!(reviewed, "forge-reach heard member {n}'s Preview");
     }
 }
+
+fn hearing(world: &World, deliver: Vec<u8>) {
+    let watch = forge::Op::Watch { deliver };
+    let from_reach = Origin::Program(PROGRAM.into());
+    world
+        .chain
+        .submit(from_reach, forge::PROGRAM, &watch)
+        .unwrap();
+}
+
+fn enqueued(world: &World, n: u64, head: Oid) {
+    let enqueue = forge::Op::Enqueue {
+        repo: REPO.into(),
+        n,
+        expected_head: head.to_hex(),
+    };
+    world.forge(&enqueue).unwrap();
+}
+
+fn state_of(world: &World, n: u64) -> forge::ChangeState {
+    let asked = forge::Query::Change {
+        repo: REPO.into(),
+        n,
+        page: PageRequest::first(1),
+    };
+    let reply = world.chain.query(forge::PROGRAM, &asked).unwrap();
+    let forge::Reply::Change { change, .. } = reply else {
+        panic!("a change answers Change: {reply:?}");
+    };
+    change.state
+}
+
+fn queued_beside(world: &mut World) -> (Oid, Oid) {
+    let base = world.commit(&[], BASE);
+    let feature = world.commit(&[base], LOCKED_FEATURE);
+    let other = world.commit(&[base], OTHER);
+    world.push(None, base, "main");
+    world.push(None, feature, "feature");
+    world.push(None, other, "other");
+    world.open();
+    world.open_from("other");
+    world.require();
+    let feature_reach = &["a", "Cargo.lock"];
+    world
+        .say(REVIEWER, feature, REVIEW, CheckState::Passed, feature_reach)
+        .unwrap();
+    world
+        .say(LANE, feature, CONTEXT, CheckState::Passed, feature_reach)
+        .unwrap();
+    world
+        .say(REVIEWER, other, REVIEW, CheckState::Passed, &["b"])
+        .unwrap();
+    world
+        .say(LANE, other, CONTEXT, CheckState::Passed, &["b"])
+        .unwrap();
+    (feature, other)
+}
+
+const CASCADE: usize = 8;
+
+fn cascade_files(changed: Option<usize>) -> Vec<(String, String)> {
+    (0..CASCADE)
+        .map(|i| {
+            let text = if changed == Some(i) {
+                format!("{i}")
+            } else {
+                "0".into()
+            };
+            (format!("f{i}"), text)
+        })
+        .collect()
+}
+
+fn committed(world: &mut World, parents: &[Oid], files: &[(String, String)]) -> Oid {
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(path, text)| (path.as_str(), text.as_str()))
+        .collect();
+    world.commit(parents, &files)
+}
+
+fn cascaded(world: &mut World) -> Vec<Oid> {
+    let base = committed(world, &[], &cascade_files(None));
+    world.push(None, base, "main");
+    let mut heads = Vec::new();
+    for i in 0..CASCADE {
+        let head = committed(world, &[base], &cascade_files(Some(i)));
+        let branch = format!("c{i}");
+        world.push(None, head, &branch);
+        world.open_from(&branch);
+        heads.push(head);
+    }
+    world.require();
+    for (i, head) in heads.iter().enumerate() {
+        let reach = format!("f{i}");
+        world
+            .say(
+                REVIEWER,
+                *head,
+                REVIEW,
+                CheckState::Passed,
+                &[reach.as_str()],
+            )
+            .unwrap();
+        if i > 0 {
+            world
+                .say(LANE, *head, CONTEXT, CheckState::Passed, &[reach.as_str()])
+                .unwrap();
+        }
+    }
+    for (i, head) in heads.iter().enumerate() {
+        enqueued(world, i as u64 + 1, *head);
+    }
+    heads
+}
+
+#[test]
+fn a_queue_front_whose_preview_the_depth_cap_kept_from_forge_reach_lands_on_a_retell() {
+    let mut world = world();
+    let heads = cascaded(&mut world);
+    world.report(heads[0], &["f0"], Some(1)).unwrap();
+    let front = (1..=CASCADE as u64)
+        .find(|n| state_of(&world, *n) == forge::ChangeState::Open)
+        .expect("the depth cap ends the chain of merges before the queue empties");
+    let merge = world.preview_of(front).expect("the front has a Preview");
+    let merge = Oid::from_hex(Hash::Sha1, &merge).unwrap();
+    assert!(
+        world.statuses(merge).is_empty(),
+        "forge-reach never heard of the front's Preview"
+    );
+    let retell = Op::Retell {
+        repo: REPO.into(),
+        n: front,
+    };
+    let anyone = Origin::Signed(OWNER.to_vec());
+    world.chain.submit(anyone, PROGRAM, &retell).unwrap();
+    assert_eq!(state_of(&world, front), forge::ChangeState::Merged);
+}
+
+#[test]
+fn a_retell_reports_on_a_preview_forge_reach_never_heard_of() {
+    let mut world = world();
+    queued_beside(&mut world);
+    hearing(&world, Vec::new());
+    world.previewed(2);
+    let merge = world.preview_of(2).expect("change 2 has a Preview");
+    let merge = Oid::from_hex(Hash::Sha1, &merge).unwrap();
+    assert!(world.statuses(merge).is_empty());
+    let retell = Op::Retell {
+        repo: REPO.into(),
+        n: 2,
+    };
+    let anyone = Origin::Signed(OWNER.to_vec());
+    world.chain.submit(anyone, PROGRAM, &retell).unwrap();
+    let contexts: BTreeMap<String, CheckState> = world
+        .statuses(merge)
+        .into_iter()
+        .map(|(context, state, _)| (context, state))
+        .collect();
+    let carried = BTreeMap::from([
+        (lane_context(), CheckState::Passed),
+        (review_context(), CheckState::Passed),
+    ]);
+    assert_eq!(contexts, carried);
+}

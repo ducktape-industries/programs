@@ -87,6 +87,8 @@ pub enum Op {
         state: CheckState,
         url: Option<String>,
     },
+    #[tool_op(description = "Read change n's latest Preview from forge and report on it as a Previewed event would, for a Preview whose event never reached forge-reach, such as one a chain of merges in one frame nested past the kernel's depth cap. Anyone may.", example = crate::examples::retell)]
+    Retell { repo: String, n: u64 },
 }
 
 #[derive(
@@ -163,6 +165,7 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Report {context} {} of {repo}#{n}", state.word()),
             vec![field("commit", Value::text(commit))],
         ),
+        Op::Retell { repo, n } => (format!("Retell {repo}#{n}'s Preview"), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -173,6 +176,6 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Watched", "Report", "ReportPatch"]
+        ["Watched", "Report", "ReportPatch", "Retell"]
     );
 }

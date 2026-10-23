@@ -4,7 +4,9 @@ use ::program::schema::Return;
 use ::program::tools::{Described, Tools};
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
 
-use crate::rules::{Patched, Reported, report, report_patch, reports, verdict, wanted, watched};
+use crate::rules::{
+    Patched, Reported, report, report_patch, reports, retell, verdict, wanted, watched,
+};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct ForgeReach;
@@ -73,6 +75,7 @@ impl Program for ForgeReach {
                     url,
                 },
             ),
+            Op::Retell { repo, n } => retell(ctx, &repo, n),
         }
     }
 

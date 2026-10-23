@@ -38,6 +38,13 @@ pub(crate) fn report_patch() -> Op {
     }
 }
 
+pub(crate) fn retell() -> Op {
+    Op::Retell {
+        repo: "programs".into(),
+        n: 12,
+    }
+}
+
 pub(crate) fn reports() -> Query {
     Query::Reports {
         repo: "programs".into(),

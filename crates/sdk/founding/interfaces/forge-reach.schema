@@ -170,6 +170,11 @@
               2,
               "ReportPatch",
               "Op__ReportPatch"
+            ],
+            [
+              3,
+              "Retell",
+              "Op__Retell"
             ]
           ]
         }
@@ -243,6 +248,25 @@
               [
                 "url",
                 "Option<String>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Retell",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "repo",
+                "String"
+              ],
+              [
+                "n",
+                "u64"
               ]
             ]
           }
