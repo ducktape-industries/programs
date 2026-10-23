@@ -15,7 +15,7 @@ pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-pub const PROGRAM: &str = "resources";
+pub const PROGRAM: &str = "ducktape-industries/resources";
 
 #[derive(
     Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshSerialize, BorshDeserialize, BorshSchema,
