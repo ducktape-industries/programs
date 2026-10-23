@@ -443,6 +443,33 @@ fn new_code_ends_the_turn_a_closed_conversation_lost_to_an_older_switch() {
 }
 
 #[test]
+fn a_closed_conversation_whose_call_was_cut_off_hands_what_it_never_answered_over() {
+    let world = listed_world();
+    let chain = &world.chain;
+    let stuck = world.opened("m1", "remember the deploy", Some(WINDOW));
+    let close = Op::Close { thread: stuck };
+    chain.submit(signed(ADA), PROGRAM, &close).unwrap();
+    chain.cancel_parked(PROGRAM);
+    updated(chain, 9);
+    let fresh = world.mention("m2", "a fresh start");
+    chain.at(11, 0);
+    let told: Vec<String> = frames(chain, fresh)
+        .into_iter()
+        .chain(held(chain, fresh))
+        .filter_map(|body| match body {
+            Body::Post { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect();
+    let carried = format!(
+        "Heard in conversation {stuck}, which account {} closed at block",
+        world.ada
+    );
+    let handed = |text: &String| text.contains(&carried) && text.ends_with("remember the deploy");
+    assert!(told.iter().any(handed), "{told:?}");
+}
+
+#[test]
 fn an_acked_exec_an_update_cut_off_arrives_failed_as_new_input_and_is_not_run_again() {
     let world = tooled();
     let chain = &world.chain;
