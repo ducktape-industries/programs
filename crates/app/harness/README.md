@@ -10,15 +10,14 @@ default, and the Anthropic wire sends `off` as thinking disabled and a level as 
 thinking at that effort), and an optional `compact_at` (tokens: once a thread's measured
 context reaches it, harness summarizes the thread before its next turn; at least 1, and
 absent: a thread summarizes only when the next answer would not fit), an optional
-`service` (pins every model call to one of the services the provider's route lists, with
-no move off it; harness reads it and `provider` beside `harness::Config`, as
-`harness::config::Pin`), and whose body is the system prompt (`harness::Config`). A
+`service` (accepted as metadata but ignored for placement; harness reads `provider`
+beside `harness::Config`, as `harness::config::Pin`), and whose body is the system prompt (`harness::Config`). A
 model call sends each paragraph of the system prompt as its own system block, in order,
 then harness's own block, the ducktape resource manual: the agent's account and its
 manager, the conversation, and how writes, tool calls and chat replies work. Harness
 reads the file at the head at each model call, and each turn it records names the files
 snapshot it read; a conversation keeps the `model`, `max_tokens`, `thinking`,
-`compact_at`, `provider` and `service` of the first configuration harness could route
+`compact_at` and `provider` of the first configuration harness could route
 for it (read as it opened, or, for a conversation already open when new harness code
 first runs, as that run reads its agent's), so an edit to those reaches only
 conversations opened after it (that first run also forgets each model window a service
@@ -39,27 +38,26 @@ row of the kind `harness.route` whose ownership policy decides each later `SetRo
 them), with the context window harness learned from the vendor for each model a provider
 serves. A configuration that names no provider (`Configured::Unprovided`, its
 configuration kept so its setup can name one) or a provider with no route asks no model.
-Before each model call harness picks one service and ccs account and sends
-`x-ccs-account` with the call, so ccs neither chooses nor falls over (J-090): each call
-goes first to the conversation's own account, the one its prompt cache was written on
-(`Query::Route { thread }`, every conversation's with `Query::Routes`), and a new
-conversation or one just summarized starts on the first account, in the order of the
-route's services and of the accounts ccs's status names on each (what the `Budget` rows
-say an account has used is shown, and decides no pick). A 429, a 5xx, a broken stream or
-a service egress could not reach is asked again at the next block on the next account
-that call has not tried, until none is left, when the retry waits and tries them all
-again; only that call moves and nothing remembers the refusal, so the conversation's
-next call tries its own account first again, and a window that reset is used at once. A
-call a harness update or a node restart cut off stays where it was. A retry whose
+Before each model call harness chooses an eligible service from the provider route and
+sends an unpinned request; ccs chooses an eligible account within that service. No
+service from front matter or a kept model, and no previous answering account, pins a
+call. A service whose known accounts for the conversation's provider all have unexpired
+rejected or full budget windows is skipped; unread accounts remain eligible and each
+reported reset reopens its capacity. If every served service is rejected, harness's own
+retry waits for the earliest account reset without sending a request; a new input or a
+`Resume` asks once anyway, and an answer on any service of the route, for its provider,
+pulls a waiting conversation in at the next block. A 429, a 5xx, a broken stream or an
+unreachable service moves the call to the next untried eligible service; an exhausted
+route waits for the reported reset, or uses the retry policy when no reset was reported.
+A call a harness update or a node restart cut off stays where it was. A retry whose
 booking the scheduler refused (a frame at the kernel's nesting cap) keeps its row, and
-the next answer on its service books it, or `Op::Sweep`, a standing run every
-`DEFAULT_WAIT` (64) blocks that anyone may start, does. A server tool's
-blocks (a search's or a fetch's use and result, and a cited run) carry content only the
-account that answered them reads, so a call on another account sends them as plain text
-(each page's title and address, a fetched page's text), and a move writes the sealed
-messages again. `Query::Answerers { thread, page }` names the service and account that
-answered each turn and summary and whether the thread moved there, and the turn's
-`usage` says what the move cost in cache writes. `Query::Agent` answers what harness
+the next answer on its route books it, or `Op::Sweep`, a standing run every
+`DEFAULT_WAIT` (64) blocks that anyone may start, does. The conversation keeps its model
+and provider. `Query::Route { thread }` and `Query::Routes` record the last answerer, not
+a placement preference. Account-bound sealed content and server tools go as plain text on
+unpinned calls, while their lanes preserve who wrote them. `Query::Answerers { thread,
+page }` records each turn and summary's service, account and move, and usage records the
+cache-write cost. `Query::Agent` answers what harness
 resolves for an account: its configuration path, the configuration and its provider's
 route, or what is wrong, and its current thread. Harness registers with `attribution` at
 its init, so a mention of the agent, a direct message to it, a chat notice that concerns

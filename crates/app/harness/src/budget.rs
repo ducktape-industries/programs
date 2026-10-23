@@ -243,6 +243,37 @@ fn pooled(ctx: &ExecCtx, service: &str, provider: &str, pool: &[String]) {
     }
 }
 
+pub(crate) fn rejected_until(
+    ctx: &ExecCtx,
+    service: &str,
+    provider: &str,
+) -> Result<Option<u64>, Error> {
+    let service = service.to_owned();
+    let rows = BUDGETS.scan(ctx, BUDGETS.prefix_of(&service))?;
+    let mut resets = Vec::new();
+    for (key, row) in rows {
+        let facts = BUDGET_FACTS.get(ctx, &key)?;
+        if facts.and_then(|facts| facts.provider).as_deref() != Some(provider) {
+            continue;
+        }
+        let reset = row
+            .windows
+            .iter()
+            .filter_map(|window| {
+                let rejected = window.used >= crate::WHOLE_WINDOW
+                    || window.status.as_deref() == Some("rejected");
+                let pending = ctx.env().time < window.reset.saturating_mul(1000);
+                (rejected && pending).then_some(window.reset)
+            })
+            .max();
+        let Some(reset) = reset else {
+            return Ok(None);
+        };
+        resets.push(reset);
+    }
+    Ok(resets.into_iter().min())
+}
+
 pub(crate) fn routed_only(ctx: &ExecCtx) -> Result<(), Error> {
     let routes = PROVIDER_ROUTES.all(ctx)?;
     let routed = |service: &String| {

@@ -14,12 +14,6 @@ pub(crate) struct Reach {
     pub window: Window,
 }
 
-impl Reach {
-    pub fn label(&self) -> String {
-        format!("provider {}'s route", self.provider)
-    }
-}
-
 pub(crate) fn lowercase_name(text: &str) -> bool {
     !text.is_empty()
         && text.bytes().all(|byte| {

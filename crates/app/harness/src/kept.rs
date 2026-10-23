@@ -12,7 +12,7 @@ use crate::config::Pin;
 use crate::state::{BY_AGENT, MODEL_KEPT, THREADS};
 use crate::{AgentSetup, Config, Configured, ConversationModel, ModelKept, ThreadRow, Window};
 
-fn of(configured: &Configured, pin: &Pin) -> Option<ModelKept> {
+fn of(configured: &Configured) -> Option<ModelKept> {
     let Configured::Routed {
         config, provider, ..
     } = configured
@@ -25,13 +25,13 @@ fn of(configured: &Configured, pin: &Pin) -> Option<ModelKept> {
         thinking: config.thinking,
         compact_at: config.compact_at,
         provider: provider.clone(),
-        service: pin.service.clone(),
+        service: None,
     })
 }
 
 fn front(ctx: &QueryCtx, path: &str) -> Result<Option<ModelKept>, Error> {
-    let (configured, pin) = configured_pinned(ctx, path)?;
-    Ok(of(&configured, &pin))
+    let (configured, _) = configured_pinned(ctx, path)?;
+    Ok(of(&configured))
 }
 
 pub(crate) fn opened(ctx: &ExecCtx, agent: &Agent, id: u64) -> Result<(), Error> {
@@ -72,7 +72,7 @@ pub(crate) fn configured_for(
     path: &str,
 ) -> Result<(Configured, Pin), Error> {
     let (configured, pin) = configured_pinned(ctx, path)?;
-    let now = of(&configured, &pin);
+    let now = of(&configured);
     let kept = match MODEL_KEPT.get(ctx, &thread.id)? {
         Some(kept) => kept,
         None => {
@@ -86,7 +86,7 @@ pub(crate) fn configured_for(
         return Ok((configured, pin));
     }
     let pin = Pin {
-        service: kept.service.clone(),
+        service: None,
         provider: Some(kept.provider.clone()),
     };
     Ok((laid(ctx, configured, kept)?, pin))

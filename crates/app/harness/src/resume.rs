@@ -13,7 +13,7 @@ use crate::conversations::{binding, conversation};
 use crate::routes;
 use crate::schema::code_of;
 use crate::state::{
-    ASKED, AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, PICKS, RECEIPTED, REPORTING,
+    ASKED, AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, RECEIPTED, REPORTING,
     REPORTS, RETRIES, RUNNING, Retry, STREAMING, THREADS, WATCHES,
 };
 use crate::tools::Write;
@@ -83,13 +83,12 @@ impl Failure {
         }
     }
 
-    pub fn unpinned(self, pinned: bool) -> Failure {
-        match self.again {
-            None if pinned => Failure {
-                moves: true,
-                ..Failure::busy(self.text)
-            },
-            _ => self,
+    pub fn rejected(reset: Option<u64>) -> Failure {
+        Failure {
+            wait: Some(Wait { after: None, reset }),
+            ..Failure::busy(
+                "all known accounts on the provider route are rejected until their reported reset",
+            )
         }
     }
 
@@ -391,16 +390,13 @@ pub(crate) async fn room(ctx: &Ctx, service: &str, providers: &[String]) {
     let next = ctx.env().height.saturating_add(1);
     let mut pulled = Vec::new();
     for (id, retry) in retries {
-        let on = PICKS
-            .get(ctx, &id)
-            .ok()
-            .flatten()
-            .is_some_and(|pick| pick.service == service);
         let lane = ASKED.get(ctx, &id).ok().flatten();
-        let spoken = lane.is_some_and(|lane| providers.contains(&lane.provider));
+        let spoken = lane.is_some_and(|lane| {
+            providers.contains(&lane.provider) && routes::reaches(ctx, &lane.provider, service)
+        });
         let later = retry.until.is_some() || retry.at > next;
         let due = later || retry.entry.is_none();
-        let pulled_in = due && on && spoken;
+        let pulled_in = due && spoken;
         if pulled_in {
             let until = None;
             pulled.push((

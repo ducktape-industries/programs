@@ -71,7 +71,7 @@ fn relayed(world: &mut World) {
 }
 
 #[test]
-fn a_model_call_refused_for_its_depth_is_asked_again_on_the_account_its_cache_is_on() {
+fn a_model_call_refused_for_its_depth_is_asked_again_naming_no_account() {
     let mut world = world();
     relayed(&mut world);
     let chain = &world.chain;
@@ -97,7 +97,10 @@ fn a_model_call_refused_for_its_depth_is_asked_again_on_the_account_its_cache_is
     assert!(refused, "{told:?}");
     chain.at(5, 0);
     let (_, pinned) = turn_open(chain, thread);
-    assert_eq!(pinned.as_deref(), Some("a"), "the account its cache is on");
+    assert_eq!(
+        pinned, None,
+        "no account is named, so its service picks one"
+    );
     assert_eq!(route_now(chain, thread), on("a"));
 }
 

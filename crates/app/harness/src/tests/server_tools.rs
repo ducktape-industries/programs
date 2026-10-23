@@ -126,7 +126,7 @@ fn said_on_one_account(chain: &MockChain, content: Value, stop: &str, input_toke
 }
 
 #[test]
-fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back() {
+fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back_as_words_on_an_unpinned_call() {
     let world = world();
     let chain = &world.chain;
     commit(chain, ADA, CONFIG, &md(&searcher()));
@@ -159,7 +159,22 @@ fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back() {
     let (request, _) = open_request(chain);
     let sent = provider_body(chain, &request);
     assert_eq!(sent["messages"][1]["role"], "assistant");
-    assert_eq!(sent["messages"][1]["content"], searched_and_fetched());
+    assert_eq!(sent["messages"][1]["content"], json!(plain_words()));
+}
+
+fn plain_words() -> Vec<Value> {
+    let words = [
+        "Looking it up.",
+        "[web_search {\"query\":\"ducktape\"}]",
+        "[web_search_tool_result]\nDucktape https://ducktape.example",
+        "[web_fetch {\"url\":\"https://ducktape.example\"}]",
+        "[web_fetch_tool_result]\nhttps://ducktape.example\nDucktape is a network.",
+        "Ducktape is a network.",
+    ];
+    words
+        .iter()
+        .map(|text| json!({ "type": "text", "text": text }))
+        .collect()
 }
 
 #[test]
@@ -240,9 +255,6 @@ fn a_paused_turn_given_up_keeps_no_unanswered_server_tool_use_ahead_of_the_input
     assert_eq!(held(chain, thread).len(), 1);
     chain.at(4, 0);
     continuation_refused(chain);
-    chain.at(5, 0);
-    chain.at(6, 0);
-    continuation_refused(chain);
     assert!(held(chain, thread).is_empty(), "the turn was given up");
     let (request, _) = open_request(chain);
     let sent = provider_body(chain, &request);
@@ -250,7 +262,7 @@ fn a_paused_turn_given_up_keeps_no_unanswered_server_tool_use_ahead_of_the_input
     assert_eq!(messages[1]["role"], "assistant", "{messages:?}");
     assert_eq!(
         messages[1]["content"],
-        json!(blocks[..3].to_vec()),
+        json!(plain_words()[..3].to_vec()),
         "the search its result answers stays, the fetch nothing answered goes"
     );
     assert!(

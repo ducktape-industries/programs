@@ -63,7 +63,7 @@ fn turn_open_on(chain: &MockChain, service: &str, thread: u64) -> (RequestRow, O
     let open = turns_open_on(chain, service, thread);
     let count = open.len();
     let Ok([row]) = <[RequestRow; 1]>::try_from(open) else {
-        panic!("{count} turns open for conversation {thread}");
+        panic!("{count} turns open for conversation {thread} on {service}");
     };
     let pinned = pinned_to(chain, &row);
     (row, pinned)
@@ -427,7 +427,7 @@ fn the_budget_reply_says_each_services_pace_and_each_accounts_windows_and_when_t
 }
 
 #[test]
-fn a_conversation_stays_on_the_account_that_answered_it_and_asks_unpinned_once_that_account_is_limited()
+fn a_conversation_never_names_the_account_that_answered_it_and_after_a_429_its_service_picks_another()
  {
     let world = world();
     let chain = &world.chain;
@@ -443,20 +443,24 @@ fn a_conversation_stays_on_the_account_that_answered_it_and_asks_unpinned_once_t
     world.mention("m2", "and now?");
     chain.at(4, 0);
     let (_, pinned) = turn_open(chain, thread);
-    assert_eq!(pinned.as_deref(), Some("a"), "the account its cache is on");
+    assert_eq!(pinned, None, "not even the account that answered it");
     limited_as(chain, thread, "a");
-    let told = notices(chain, thread);
-    let again = "harness asks the model again at block 5 with no account named, so its service picks one (attempt 1)";
-    assert!(told.last().unwrap().ends_with(again), "{told:?}");
+    assert!(
+        held_for_the_reset(chain, thread),
+        "its service fell over on every account it holds"
+    );
     assert_eq!(
         route_now(chain, thread),
         on("a"),
         "a refusal moves no route"
     );
+    world.mention("m3", "once more");
     chain.at(5, 0);
-    chain.at(6, 0);
     let (_, pinned) = turn_open(chain, thread);
-    assert_eq!(pinned, None, "its service picks");
+    assert_eq!(
+        pinned, None,
+        "a new input asks at once, and its service picks"
+    );
     says_as(chain, thread, "b", "0.1");
     assert_eq!(route_now(chain, thread), on("b"));
     let routed = (thread, SERVICE.to_owned(), Some("b".to_owned()));
@@ -471,19 +475,15 @@ fn a_conversation_stays_on_the_account_that_answered_it_and_asks_unpinned_once_t
         .collect();
     let read = [("a".to_owned(), 1_000_000), ("b".to_owned(), 100_000)];
     assert_eq!(used, read);
-    world.mention("m3", "once more");
-    chain.at(7, 0);
+    world.mention("m4", "and again");
+    chain.at(6, 0);
     let (_, pinned) = turn_open(chain, thread);
-    assert_eq!(
-        pinned.as_deref(),
-        Some("b"),
-        "it stays where it was answered"
-    );
+    assert_eq!(pinned, None, "nor the one that answered it last");
 }
 
 #[test]
-fn a_conversation_held_for_its_reset_asks_again_once_a_turn_on_its_service_and_provider_is_answered()
- {
+fn a_conversation_held_for_its_reset_asks_again_once_a_turn_on_its_route_and_provider_is_answered()
+{
     let world = world();
     let chain = &world.chain;
     second_service(&world);
@@ -494,44 +494,51 @@ fn a_conversation_held_for_its_reset_asks_again_once_a_turn_on_its_service_and_p
     chain.at(3, 0);
     limited_as(chain, held, "a");
     chain.at(4, 0);
+    chain.at(5, 0);
+    let moved = turns_open_on(chain, TWO, held).len();
+    assert_eq!(moved, 1, "the retry moves on: {:?}", notices(chain, held));
+    limited_on(chain, TWO, held, "c");
+    chain.at(6, 0);
+    chain.at(7, 0);
     assert!(turns_open(chain, held).is_empty(), "held");
+    assert!(turns_open_on(chain, TWO, held).is_empty(), "held");
     assert!(held_for_the_reset(chain, held));
     let ranger = agent_on(&world, "Ranger", MODEL, SERVICE, PROVIDER);
     let ranging = mention_of(&world, ranger, "m2", "anyone there?");
-    chain.at(5, 0);
+    chain.at(8, 0);
     limited_on(chain, SERVICE, ranging, "b");
     assert!(held_for_the_reset(chain, held), "a 429 shows no room");
-    mention_of(&world, ranger, "m3", "try again");
     let reader = agent_on(&world, "Reader", "claude-other", SERVICE, PROVIDER);
-    mention_of(&world, reader, "m3b", "which model are you?");
-    chain.at(6, 0);
+    mention_of(&world, reader, "m3", "which model are you?");
+    chain.at(9, 0);
     model_read_on(chain, SERVICE, "claude-other", PROVIDER);
     assert!(
         held_for_the_reset(chain, held),
         "a model read shows no room"
     );
-    let tracker = agent_on(&world, "Tracker", MODEL, TWO, PROVIDER);
-    let tracking = mention_of(&world, tracker, "m4", "and you?");
-    chain.at(7, 0);
-    says_on(chain, TWO, tracking, "c", "0.1");
-    assert!(
-        held_for_the_reset(chain, held),
-        "another service's room is not its own"
-    );
     let scribe = agent_on(&world, "Scribe", "gpt-test", SERVICE, OPENAI);
-    let scribing = mention_of(&world, scribe, "m5", "and you?");
-    chain.at(8, 0);
+    let scribing = mention_of(&world, scribe, "m4", "and you?");
+    chain.at(10, 0);
     model_read_on(chain, SERVICE, "gpt-test", OPENAI);
-    chain.at(9, 0);
+    chain.at(11, 0);
     says_on(chain, SERVICE, scribing, "d", "0.1");
     assert!(
         held_for_the_reset(chain, held),
         "another provider's room is not its own"
     );
-    says_on(chain, SERVICE, ranging, "e", "0.1");
-    assert!(!held_for_the_reset(chain, held));
-    chain.at(11, 0);
-    let (_, pinned) = turn_open(chain, held);
+    let tracker = agent_on(&world, "Tracker", MODEL, TWO, PROVIDER);
+    let tracking = mention_of(&world, tracker, "m5", "and you?");
+    chain.at(12, 0);
+    says_on(chain, SERVICE, tracking, "e", "0.1");
+    assert!(
+        !held_for_the_reset(chain, held),
+        "room on any service of its route is its own"
+    );
+    chain.at(13, 0);
+    chain.at(14, 0);
+    let open = [SERVICE, TWO].map(|service| turns_open_on(chain, service, held).len());
+    assert_eq!(open, [1, 0], "{:?}", notices(chain, held));
+    let (_, pinned) = turn_open_on(chain, SERVICE, held);
     assert_eq!(pinned, None, "its service picks an account with room");
 }
 

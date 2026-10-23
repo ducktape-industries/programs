@@ -17,7 +17,7 @@ use crate::resume::{self, Failure};
 use crate::routes::{self, Picked};
 use crate::state::{
     ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, HELD_AT, LANES, LIVE, Lane, Live, PARTIALS,
-    PASSES, PICKS, RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
+    PASSES, RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
 use crate::waiting::settling;
@@ -718,7 +718,7 @@ fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
 }
 
 fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<Step>, Error> {
-    let (configured, pin) = crate::kept::configured_for(ctx, thread, &agent.path)?;
+    let (configured, _) = crate::kept::configured_for(ctx, thread, &agent.path)?;
     let (snapshot, config, model) = match configured {
         Configured::Routed {
             snapshot,
@@ -745,11 +745,11 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         }
     };
     seed(ctx, thread, agent, &config.listen);
-    let (pick, spoken) = match routes::pick(ctx, thread, &model, &pin)? {
+    let (pick, spoken) = match routes::pick(ctx, thread, &model)? {
         Picked::Chosen(pick, spoken) => (pick, spoken),
-        Picked::Unlisted(text) => {
-            give_up(ctx, thread, text)?;
-            return Ok(None);
+        Picked::Rejected(reset) => {
+            let failure = Failure::rejected(reset);
+            return Ok(Some(Step::Again(failure)));
         }
         Picked::Unserved(services) => {
             let text = format!(
@@ -936,10 +936,6 @@ fn failed(
     thread: &mut ThreadRow,
     failure: Failure,
 ) -> Result<Option<Failure>, Error> {
-    let pinned = PICKS
-        .get(ctx, &thread.id)?
-        .is_some_and(|pick| pick.account.is_some());
-    let failure = failure.unpinned(pinned);
     let again = failure.again.is_some() && !thread.closed;
     if again {
         return Ok(Some(failure));

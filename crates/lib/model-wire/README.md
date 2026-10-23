@@ -35,8 +35,8 @@ sides to it.
 
 - `Request`: model, max_tokens, thinking, system, tools (name, description, JSON schema), server
   tools, messages, the `target` the call goes to (`pinned` to a service and account, `unpinned`, or
-  `unnamed` from a harness that names none; harness names `pinned` for a conversation whose last
-  answer named its account, else `unpinned`), and a `cache_key` the conversation's calls share
+  `unnamed` from a harness that names none; harness always names `unpinned`, leaving account
+  eligibility to the service), and a `cache_key` the conversation's calls share
   (harness sends its conversation's number; the Codex surface sends it as the body's
   `prompt_cache_key` and as the `session-id`, `thread-id` and `x-client-request-id` headers, as
   the Codex CLI does). A user message holds text, images and tool results;

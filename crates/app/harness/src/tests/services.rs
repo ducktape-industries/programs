@@ -1,5 +1,5 @@
-//! Which service and account a conversation's calls go to: none named at first, the account that
-//! answered after, and how a refused, limited or failed call moves on, on the harness wire.
+//! Unpinned placement, rejection eligibility, account history and failure rotation through the
+//! harness model wire, preserving each conversation's model and provider.
 use super::accounts::{
     answer_headers, from_node, harness_wired, limited_headers, pinned_to, replied,
 };
@@ -157,6 +157,140 @@ fn wakes_of(chain: &MockChain, thread: u64) -> Vec<Wake> {
     wakes
 }
 
+fn budget_answer(chain: &MockChain, pool: &str, used: &str, status: &str, reset: u64) {
+    let (request, pinned) = open(chain, SERVICE, model_wire::TURN);
+    assert_eq!(pinned, None);
+    let mut headers = answer_headers("a", used, status);
+    for (name, value) in &mut headers {
+        if name == "x-harness-window-5h-reset" {
+            *value = reset.to_string();
+        }
+    }
+    headers.push(("x-harness-pool".into(), pool.into()));
+    replied(chain, &request, vec![], Usage::default(), headers);
+}
+
+#[test]
+fn a_known_rejected_pool_is_skipped_before_the_next_ask() {
+    let world = world();
+    let chain = &world.chain;
+    two_services(&world);
+    world.mention("m1", "hello");
+    chain.at(6, 0);
+    learned(chain, SERVICE);
+    chain.at(7, 0);
+    budget_answer(chain, "a", "0.5", "rejected", 100);
+    world.mention("m2", "again");
+    assert!(
+        none_open(chain, SERVICE, model_wire::TURN),
+        "no request to rejected capacity"
+    );
+    let (_, account) = open(chain, TWO, model_wire::TURN);
+    assert_eq!(account, None);
+}
+
+#[test]
+fn an_unread_member_keeps_a_mixed_pool_eligible() {
+    let world = world();
+    let chain = &world.chain;
+    two_services(&world);
+    world.mention("m1", "hello");
+    chain.at(6, 0);
+    learned(chain, SERVICE);
+    chain.at(7, 0);
+    budget_answer(chain, "a,b", "1", "rejected", 100);
+    world.mention("m2", "again");
+    let (_, account) = open(chain, SERVICE, model_wire::TURN);
+    assert_eq!(
+        account, None,
+        "ccs chooses the eligible member, not the last answerer"
+    );
+}
+
+#[test]
+fn a_fully_rejected_route_holds_its_own_retry_without_a_request_an_input_asks_once_and_the_reset_reopens_it()
+ {
+    let world = world();
+    let chain = &world.chain;
+    harness_wired(&world);
+    let thread = world.mention("m1", "hello");
+    chain.at(4, 0);
+    learned(chain, SERVICE);
+    chain.at(5, 0);
+    budget_answer(chain, "a", "1", "allowed", 100);
+    world.mention("m2", "again");
+    let (request, account) = open(chain, SERVICE, model_wire::TURN);
+    assert_eq!(
+        account, None,
+        "an input asks once, though the window is full"
+    );
+    chain.at(6, 0);
+    answer(
+        chain,
+        request.id,
+        Answer::Failed("the service is down".into()),
+    );
+    chain.at(7, 0);
+    chain.at(8, 0);
+    assert!(
+        none_open(chain, SERVICE, model_wire::TURN),
+        "its own retry sends nothing to a full window"
+    );
+    let wakes = wakes_of(chain, thread);
+    assert!(
+        wakes
+            .iter()
+            .any(|wake| matches!(wake, Wake::RetryAfter { until: 100_000, .. })),
+        "{wakes:?}"
+    );
+    chain.at(9, 100_000);
+    chain.at(10, 100_000);
+    let (_, account) = open(chain, SERVICE, model_wire::TURN);
+    assert_eq!(account, None, "expiry removes the eligibility rejection");
+}
+
+#[test]
+fn a_429_escapes_the_service_the_conversation_kept_with_its_model_on_the_first_retry() {
+    let world = world();
+    let chain = &world.chain;
+    two_services(&world);
+    configured(chain, &format!("service = \"{SERVICE}\"\n"));
+    let thread = world.mention("m1", "hello");
+    chain.at(6, 0);
+    learned(chain, SERVICE);
+    chain.at(7, 0);
+    says(chain, SERVICE, None, "exhausted", LIMITED);
+    chain.at(8, 0);
+    chain.at(9, 0);
+    assert!(
+        none_open(chain, SERVICE, model_wire::TURN),
+        "the limited service is skipped"
+    );
+    let (next, account) = open(chain, TWO, model_wire::TURN);
+    assert_eq!(account, None, "no last-answer pin crosses services");
+    assert_eq!(body(chain, &next)["model"], MODEL, "the model stays");
+    says(chain, TWO, None, "room", FINE);
+    assert_eq!(route(chain, thread), on(TWO, "room"));
+}
+
+#[test]
+fn a_later_ask_never_pins_the_account_that_answered_the_previous_one() {
+    let world = world();
+    let chain = &world.chain;
+    two_services(&world);
+    world.mention("m1", "hello");
+    chain.at(6, 0);
+    learned(chain, SERVICE);
+    chain.at(7, 0);
+    says(chain, SERVICE, None, "a", FINE);
+    world.mention("m2", "again");
+    let (_, account) = open(chain, SERVICE, model_wire::TURN);
+    assert_eq!(
+        account, None,
+        "the answering account is history, never a pin"
+    );
+}
+
 #[test]
 fn a_new_conversation_names_no_account_and_stays_on_the_account_that_answered_it() {
     let world = world();
@@ -170,7 +304,16 @@ fn a_new_conversation_names_no_account_and_stays_on_the_account_that_answered_it
     assert_eq!(route(chain, thread), on(SERVICE, "b"));
     world.mention("m2", "again");
     chain.at(10, 0);
-    says(chain, SERVICE, Some("b"), "b", Says { used: "1", ..FINE });
+    says(
+        chain,
+        SERVICE,
+        None,
+        "b",
+        Says {
+            used: "0.75",
+            ..FINE
+        },
+    );
     let moved: Vec<bool> = answerers(chain, thread)
         .iter()
         .map(|row| row.moved)
@@ -201,21 +344,21 @@ fn a_429_on_the_threads_account_asks_again_next_block_naming_none_and_the_thread
     says(chain, SERVICE, None, "a", written(1000));
     world.mention("m2", "and now?");
     chain.at(8, 0);
-    says(chain, SERVICE, Some("a"), "a", LIMITED);
+    says(chain, SERVICE, None, "a", LIMITED);
     let told = notices(chain, thread);
     let again = "harness asks the model again at block 9 with no account named, so its service picks one (attempt 1)";
     assert!(told.last().unwrap().ends_with(again), "{told:?}");
     chain.at(9, 0);
     chain.at(10, 0);
     assert!(
-        none_open(chain, TWO, model_wire::TURN),
-        "its service picks first"
+        none_open(chain, SERVICE, model_wire::TURN),
+        "the rejected service is skipped"
     );
-    says(chain, SERVICE, None, "b", written(1200));
-    assert_eq!(route(chain, thread), on(SERVICE, "b"));
+    says(chain, TWO, None, "b", written(1200));
+    assert_eq!(route(chain, thread), on(TWO, "b"));
     world.mention("m3", "once more");
     chain.at(11, 0);
-    says(chain, SERVICE, Some("b"), "b", written(0));
+    says(chain, TWO, None, "b", written(0));
     let rows: Vec<(String, Option<String>, bool)> = answerers(chain, thread)
         .into_iter()
         .map(|row| (row.service, row.account, row.moved))
@@ -223,8 +366,8 @@ fn a_429_on_the_threads_account_asks_again_next_block_naming_none_and_the_thread
     assert_eq!(
         rows,
         [
-            (SERVICE.to_owned(), Some("b".to_owned()), false),
-            (SERVICE.to_owned(), Some("b".to_owned()), true),
+            (TWO.to_owned(), Some("b".to_owned()), false),
+            (TWO.to_owned(), Some("b".to_owned()), true),
             (SERVICE.to_owned(), Some("a".to_owned()), false)
         ]
     );
@@ -279,12 +422,36 @@ fn a_429_with_no_account_named_moves_to_the_next_service_and_one_on_every_servic
     assert!(held.iter().any(named), "the wait names its reset: {held:?}");
     world.mention("m2", "still there?");
     let (_, pinned) = open(chain, SERVICE, model_wire::TURN);
-    assert_eq!(pinned, None, "a new input ends the wait");
+    assert_eq!(
+        pinned, None,
+        "an input asks once, though every service is rejected"
+    );
+    assert!(none_open(chain, TWO, model_wire::TURN));
+    chain.at(12, 0);
+    says(chain, SERVICE, None, "a", LIMITED);
+    chain.at(13, 0);
+    chain.at(14, 0);
+    assert!(
+        none_open(chain, SERVICE, model_wire::TURN),
+        "its own retry holds again"
+    );
+    assert!(
+        none_open(chain, TWO, model_wire::TURN),
+        "its own retry holds again"
+    );
+    chain.at(15, until);
+    chain.at(16, until);
+    let reopened = [SERVICE, TWO].map(|service| requests_at(chain, service, model_wire::TURN));
+    let [one]: [RequestRow; 1] = reopened.concat().try_into().unwrap();
+    assert_eq!(
+        pinned_to(chain, &one),
+        None,
+        "the reported reset reopens capacity"
+    );
 }
 
 #[test]
-fn a_pin_to_an_account_its_service_no_longer_holds_asks_again_naming_none_and_only_an_unpinned_refusal_is_final()
- {
+fn an_unpinned_provider_refusal_is_final_without_an_account_fallback() {
     let world = world();
     let chain = &world.chain;
     harness_wired(&world);
@@ -293,29 +460,12 @@ fn a_pin_to_an_account_its_service_no_longer_holds_asks_again_naming_none_and_on
     learned(chain, SERVICE);
     chain.at(5, 0);
     says(chain, SERVICE, None, "a", FINE);
-    assert_eq!(route(chain, thread), on(SERVICE, "a"));
     world.mention("m2", "and now?");
     chain.at(6, 0);
-    refused(chain, Some("a"), "no such account: a");
-    let told = notices(chain, thread);
-    let again = "harness asks the model again at block 7 with no account named, so its service picks one (attempt 1)";
-    assert!(told.last().unwrap().ends_with(again), "{told:?}");
+    refused(chain, None, "bad request");
     chain.at(7, 0);
     chain.at(8, 0);
-    says(chain, SERVICE, None, "b", FINE);
-    assert_eq!(route(chain, thread), on(SERVICE, "b"));
-    world.mention("m3", "a request no account takes");
-    chain.at(9, 0);
-    refused(chain, Some("b"), "bad request");
-    chain.at(10, 0);
-    chain.at(11, 0);
-    refused(chain, None, "bad request");
-    chain.at(12, 0);
-    chain.at(13, 0);
-    assert!(
-        none_open(chain, SERVICE, model_wire::TURN),
-        "an unpinned refusal is final"
-    );
+    assert!(none_open(chain, SERVICE, model_wire::TURN));
     let told = notices(chain, thread);
     let last = told.last().unwrap();
     let gave_up = last.contains("bad request") && !last.contains("asks the model again");
@@ -335,7 +485,7 @@ fn a_failed_answer_asks_again_naming_no_account_but_a_call_cut_off_by_an_update_
     world.mention("m2", "and now?");
     chain.at(8, 0);
     let (request, pinned) = open(chain, SERVICE, model_wire::TURN);
-    assert_eq!(pinned.as_deref(), Some("a"));
+    assert_eq!(pinned, None);
     answer(
         chain,
         request.id,
@@ -343,11 +493,11 @@ fn a_failed_answer_asks_again_naming_no_account_but_a_call_cut_off_by_an_update_
     );
     chain.at(9, 0);
     chain.at(10, 0);
-    says(chain, SERVICE, None, "b", FINE);
-    assert_eq!(route(chain, thread), on(SERVICE, "b"));
+    says(chain, TWO, None, "b", FINE);
+    assert_eq!(route(chain, thread), on(TWO, "b"));
     world.mention("m3", "once more");
     let (request, pinned) = open(chain, SERVICE, model_wire::TURN);
-    assert_eq!(pinned.as_deref(), Some("b"));
+    assert_eq!(pinned, None);
     chain.cancel_parked(PROGRAM);
     let deadline = request.made + egress::DEFAULT_WAIT;
     chain.at(deadline + 1, 0);
@@ -355,33 +505,24 @@ fn a_failed_answer_asks_again_naming_no_account_but_a_call_cut_off_by_an_update_
     chain.at(deadline + 3, 0);
     assert!(
         none_open(chain, TWO, model_wire::TURN),
-        "the cache stays on b"
+        "the interrupted call stays on its service"
     );
-    says(chain, SERVICE, Some("b"), "b", FINE);
+    says(chain, SERVICE, None, "b", FINE);
     assert_eq!(route(chain, thread), on(SERVICE, "b"));
 }
 
 #[test]
-fn a_pinned_service_keeps_to_its_accounts_and_one_the_route_lists_not_gives_up() {
+fn service_front_matter_never_restricts_a_provider_route() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
-    configured(chain, &format!("service = \"{SERVICE}\"\n"));
-    world.mention("m1", "hello");
+    configured(chain, "service = \"elsewhere\"\n");
+    let thread = world.mention("m1", "hello");
     chain.at(6, 0);
     learned(chain, SERVICE);
     chain.at(7, 0);
     says(chain, SERVICE, None, "a", FINE);
-    configured(chain, "service = \"elsewhere\"\n");
-    new_thread_retiring_the_current_one(&world);
-    let thread = world.mention("m2", "and now?");
-    let told = notices(chain, thread);
-    let why = format!(
-        "the agent's configuration pins service elsewhere, which provider anthropic's route is not reached through ({SERVICE}, {TWO})"
-    );
-    assert_eq!(told.last(), Some(&why));
-    assert!(none_open(chain, SERVICE, model_wire::TURN));
-    assert!(none_open(chain, TWO, model_wire::TURN));
+    assert_eq!(route(chain, thread), on(SERVICE, "a"));
 }
 
 #[test]
@@ -449,22 +590,18 @@ fn a_call_moved_near_the_threshold_does_not_compact_on_the_account_its_service_p
     assert_eq!(thread_row(chain, thread).context, Context::Measured(1015));
     world.mention("m2", "and now?");
     chain.at(8, 0);
-    says(chain, SERVICE, Some("a"), "a", LIMITED);
+    says(chain, SERVICE, None, "a", LIMITED);
     chain.at(9, 0);
     chain.at(10, 0);
     assert!(
         none_open(chain, SERVICE, model_wire::SUMMARY),
         "a turn, not a summary"
     );
-    says(chain, SERVICE, None, "b", FINE);
-    assert_eq!(route(chain, thread), on(SERVICE, "b"));
+    says(chain, TWO, None, "b", FINE);
+    assert_eq!(route(chain, thread), on(TWO, "b"));
     world.mention("m3", "back again");
-    let (_, pinned) = open(chain, SERVICE, model_wire::TURN);
-    assert_eq!(
-        pinned.as_deref(),
-        Some("b"),
-        "it stays where it was answered"
-    );
+    let (_, pinned) = open(chain, TWO, model_wire::TURN);
+    assert_eq!(pinned.as_deref(), None, "the next call is unpinned too");
 }
 
 #[test]
@@ -593,37 +730,34 @@ fn a_search_one_account_answered_goes_as_plain_text_once_a_429_leaves_the_accoun
     world.mention("m2", "and now?");
     chain.at(8, 0);
     let (own, pinned) = open(chain, SERVICE, model_wire::TURN);
-    assert_eq!(pinned.as_deref(), Some("a"));
+    assert_eq!(pinned, None);
     let sent = body(chain, &own);
     let lane = json!({ "provider": PROVIDER, "model": MODEL, "service": SERVICE, "account": "a" });
     assert_eq!(
         assistant_lanes(&sent),
         std::slice::from_ref(&lane),
-        "the lane names who answered, so the account pinned reads its own blocks"
+        "the lane preserves who answered without pinning the next request"
     );
     let text = sent.to_string();
-    assert!(
-        text.contains("EqgfCioIARgB") && text.contains(r#""kind":"server_tool_use""#),
-        "the account that minted it reads it as sent: {text}"
-    );
-    says(chain, SERVICE, Some("a"), "a", LIMITED);
+    minted_absent(&text);
+    says(chain, SERVICE, None, "a", LIMITED);
     chain.at(9, 0);
     chain.at(10, 0);
-    let (unnamed, pinned) = open(chain, SERVICE, model_wire::TURN);
+    let (unnamed, pinned) = open(chain, TWO, model_wire::TURN);
     assert_eq!(pinned, None);
     let sent = body(chain, &unnamed);
     assert_eq!(assistant_lanes(&sent), [lane]);
     minted_absent(&sent.to_string());
-    says(chain, SERVICE, None, "b", FINE);
-    assert_eq!(route(chain, thread), on(SERVICE, "b"));
+    says(chain, TWO, None, "b", FINE);
+    assert_eq!(route(chain, thread), on(TWO, "b"));
     world.mention("m3", "back again");
-    let (next, pinned) = open(chain, SERVICE, model_wire::TURN);
-    assert_eq!(pinned.as_deref(), Some("b"));
+    let (next, pinned) = open(chain, TWO, model_wire::TURN);
+    assert_eq!(pinned, None);
     minted_absent(&body(chain, &next).to_string());
 }
 
 #[test]
-fn an_open_conversation_keeps_the_service_its_front_pinned_when_it_started() {
+fn service_edits_pin_neither_existing_nor_new_conversations() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
@@ -638,12 +772,12 @@ fn an_open_conversation_keeps_the_service_its_front_pinned_when_it_started() {
     chain.at(8, 0);
     assert!(
         none_open(chain, TWO, model_wire::TURN),
-        "its pin is the one it started with"
+        "the provider route determines placement"
     );
-    says(chain, SERVICE, Some("a"), "a", FINE);
+    says(chain, SERVICE, None, "a", FINE);
     new_thread_retiring_the_current_one(&world);
     let fresh = world.mention("m3", "a new one");
     assert_ne!(fresh, thread);
     chain.at(9, 0);
-    says(chain, TWO, None, "b", FINE);
+    says(chain, SERVICE, None, "b", FINE);
 }
