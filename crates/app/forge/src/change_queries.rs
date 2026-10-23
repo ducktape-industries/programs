@@ -32,8 +32,6 @@ pub fn change(
     })
 }
 
-/// One page of a repository's changes, filtered. A filter can empty a page
-/// that still has a `next`.
 pub fn changes(
     ctx: &QueryCtx,
     repo: &str,
@@ -41,30 +39,33 @@ pub fn changes(
     listing: &Listing,
 ) -> Result<PageResponse<ChangeSummary>, Error> {
     load_repo(ctx, repo)?;
-    let PageResponse {
-        height,
-        items,
-        next,
-    } = CHANGES.page_of(ctx, &repo.to_owned(), listing)?;
-    let items = items
-        .into_iter()
-        .filter(|((repo, n), change)| {
-            filter.state.is_none_or(|state| change.state == state)
+    let mut scan = listing.scan_ahead(&CHANGES.key(&repo.to_owned()));
+    let mut matching = Vec::new();
+    loop {
+        let rows = CHANGES.scan(ctx, scan.clone())?;
+        let Some((last, _)) = rows.last() else {
+            return Ok(listing.reply(matching));
+        };
+        scan = scan.after(CHANGES.key(last));
+        for ((repo, n), change) in rows {
+            let matches_filter = filter.state.is_none_or(|state| change.state == state)
                 && filter
                     .author
                     .as_ref()
                     .is_none_or(|principal| &change.author == principal)
                 && filter.involves.as_ref().is_none_or(|principal| {
-                    INVOLVED.has(ctx, &(principal.clone(), repo.clone(), *n))
-                })
-        })
-        .map(|((repo, _), change)| summary(&repo, &change))
-        .collect();
-    Ok(PageResponse {
-        height,
-        items,
-        next,
-    })
+                    INVOLVED.has(ctx, &(principal.clone(), repo.clone(), n))
+                });
+            if !matches_filter {
+                continue;
+            }
+            matching.push((CHANGES.key(&(repo.clone(), n)), summary(&repo, &change)));
+            let has_lookahead = matching.len() as u64 > listing.limit();
+            if has_lookahead {
+                return Ok(listing.reply(matching));
+            }
+        }
+    }
 }
 
 pub fn review_requests(

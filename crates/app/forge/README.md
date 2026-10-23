@@ -75,10 +75,21 @@ for any bytes field); replies stay hex. `RefNames` and `DiffStat` answer names
 and paths as text for a reader that wants them so.
 
 `PageResponse<T> = { items: Vec<T>, next: Option<Cursor> }`. Pass `next` back unchanged.
-The cursor is bound to the original query arguments and height; changing only
-`limit` is allowed. A changed height returns `stale`, so restart the list.
-Filtered change and review-request pages can be empty **with a next cursor**: continue until
-`next == None`. Limits must be `1..=Bounds.page_size`; they are not silently clamped.
+The cursor is bound to the original query arguments; changing only `limit` is
+allowed. Page sizes are bounded by the founded `Bounds.page_size`.
+
+`Changes` counts matching records before applying the page size. Its cursor
+resumes after the last returned change number across forge writes. Each page
+reads current records at its answering height, not a frozen snapshot: closed
+changes stop matching an open filter, edits are visible on later numbers, and
+new change numbers can appear beyond the cursor. Numbers at or before the
+cursor are not revisited, even if their involvement changes. A next cursor
+means another matching record existed when that page was read.
+
+Other listing cursors are pinned to forge's accepted-write count. A forge write
+returns `stale` on continuation, so restart those lists; empty blocks do not.
+Review-request pages can be empty **with a next cursor**: continue until
+`next == None`.
 
 Repos sort by descending activity height then name, and leave archived ones out
 (`ArchivedRepos` lists those, by name). Refs use byte-name order,

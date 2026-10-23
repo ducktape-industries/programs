@@ -18,9 +18,6 @@ use crate::objects::hash_of;
 
 /// The bounds forge was founded with.
 pub const BOUNDS: Item<Bounds> = Item::new("bounds");
-/// How many ops forge has accepted. Every listing cursor is pinned to it:
-/// only a forge op rewrites a listing, and two ops in one block share a
-/// height but not a count.
 pub const WRITES: Item<u64> = Item::new("writes");
 /// One record per repository, by name.
 pub const REPOS: Map<String, Repo> = Map::new("p/");

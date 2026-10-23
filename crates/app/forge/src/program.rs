@@ -337,7 +337,14 @@ impl Program for Forge {
             }
             Query::Changes { repo, filter, page } => Reply::Changes {
                 height,
-                page: changes(ctx, repo, filter, &listing(page)?)?,
+                page: changes(
+                    ctx,
+                    repo,
+                    filter,
+                    &page
+                        .bounded(bounds.page_size as u64)
+                        .listing(ctx, scope.clone())?,
+                )?,
             },
             Query::Change { repo, n, page } => change(ctx, height, repo, *n, &listing(page)?)?,
             Query::ReviewRequests { principal, page } => Reply::ReviewRequests {

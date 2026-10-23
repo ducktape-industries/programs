@@ -371,7 +371,7 @@ pub enum Query {
     },
     #[reads(CHANGES, INVOLVED)]
     #[ask(Reply::Changes { height: u64, page: PageResponse<ChangeSummary> })]
-    #[tool_query(description = "A repository's changes in number order, filtered by author, involvement or state: author, endpoints, counts and verdicts. A filtered page can be empty with a next cursor: go on until next is null.", example = crate::examples::changes)]
+    #[tool_query(description = "A repository's changes in number order, filtered by author, involvement or state: author, endpoints, counts and verdicts. Each page counts matching changes and reads current records. Resume after the last returned number across forge writes; earlier numbers are not revisited.", example = crate::examples::changes)]
     Changes {
         repo: String,
         filter: ChangeFilter,
