@@ -3,6 +3,7 @@
 use ::program::{Error, QueryCtx};
 
 use crate::agents::thread;
+use crate::bookings::{Reach, reach};
 use crate::state::{ARMED, BOOKED, BOOKINGS, FLEET_RUNS, FLIGHTS, RETRIES, SETTLING, STREAMING};
 use crate::{Asking, Wake};
 
@@ -52,11 +53,8 @@ pub(crate) fn wakes(ctx: &QueryCtx, id: u64) -> Result<Vec<Wake>, Error> {
         if booking.ran.is_some() {
             continue;
         }
-        let Some(booked_for) = booking.thread else {
-            continue;
-        };
-        let reaches = crate::conversations::reaching(ctx, booked_for)?;
-        if reaches.is_some_and(|reached| reached.id == id) {
+        let reached = reach(ctx, row.agent, booking.thread)?;
+        if matches!(reached, Reach::Row(told) if told.id == id) {
             wakes.push(Wake::Booking { entry });
         }
     }

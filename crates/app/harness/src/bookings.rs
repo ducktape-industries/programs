@@ -179,30 +179,44 @@ fn report(booking: &Booking, ran: &Ran) -> String {
     }
 }
 
+pub(crate) enum Reach {
+    Row(ThreadRow),
+    Closed(ThreadRow),
+    Nowhere,
+}
+
+pub(crate) fn reach(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+    thread: Option<u64>,
+) -> Result<Reach, Error> {
+    let named = match thread {
+        Some(id) => THREADS.get(ctx, &id)?,
+        None => None,
+    };
+    Ok(match named {
+        Some(closed) if closed.closed => match heir(ctx, closed.id)? {
+            Some(taken_by) => Reach::Row(taken_by),
+            None => Reach::Closed(closed),
+        },
+        Some(open) => Reach::Row(open),
+        None => current(ctx, agent)?.map_or(Reach::Nowhere, Reach::Row),
+    })
+}
+
 pub(crate) fn note(
     ctx: &ExecCtx,
     agent: AccountNumber,
     thread: Option<u64>,
     text: String,
 ) -> Result<Option<u64>, Error> {
-    let named = match thread {
-        Some(id) => THREADS.get(ctx, &id)?,
-        None => None,
-    };
-    let reached = match named {
-        Some(closed) if closed.closed => match heir(ctx, closed.id)? {
-            Some(taken_by) => Some(taken_by),
-            None => {
-                let mut closed = closed;
-                undelivered(ctx, &mut closed, text);
-                return Ok(None);
-            }
-        },
-        Some(open) => Some(open),
-        None => current(ctx, agent)?,
-    };
-    let Some(mut row) = reached else {
-        return Ok(None);
+    let mut row = match reach(ctx, agent, thread)? {
+        Reach::Row(row) => row,
+        Reach::Closed(mut closed) => {
+            undelivered(ctx, &mut closed, text);
+            return Ok(None);
+        }
+        Reach::Nowhere => return Ok(None),
     };
     let author = Principal::Root;
     say(ctx, &mut row, Body::Post { author, text });

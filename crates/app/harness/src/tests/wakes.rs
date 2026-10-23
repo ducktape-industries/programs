@@ -108,3 +108,56 @@ fn a_pending_booking_wakes_the_bound_heir_but_not_an_unrelated_conversation() {
     chain.at(31, 0);
     assert!(!wakes_of(chain, heir).contains(&pending));
 }
+
+#[test]
+fn an_unnamed_booking_wakes_the_current_conversation_and_never_a_closed_one() {
+    let world = schemed();
+    let chain = &world.chain;
+    let canonical = world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Ready." }]),
+        "end_turn",
+    );
+    let open = Op::OpenThread {
+        agent: world.agent,
+        place: Place::Channel {
+            channel: "general".into(),
+        },
+    };
+    let bound: u64 = abi::decode(&chain.submit(signed(ADA), PROGRAM, &open).unwrap()).unwrap();
+    chain.at(5, 0);
+    world.mention("m2", "book a run for no conversation");
+    let resume = abi::hex(&abi::encode(&Op::Resume { thread: canonical }));
+    let book = json!({ "program": PROGRAM, "op": { "book": {
+        "height": 30, "target": PROGRAM, "payload": resume, "thread": null
+    } } });
+    turn(&world, 6, &[("b1", "network_call", book)]);
+    let returned = answered(chain, bound, "b1")["returned"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let entry: u64 = abi::decode(&design::unhex(&returned).unwrap()).unwrap();
+    let pending = Wake::Booking { entry };
+    assert!(wakes_of(chain, canonical).contains(&pending));
+    assert!(!wakes_of(chain, bound).contains(&pending));
+    chain.at(8, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Booked." }]),
+        "end_turn",
+    );
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread: canonical })
+        .unwrap();
+    assert!(!wakes_of(chain, canonical).contains(&pending));
+    assert!(!wakes_of(chain, bound).contains(&pending));
+    let new = Op::NewThread { agent: world.agent };
+    let fresh: u64 = abi::decode(&chain.submit(signed(ADA), PROGRAM, &new).unwrap()).unwrap();
+    assert!(wakes_of(chain, fresh).contains(&pending));
+    assert!(!wakes_of(chain, canonical).contains(&pending));
+    assert!(!wakes_of(chain, bound).contains(&pending));
+    chain.at(31, 0);
+    assert!(!wakes_of(chain, fresh).contains(&pending));
+}
