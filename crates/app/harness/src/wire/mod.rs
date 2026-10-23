@@ -19,6 +19,7 @@ pub(crate) struct Header<'a> {
     pub server_tools: &'a [ServerTool],
     pub system: &'a [String],
     pub file_tools: &'a [crate::tools::file::FileTool],
+    pub cache_key: &'a str,
 }
 
 #[derive(Debug, PartialEq)]

@@ -233,6 +233,7 @@ fn a_turn_reaches_anthropic_through_the_adapter_as_anthropics_own_wire_writes_it
         server_tools: &[ServerTool::WebSearch],
         system: &system,
         file_tools: &[],
+        cache_key: "7",
     };
     let own: serde_json::Value =
         serde_json::from_str(&request(Wire::AnthropicMessages, &header)).unwrap();

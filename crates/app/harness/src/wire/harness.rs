@@ -79,6 +79,7 @@ pub(crate) fn header(header: &Header) -> String {
     request.insert("system".into(), json!(header.system));
     request.insert("tools".into(), Value::Array(tools));
     request.insert("server_tools".into(), json!(server_tools));
+    request.insert("cache_key".into(), json!(header.cache_key));
     let mut text = Value::Object(request).to_string();
     text.pop();
     text.push_str(",\"messages\":[");

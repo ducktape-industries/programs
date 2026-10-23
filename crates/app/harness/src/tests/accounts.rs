@@ -29,7 +29,7 @@ pub(super) fn model_read(chain: &MockChain) {
     model_read_on(chain, SERVICE, MODEL, PROVIDER);
 }
 
-fn model_read_on(chain: &MockChain, service: &str, name: &str, provider: &str) {
+pub(super) fn model_read_on(chain: &MockChain, service: &str, name: &str, provider: &str) {
     let path = model_wire::model_path(name);
     let [request]: [RequestRow; 1] = asked_at(chain, service, &path)
         .try_into()
@@ -292,7 +292,13 @@ fn second_service(world: &World) {
     chain.submit(signed(ADA), PROGRAM, &openai).unwrap();
 }
 
-fn configured_as(chain: &MockChain, path: &str, model: &str, service: &str, provider: &str) {
+pub(super) fn configured_as(
+    chain: &MockChain,
+    path: &str,
+    model: &str,
+    service: &str,
+    provider: &str,
+) {
     let pin = Pin {
         service: Some(service.into()),
         provider: Some(provider.into()),

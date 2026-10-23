@@ -5,6 +5,7 @@ mod accounts;
 mod adapted;
 mod blob_put;
 mod budget;
+mod cached;
 mod chat_channels;
 mod chat_messages;
 mod chat_search;

@@ -10,6 +10,7 @@ fn sent(thinking: Option<Thinking>) -> Value {
         server_tools: &[],
         system: &system,
         file_tools: &[],
+        cache_key: "7",
     };
     let mut text = super::header(Wire::AnthropicMessages, &header);
     text.push_str(anthropic::CLOSE);

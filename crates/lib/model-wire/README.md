@@ -36,8 +36,9 @@ sides to it.
 - `Request`: model, max_tokens, thinking, system, tools (name, description, JSON schema), server
   tools, messages, the `target` the call goes to (`pinned` to a service and account, `unpinned`, or
   `unnamed` from a harness that names none; harness names `pinned` for a conversation whose last
-  answer named its account, else `unpinned`), and a `cache_key` the conversation's calls share. A
-  user message holds text, images and tool results; an assistant message holds `Block`s and the
+  answer named its account, else `unpinned`), and a `cache_key` the conversation's calls share
+  (harness sends its conversation's number). A user message holds text, images and tool results;
+  an assistant message holds `Block`s and the
   `Lane` that wrote it: provider, model, and the egress service and account that answered.
 - `Model`: the provider, the context window, and the picture limits where the provider states them.
 - `Block`: text (with the provider's citations), reasoning (with its seal), redacted reasoning, a

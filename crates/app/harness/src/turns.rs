@@ -776,6 +776,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
     system.push(manual(agent, &thread.title, bound.as_ref()));
     let files = crate::tools::file::load(ctx, &agent.name);
     system.extend(crate::tools::file::left_out(&files.problems));
+    let cache_key = thread.id.to_string();
     let header = Header {
         name: &model.name,
         max_tokens: config.max_tokens,
@@ -783,6 +784,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         server_tools: &config.server_tools,
         system: &system,
         file_tools: &files.tools,
+        cache_key: &cache_key,
     };
     let header = put_on(ctx, thread.id, b"header", wire::header(spoken, &header))?;
     let threshold = config.compact_at;
