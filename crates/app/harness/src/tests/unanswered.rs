@@ -107,13 +107,15 @@ fn a_post_in_its_place_answers_it_and_one_elsewhere_does_not() {
     assert!(!failed, "{posted}");
     chain.at(6, 0);
     ends(chain, "Posted.");
+    chain.at(7, 0);
+    ends(chain, "It landed.");
     assert!(assigned(chain, SERVICE).is_empty());
     let general = posts(chain, first)
         .into_iter()
         .find(|text| text.ends_with("answer me in general"))
         .unwrap();
     let second = renewed(chain, &Op::NewThread { agent: world.agent });
-    assert_eq!(posts(chain, second), [carried(&world, first, 6, &general)]);
+    assert_eq!(posts(chain, second), [carried(&world, first, 7, &general)]);
 }
 
 #[test]
@@ -231,12 +233,14 @@ fn a_reaction_on_its_message_answers_it() {
     assert!(!failed, "{reacted}");
     chain.at(6, 0);
     ends(chain, "Seen.");
+    chain.at(7, 0);
+    ends(chain, "It landed.");
     let general = posts(chain, first)
         .into_iter()
         .find(|text| text.ends_with("answer me in general"))
         .unwrap();
     let second = renewed(chain, &Op::NewThread { agent: world.agent });
-    assert_eq!(posts(chain, second), [carried(&world, first, 6, &general)]);
+    assert_eq!(posts(chain, second), [carried(&world, first, 7, &general)]);
 }
 
 fn direct(world: &World, key: &[u8], from: AccountNumber, to: AccountNumber, text: &str) -> String {
@@ -278,6 +282,8 @@ fn a_reaction_in_its_direct_room_answers_what_was_said_there() {
     assert!(!failed, "{reacted}");
     chain.at(6, 0);
     ends(chain, "Seen.");
+    chain.at(7, 0);
+    ends(chain, "It landed.");
     let heard = posts(chain, first);
     assert!(
         heard
@@ -290,7 +296,7 @@ fn a_reaction_in_its_direct_room_answers_what_was_said_there() {
         .find(|text| text.ends_with("answer me in general"))
         .unwrap();
     let second = renewed(chain, &Op::NewThread { agent: world.agent });
-    assert_eq!(posts(chain, second), [carried(&world, first, 6, &general)]);
+    assert_eq!(posts(chain, second), [carried(&world, first, 7, &general)]);
 }
 
 #[test]

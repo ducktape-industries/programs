@@ -247,6 +247,9 @@ fn an_agents_own_tool_file_takes_the_place_of_a_shared_one_and_its_query_answers
     };
     assert!(listed.tools.contains(&read), "{listed:?}");
 
+    chain.at(5, 0);
+    let words = json!([{ "type": "text", "text": "Written." }]);
+    model_says(chain, words, "end_turn");
     let (tools, _) = sent(chain);
     let [tool] = named(&tools, "channel_name").try_into().unwrap();
     assert_eq!(
@@ -254,13 +257,13 @@ fn an_agents_own_tool_file_takes_the_place_of_a_shared_one_and_its_query_answers
         json!("A chat channel's name. (tool file /home/Scout/tools/channel_name.toml)")
     );
     let asked = json!({ "channel": "general" });
-    turn(chain, 5, &[("q1", "channel_name", asked)]);
+    turn(chain, 6, &[("q1", "channel_name", asked)]);
     assert_eq!(
         answered(chain, thread, "q1"),
         json!({ "ok": true, "text": "general is called general" })
     );
     let unknown = json!({ "channel": "nowhere" });
-    turn(chain, 7, &[("q2", "channel_name", unknown)]);
+    turn(chain, 8, &[("q2", "channel_name", unknown)]);
     assert_eq!(
         answered(chain, thread, "q2"),
         json!({

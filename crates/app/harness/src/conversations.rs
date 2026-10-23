@@ -218,7 +218,7 @@ pub(crate) fn retire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
         return Ok(());
     }
     let superseded = CURRENT.get(ctx, &row.agent)? != Some(id);
-    let idle = row.asking == Asking::Idle;
+    let idle = row.asking == Asking::Idle && row.open_calls == 0;
     if superseded && idle && !row.closed {
         row.closed = true;
         crate::unanswered::closing(ctx, id)?;
@@ -348,42 +348,41 @@ fn whole(ctx: &ExecCtx, id: u64) -> Result<Vec<Frame>, Error> {
 }
 
 fn answered(frames: &[Frame]) -> usize {
-    let Some(at) = frames
-        .iter()
-        .rposition(|frame| matches!(frame.body, Body::Turn { .. }))
-    else {
-        return frames.len();
-    };
-    let Body::Turn { said, .. } = &frames[at].body else {
-        return frames.len();
-    };
-    let results: Vec<&str> = frames[at + 1..]
+    let back: Vec<&str> = frames
         .iter()
         .filter_map(|frame| match &frame.body {
-            Body::Result { call, .. } | Body::Refused { call, .. } | Body::Receipt { call, .. } => {
+            Body::Result { call, .. } | Body::Refused { call, .. } | Body::Arrived { call, .. } => {
                 Some(call.as_str())
             }
             Body::Post { .. }
             | Body::Light { .. }
             | Body::Turn { .. }
-            | Body::Arrived { .. }
+            | Body::Receipt { .. }
             | Body::Notice { .. }
             | Body::Compaction { .. } => None,
         })
         .collect();
-    let every_call_back = said.iter().all(|said| match said {
-        Said::ToolUse { id, .. } => results.contains(&id.as_str()),
+    let still_out = |said: &Said| match said {
+        Said::ToolUse { id, .. } => !back.contains(&id.as_str()),
         Said::Text(_)
         | Said::Thinking { .. }
         | Said::RedactedThinking(_)
         | Said::ServerToolUse { .. }
         | Said::ServerToolResult(_)
-        | Said::Cited { .. } => true,
-    });
-    match every_call_back {
-        true => frames.len(),
-        false => at,
-    }
+        | Said::Cited { .. } => false,
+    };
+    let waits = |frame: &Frame| match &frame.body {
+        Body::Turn { said, .. } => said.iter().any(still_out),
+        Body::Post { .. }
+        | Body::Light { .. }
+        | Body::Refused { .. }
+        | Body::Result { .. }
+        | Body::Receipt { .. }
+        | Body::Arrived { .. }
+        | Body::Notice { .. }
+        | Body::Compaction { .. } => false,
+    };
+    frames.iter().position(waits).unwrap_or(frames.len())
 }
 
 fn copied(ctx: &ExecCtx, from: &ThreadRow, row: &mut ThreadRow) -> Result<(), Error> {

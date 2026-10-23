@@ -122,6 +122,7 @@ fn a_whole_network_call_an_update_cut_off_fails_past_egress_deadline_and_the_mod
     );
     assert!(text.starts_with(&why), "{text}");
     assert!(text.ends_with(AGAIN), "{text}");
+    chain.at(deadline + 3, 0);
     let messages = sent(chain);
     assert!(messages.contains(&why), "{messages}");
     assert!(messages.contains("list the pods"), "the history is kept");

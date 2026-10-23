@@ -79,6 +79,8 @@ fn a_reaction_on_the_agents_message_rides_its_next_turn_and_starts_none() {
     relay_back(chain, "toolu_a");
     chain.at(5, 0);
     model_says(chain, says("Asked."), "end_turn");
+    chain.at(6, 0);
+    model_says(chain, says("It is posted."), "end_turn");
     let seq = own_post(&world);
     react(&world, ADA, seq, true);
     assert_eq!(light(chain, thread), [reacted(&world, seq)]);
@@ -88,7 +90,7 @@ fn a_reaction_on_the_agents_message_rides_its_next_turn_and_starts_none() {
     );
     assert!(!thread_row(chain, thread).due());
 
-    chain.at(6, 0);
+    chain.at(7, 0);
     react(&world, ADA, seq, false);
     assert_eq!(
         light(chain, thread).len(),
@@ -121,9 +123,14 @@ fn a_reaction_heard_while_a_turn_runs_rides_it_and_asks_nothing_after() {
     assert_eq!(light(chain, thread).len(), 1, "held behind the turn");
     chain.at(5, 0);
     model_says(chain, says("Asked."), "end_turn");
+    let (request, _) = open_request(chain);
+    let sent = provider_body(chain, &request)["messages"].to_string();
+    assert!(sent.contains("reacted 👍 to your message"), "{sent}");
+    chain.at(6, 0);
+    model_says(chain, says("It is posted."), "end_turn");
     assert!(
         assigned(chain, SERVICE).is_empty(),
-        "the held reaction asks nothing once the turn ends"
+        "the held reaction rides the result's ask and asks nothing after"
     );
     assert!(!thread_row(chain, thread).due());
     assert_eq!(light(chain, thread).len(), 1);

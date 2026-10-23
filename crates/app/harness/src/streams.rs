@@ -41,15 +41,22 @@ pub(crate) async fn streamed(ctx: &Ctx, thread: u64, event: Event) -> Result<(),
     crate::replies::keep(ctx, thread, event.seq, &partial, &folded)?;
     crate::resume::moved(ctx, thread)?;
     crate::drafts::wrote(ctx, thread, &partial, &folded, restarted).await;
-    let settled = match step(&partial, &folded, restarted) {
+    let stepped = step(&partial, &folded, restarted);
+    let called = matches!(stepped, Step::Formed { .. });
+    let settled = match stepped {
         Step::Nothing => Settled::default(),
         Step::Restarted => void_reply(ctx, thread).await?,
         Step::Showing { index } => show(ctx, thread, index).await?,
         Step::Formed { index } => dispatch(ctx, thread, index).await?,
     };
     let ended = !crate::resume::streamed(&partial) && crate::resume::streamed(&folded);
+    if settled.gather {
+        crate::waiting::gather(ctx, thread).await;
+    }
     if settled.carry_on || ended {
         converse(ctx, thread).await;
+    } else if called {
+        crate::conversations::retire(ctx, thread)?;
     }
     Ok(())
 }

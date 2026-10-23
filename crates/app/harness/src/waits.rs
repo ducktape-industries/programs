@@ -12,12 +12,11 @@ use crate::agents::{configured, harnessed_agent, thread};
 use crate::conversations::current;
 use crate::pictures::Picture;
 use crate::state::{
-    ARMED, ENDING, MESSAGE_WAITS, THREADS, WAIT_COUNT, WAIT_WAKES, WAITING, WAITS, WAKE_WAITS,
-    WATCHED,
+    ARMED, MESSAGE_WAITS, THREADS, WAIT_COUNT, WAIT_WAKES, WAITING, WAITS, WAKE_WAITS, WATCHED,
 };
 use crate::turns::{converse, say_from};
 use crate::woken::{self, Arming, Call};
-use crate::{Asking, Body, Ended, Place, ThreadRow, Until, WaitFor, WaitRow, listening};
+use crate::{Body, Ended, Place, ThreadRow, Until, WaitFor, WaitRow, listening};
 
 pub(crate) fn what(event: &WaitFor) -> String {
     match event {
@@ -186,10 +185,6 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
     match waking(&waiting.event) {
         Some(event) => arm(ctx, &waiting, event).await?,
         None => listen_for(ctx, &waiting)?,
-    }
-    let in_turn = thread(ctx, thread_id)?.asking != Asking::Idle;
-    if in_turn {
-        ENDING.insert(ctx, &thread_id);
     }
     ctx.set_return_data(abi::encode(&id));
     Ok(())

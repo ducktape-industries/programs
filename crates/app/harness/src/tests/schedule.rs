@@ -666,6 +666,7 @@ fn a_booked_run_reports_to_the_conversation_new_thread_started_in_place_of_the_o
     );
     let entry = entry_of(chain, thread, "b1");
     said(chain, 5, "Booked.");
+    said(chain, 6, "It landed.");
     let heir = super::wait::renewed(&world);
     assert!(thread_row(chain, thread).closed);
     chain.at(11, 0);

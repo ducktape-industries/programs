@@ -125,8 +125,7 @@ fn post_events(call: &str, pieces: &[&str]) -> Vec<Vec<u8>> {
 }
 
 #[test]
-fn a_call_runs_once_its_block_is_whole_and_the_model_is_asked_once_the_turn_ends_and_every_result_is_back()
- {
+fn a_call_runs_once_its_block_is_whole_and_its_result_rides_the_ask_after_its_turn() {
     let world = world();
     let chain = &world.chain;
     let (thread, request) = asked(&world);
@@ -160,9 +159,16 @@ fn a_call_runs_once_its_block_is_whole_and_the_model_is_asked_once_the_turn_ends
     from(chain, &request, &events, 4);
     end(chain, &request, events.len() as u64);
     let bodies = frames(chain, thread);
-    let [.., Body::Turn { .. }, Body::Result { call, failed, .. }] = &bodies[..] else {
-        panic!("the turn, then its result: {bodies:?}");
+    let [
+        ..,
+        Body::Turn { .. },
+        Body::Receipt { call: acked, .. },
+        Body::Arrived { call, failed, .. },
+    ] = &bodies[..]
+    else {
+        panic!("the turn, its call's receipt, then its result: {bodies:?}");
     };
+    assert_eq!(acked, "toolu_c");
     assert_eq!((call.as_str(), *failed), ("toolu_c", false));
     let (_, head) = open_request(chain);
     assert_eq!(path(&head), model_wire::TURN);
@@ -175,7 +181,7 @@ fn a_call_runs_once_its_block_is_whole_and_the_model_is_asked_once_the_turn_ends
 }
 
 #[test]
-fn a_call_still_running_when_the_turn_ends_is_recorded_after_it_and_then_the_model_is_asked() {
+fn a_call_still_running_when_the_turn_ends_is_acknowledged_and_its_result_waits_for_the_next_ask() {
     let world = world();
     let chain = &world.chain;
     let (thread, request) = asked(&world);
@@ -191,21 +197,33 @@ fn a_call_still_running_when_the_turn_ends_is_recorded_after_it_and_then_the_mod
     .concat();
     from(chain, &request, &events, 0);
     end(chain, &request, events.len() as u64);
-    assert_eq!(thread_row(chain, thread).asking, Asking::Running);
-    assert!(assigned(chain, SERVICE).is_empty());
+    let bodies = frames(chain, thread);
+    let [.., Body::Turn { .. }, Body::Receipt { call, .. }] = &bodies[..] else {
+        panic!("the turn, then its call's receipt: {bodies:?}");
+    };
+    assert_eq!(call, "toolu_c");
+    assert_eq!(
+        thread_row(chain, thread).asking,
+        Asking::Asked {
+            upto: thread_row(chain, thread).frames
+        },
+        "the model is asked again while the call runs"
+    );
     world.mention("m2", "and this");
     ran(chain, "toolu_c");
-    let bodies = frames(chain, thread);
-    let [
-        ..,
-        Body::Turn { .. },
-        Body::Result { .. },
-        Body::Post { text, .. },
-    ] = &bodies[..]
-    else {
-        panic!("the turn, its result, then the held input: {bodies:?}");
-    };
-    assert!(text.contains("and this"), "{text}");
+    let waiting = held(chain, thread);
+    assert!(
+        waiting
+            .iter()
+            .any(|body| matches!(body, Body::Arrived { call, .. } if call == "toolu_c")),
+        "its result waits for the next ask: {waiting:?}"
+    );
+    assert!(
+        waiting
+            .iter()
+            .any(|body| matches!(body, Body::Post { text, .. } if text.contains("and this"))),
+        "the mention waits beside it: {waiting:?}"
+    );
     let (_, head) = open_request(chain);
     assert_eq!(path(&head), model_wire::TURN);
 }
@@ -233,7 +251,11 @@ fn a_streamed_post_lands_once_whole_and_is_never_edited_while_the_draft_shows_it
         message(chain, &id).is_none(),
         "nothing is posted while the call forms"
     );
-    assert_eq!(drafts(chain), [writing("Hello **world**")]);
+    assert_eq!(
+        drafts(chain),
+        [writing("Hello **world**")],
+        "the draft stays while its post is on its way"
+    );
     ran(chain, "toolu_p");
     let [posted] = posts_by(chain, world.agent).try_into().unwrap();
     assert_eq!(posted.message_id, id);
@@ -245,6 +267,11 @@ fn a_streamed_post_lands_once_whole_and_is_never_edited_while_the_draft_shows_it
         "one PostMessage with the whole text, and no EditMessage"
     );
     assert!(message(chain, &format!("{id}-moved")).is_none());
+    assert!(drafts(chain).is_empty(), "the post took the draft's place");
+    assert!(
+        drafting(chain, thread).is_none(),
+        "harness lets go of the draft once its post has landed"
+    );
     let (text, failed) = result_of(chain, thread, "toolu_p");
     assert!(!failed, "{text}");
     let (_, head) = open_request(chain);
@@ -307,6 +334,38 @@ fn a_post_the_target_refuses_becomes_the_calls_failed_result() {
 }
 
 #[test]
+fn a_post_whose_call_fails_takes_its_draft_down() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let events = post_events("toolu_p", &[r#"{"channel":"general","text":"Hi"}"#]);
+    from(chain, &request, &events, 0);
+    end(chain, &request, events.len() as u64);
+    assert_eq!(
+        drafts(chain),
+        [writing("Hi")],
+        "the draft stays while its post is on its way"
+    );
+    chain.at(4, 0);
+    let rows = assigned(chain, RELAY);
+    let relaying = Request::Relay {
+        note: b"toolu_p".to_vec(),
+    };
+    let row = rows
+        .iter()
+        .find(|row| row.request == relaying)
+        .expect("the call is relaying");
+    answer(chain, row.id, Answer::Failed("the node restarted".into()));
+    let (text, failed) = result_of(chain, thread, "toolu_p");
+    assert!(failed, "{text}");
+    assert!(posts_by(chain, world.agent).is_empty());
+    assert!(
+        drafts(chain).is_empty(),
+        "a post that never landed leaves no draft"
+    );
+}
+
+#[test]
 fn a_reply_that_starts_over_before_its_post_is_whole_posts_only_the_new_one() {
     let world = world();
     let chain = &world.chain;
@@ -325,6 +384,7 @@ fn a_reply_that_starts_over_before_its_post_is_whole_posts_only_the_new_one() {
     let [posted] = posts_by(chain, world.agent).try_into().unwrap();
     assert_eq!(posted.message_id, format!("harness-{thread}-toolu_b"));
     assert_eq!(text_of(&posted), "Final");
+    assert!(drafts(chain).is_empty(), "the post took the draft's place");
     assert!(message(chain, &old).is_none());
     let [Body::Turn { said, .. }] = &turns(chain, thread)[..] else {
         panic!("one turn");
@@ -594,7 +654,19 @@ fn a_stream_the_node_starts_again_mid_commit_places_its_call_once() {
         .collect();
     assert_eq!(calls, ["toolu_1"]);
     assert!(notices(chain, thread).is_empty());
-    assert_eq!(thread_row(chain, thread).asking, Asking::Running);
+    assert_eq!(
+        thread_row(chain, thread).asking,
+        Asking::Asked {
+            upto: thread_row(chain, thread).frames
+        },
+        "its call acked, the next ask is under way"
+    );
+}
+
+fn drafting(chain: &MockChain, thread: u64) -> Option<crate::state::Drafted> {
+    let host = chain.host(PROGRAM);
+    let exec = host.exec(::program::MockHost::env(PROGRAM));
+    crate::state::DRAFTING.get(&exec, &thread).unwrap()
 }
 
 fn drafts(chain: &MockChain) -> Vec<(String, String)> {
@@ -689,8 +761,13 @@ fn a_post_at_the_rooms_foot_drafts_there_once_its_text_begins_and_the_post_takes
     );
     assert_eq!(drafts(chain), [writing("Do")]);
     from(chain, &request, &posting, 6);
-    end(chain, &request, posting.len() as u64);
     assert_eq!(drafts(chain), [writing("Done")]);
+    end(chain, &request, posting.len() as u64);
+    assert_eq!(
+        drafts(chain),
+        [writing("Done")],
+        "the next model call keeps the draft of a post on its way"
+    );
     ran(chain, "toolu_p");
     let [posted] = posts_by(chain, world.agent).try_into().unwrap();
     assert_eq!(text_of(&posted), "Done");
@@ -723,8 +800,13 @@ fn a_reply_in_a_thread_drafts_under_its_root_as_reply_to_arrives_before_any_text
     stream(chain, &request, &posting, &[6]);
     assert_eq!(placed(chain), [(Some(1), "In the".to_owned())]);
     from(chain, &request, &posting, 7);
-    end(chain, &request, posting.len() as u64);
     assert_eq!(placed(chain), [(Some(1), "In the thread".to_owned())]);
+    end(chain, &request, posting.len() as u64);
+    assert_eq!(
+        placed(chain),
+        [(Some(1), "In the thread".to_owned())],
+        "the next model call keeps the draft of a post on its way"
+    );
     ran(chain, "toolu_t");
     assert!(placed(chain).is_empty(), "the reply took the draft's place");
 }

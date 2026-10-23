@@ -38,6 +38,21 @@ fn says(text: &str) -> Value {
     json!([{ "type": "text", "text": text }])
 }
 
+fn ends_for(chain: &MockChain, thread: u64, text: &str) {
+    let deliver = egress::Delivery::Events {
+        deliver: streamed_as(thread),
+    };
+    let row = assigned(chain, SERVICE)
+        .into_iter()
+        .find(|row| row.delivery == deliver)
+        .expect("the conversation asks");
+    answer(
+        chain,
+        row.id,
+        Answer::Output(reply(says(text), "end_turn", 10)),
+    );
+}
+
 fn canonical(world: &World) -> u64 {
     let thread = world.opened("m1", "hello", Some(WINDOW));
     world.chain.at(3, 0);
@@ -88,6 +103,8 @@ fn armed_in_bound(world: &World) -> (u64, u64) {
     assert_eq!(armed, json!({ "ok": true, "returned": 1 }));
     world.chain.at(6, 0);
     model_says(&world.chain, says("Armed."), "end_turn");
+    world.chain.at(7, 0);
+    model_says(&world.chain, says("It is armed."), "end_turn");
     assert!(
         assigned(&world.chain, SERVICE).is_empty(),
         "both conversations are idle"
@@ -167,6 +184,8 @@ fn a_wake_harness_never_saw_armed_reaches_the_canonical_conversation() {
     assert!(reported, "the booked run armed the wake as the agent");
     chain.at(9, 0);
     model_says(chain, says("Done."), "end_turn");
+    chain.at(10, 0);
+    ends_for(chain, thread, "Reported.");
     chain.at(11, 0);
     let heard = told(chain, first);
     let [Body::Post { text, .. }] = &heard[..] else {
@@ -210,6 +229,8 @@ fn a_clear_wake_on_a_free_place_ends_inside_its_arming_and_still_reaches_the_con
     };
     assert_eq!(*author, Principal::Root);
     assert!(text.starts_with("Wake 1 is over: #ops is clear."), "{text}");
+    chain.at(6, 0);
+    model_says(chain, says("Armed."), "end_turn");
     let (request, _) = open_request(chain);
     let deliver = egress::Delivery::Events {
         deliver: streamed_as(thread),
@@ -217,11 +238,12 @@ fn a_clear_wake_on_a_free_place_ends_inside_its_arming_and_still_reaches_the_con
     assert_eq!(request.delivery, deliver);
     let asked = provider_body(chain, &request).to_string();
     assert!(
-        asked.contains("Wake 1 is over: #ops is clear."),
+        asked.contains("Wake 1 is over: #ops is clear.")
+            && asked.contains("Result of tool call w1"),
         "the bound conversation reads it with its call's result"
     );
-    chain.at(6, 0);
-    model_says(chain, says("Armed."), "end_turn");
+    chain.at(7, 0);
+    model_says(chain, says("Seen."), "end_turn");
     assert!(assigned(chain, SERVICE).is_empty());
 }
 
@@ -244,6 +266,8 @@ fn a_wake_end_held_while_a_wake_on_was_in_flight_reaches_the_canonical_conversat
         let ctx = host.exec(chain.env(PROGRAM));
         crate::state::ARMING.insert(&ctx, &(world.agent, thread, "w1".to_owned()));
     }
+    chain.at(10, 0);
+    ends_for(chain, thread, "Reported.");
     chain.at(11, 0);
     assert!(
         told(chain, first).is_empty(),
@@ -326,6 +350,7 @@ fn a_wake_end_given_to_a_conversation_held_for_its_reset_asks_at_once_unpinned()
     model_says(chain, says("Done."), "end_turn");
     world.mention("m2", "one more thing");
     chain.at(10, 0);
+    ends_for(chain, thread, "Reported.");
     limited(chain);
     assert!(held_for_the_reset(chain, first), "held for its reset");
     assert!(assigned(chain, SERVICE).is_empty());
@@ -382,6 +407,8 @@ fn a_wake_end_held_for_a_conversation_that_closes_mid_arming_reaches_the_canonic
         let ctx = host.exec(chain.env(PROGRAM));
         crate::state::ARMING.insert(&ctx, &(world.agent, thread, "w1".to_owned()));
     }
+    chain.at(10, 0);
+    ends_for(chain, thread, "Reported.");
     chain.at(11, 0);
     assert!(
         told(chain, first).is_empty(),

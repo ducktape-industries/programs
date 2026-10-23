@@ -161,7 +161,11 @@ fn a_swap_mid_reply_records_what_streamed_whole_and_its_call_runs_once() {
     chain.at(deadline + 2, 0);
     assert_eq!(turns(chain, thread), 1, "what streamed whole is the turn");
     assert_eq!(calls(chain, thread).len(), 1, "its call is placed once");
-    assert_eq!(thread_row(chain, thread).asking, Asking::Running);
+    assert_eq!(
+        thread_row(chain, thread).asking,
+        Asking::Asked { upto: 3 },
+        "its call acked, the next ask is under way"
+    );
     chain.at(deadline + 3, 0);
     let messages = sent_messages(chain);
     let sent = serde_json::to_string(&messages).unwrap();
@@ -171,9 +175,9 @@ fn a_swap_mid_reply_records_what_streamed_whole_and_its_call_runs_once() {
         json!([{ "type": "text", "text": "Reading." }]),
         "end_turn",
     );
-    let relays = deadline + 1 + egress::DEFAULT_WAIT;
-    chain.at(relays + 2, 0);
+    chain.at(deadline + 4, 0);
     relay_back(chain, "toolu_1");
+    chain.at(deadline + 6, 0);
     let results = frames(chain, thread)
         .into_iter()
         .filter(|body| matches!(body, Body::Arrived { call, .. } if call == "toolu_1"))

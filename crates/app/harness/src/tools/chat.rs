@@ -13,7 +13,7 @@ use super::{
     unexpected,
 };
 use crate::Place;
-use crate::state::HELD_AT;
+use crate::state::{HEARD_AT, HELD_AT, POST_READ_THROUGH};
 
 fn ask(ctx: &ExecCtx, seat: &Seat, query: Query) -> Result<Reply, Error> {
     crate::reading::chat_for(ctx, seat.agent, &query)
@@ -298,11 +298,20 @@ impl Posted {
     }
 }
 
-fn read_since(ctx: &ExecCtx, thread: u64, posted: &Posted) -> Result<(), Error> {
+fn read_since(ctx: &ExecCtx, seat: &Seat, posted: &Posted) -> Result<(), Error> {
     let place = posted.place();
     let key = place.key();
-    let held = HELD_AT.scan(ctx, HELD_AT.prefix_of(&thread))?;
-    if !held.iter().any(|(_, at)| *at == key) {
+    let read_through = POST_READ_THROUGH.get(ctx, &(seat.thread, seat.call.to_owned()))?;
+    let arrived_after_read = match read_through {
+        Some(read_through) => HEARD_AT
+            .get(ctx, &(seat.thread, key.clone()))?
+            .is_some_and(|arrived| arrived > read_through),
+        None => HELD_AT
+            .scan(ctx, HELD_AT.prefix_of(&seat.thread))?
+            .iter()
+            .any(|(_, at)| *at == key),
+    };
+    if !arrived_after_read {
         return Ok(());
     }
     Err(stale(format!(
@@ -409,7 +418,7 @@ impl Tool for Post {
         };
         let own = message_id(seat.thread, seat.call);
         let Some(row) = standing(ctx, seat, own.clone())? else {
-            read_since(ctx, seat.thread, &posted)?;
+            read_since(ctx, seat, &posted)?;
             return Ok(Run::Write(vec![post(own, &posted)]));
         };
         let same_place = row.channel_id == posted.channel && row.thread == posted.reply_to;
@@ -418,7 +427,7 @@ impl Tool for Post {
             (true, true) => Ok(Run::Done(json!({ "ok": true }))),
             (true, false) => Ok(Run::Write(vec![edit(&row, &posted.text)])),
             (false, _) => {
-                read_since(ctx, seat.thread, &posted)?;
+                read_since(ctx, seat, &posted)?;
                 Ok(Run::Write(vec![
                     delete(&row),
                     post(moved_id(&own), &posted),

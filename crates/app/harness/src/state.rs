@@ -30,6 +30,8 @@ pub const VACATED: Map<(AccountNumber, String), u64> = Map::new("vacated/");
 pub const FRAMES: Map<(u64, u64), Frame> = Map::new("frame/");
 pub const HELD: Map<(u64, u64), Body> = Map::new("held/");
 pub const HELD_AT: Map<(u64, u64), String> = Map::new("held-at/");
+pub const HEARD_AT: Map<(u64, String), u64> = Map::new("heard-at/");
+pub const POST_READ_THROUGH: Map<(u64, String), u64> = Map::new("post-read-through/");
 pub const SEALED: Map<(u64, u64), Sealed> = Map::new("sealed/");
 pub const RELINED: Item<u64> = Item::new("relined/next");
 pub const LANES: Map<(u64, u64), Lane> = Map::new("lane/");
@@ -79,7 +81,6 @@ pub const WAITS: Map<u64, WaitRow> = Map::new("wait/");
 pub const WAITING: Set<(AccountNumber, u64)> = Set::new("waiting/");
 // each conversation's waits not over yet
 pub const ARMED: Set<(u64, u64)> = Set::new("armed/");
-// threads whose turn armed a wait: it ends once its calls are back
 pub const ENDING: Set<u64> = Set::new("ending/");
 pub const WAIT_COUNT: Item<u64> = Item::new("wait-count");
 pub const PROMISES: Map<u64, crate::PromiseRow> = Map::new("promise/");
@@ -92,7 +93,6 @@ pub const MESSAGE_WAITS: Set<(AccountNumber, (String, u64))> = Set::new("wait-me
 // each tool call whose write awaits its answer, and each stream a watch listens to, by thread:
 // what tells a later run that the frame awaiting it is gone
 pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/");
-pub const RECEIPTED: Set<(u64, String)> = Set::new("receipted/");
 pub const STREAMING: Map<(u64, u64), Flight> = Map::new("streaming/");
 // the harness code that runs, and the block harness first ran it at (`resume::switched`)
 pub const RUNNING: Item<(BlobId, u64)> = Item::new("running");
@@ -110,8 +110,6 @@ pub const WATCHED: Set<u64> = Set::new("wait-watched/");
 // what each conversation was last told of each chat room's rules (`room_rules.rs`)
 pub const RULES_TOLD: Map<(u64, String), crate::room_rules::Told> = Map::new("rules-told/");
 pub const SEALED_FOR: Map<u64, (String, Option<String>)> = Map::new("sealed-for/");
-// the chat place each conversation's turn keeps its live draft in, where its forming post goes, and
-// what the draft says the turn is doing (`drafts.rs`)
 pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
 pub const FINAL_ERRORS: Map<(AccountNumber, u64), FinalError> = Map::new("final-error/");
 pub const RUNS: Map<(AccountNumber, String), Run> = Map::new("mention-run/");
@@ -148,6 +146,7 @@ pub struct SectionRow {
 pub struct Drafted {
     pub place: Place,
     pub doing: String,
+    pub call: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

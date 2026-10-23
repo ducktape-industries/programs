@@ -66,6 +66,9 @@ fn talk(world: &World, choice: Choice) {
     chain.at(5, 0);
     let done = json!([{ "type": "text", "text": "Posted." }]);
     model_says(chain, done, "end_turn");
+    chain.at(6, 0);
+    let landed = json!([{ "type": "text", "text": "It landed." }]);
+    model_says(chain, landed, "end_turn");
     assert!(assigned(chain, SERVICE).is_empty());
     choose(world, "general", choice);
     world.post(ADA, "general", "p1", PLAIN);

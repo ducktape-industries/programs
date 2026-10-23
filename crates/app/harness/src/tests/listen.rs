@@ -172,6 +172,8 @@ fn the_agents_own_posts_and_other_channels_reach_nothing_and_listen_seeds_the_ro
     assert!(!result_of(chain, thread, "toolu_p").1);
     block(chain, 7);
     model_says(chain, says("Done."), "end_turn");
+    block(chain, 8);
+    model_says(chain, says("It is posted."), "end_turn");
     let heard = posts(chain, thread).len();
     assert_eq!(heard, 2, "its own post never comes back");
     assert_eq!(settling(chain, thread), None);
@@ -194,7 +196,7 @@ fn the_agents_own_posts_and_other_channels_reach_nothing_and_listen_seeds_the_ro
     };
     chain.submit(signed(ADA), chat::PROGRAM, &back).unwrap();
     world.mention("m3", "stop listening");
-    block(chain, 8);
+    block(chain, 9);
     model_says(chain, says("Stopped."), "end_turn");
     let asked = chat::Query::Listening {
         account: world.agent,

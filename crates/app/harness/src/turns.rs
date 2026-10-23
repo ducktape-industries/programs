@@ -1,11 +1,13 @@
 //! The loop consensus runs for a thread: read the agent's configuration and its model, pick the
 //! account to ask (`routes.rs`), learn the window, summarize when the next answer would not fit,
-//! ask for a streamed reply, build the turn, run its calls, and ask again once they are back.
+//! ask for a streamed reply, acknowledge its calls, and keep asking while tools run independently.
 use ::program::{
-    BlobId, Ctx, Error, ExecCtx, HashKind, Principal, ProgramId, QueryCtx, Range, all,
-    unexpected_reply, wrong_state,
+    BlobId, Ctx, Error, ExecCtx, HashKind, Principal, ProgramId, QueryCtx, Range, unexpected_reply,
+    wrong_state,
 };
 use abi::role::egress::{self, http};
+use std::future::{Future, poll_fn};
+use std::task::Poll;
 
 use crate::agents::{Agent, manual, running, thread};
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
@@ -92,6 +94,10 @@ pub(crate) fn say_from(
     pictures: Vec<Picture>,
     place: Option<String>,
 ) {
+    if let Some(place) = &place {
+        let arrival = thread.frames + thread.held + 1;
+        crate::state::HEARD_AT.put(ctx, &(thread.id, place.clone()), &arrival);
+    }
     let looping = thread.asking != Asking::Idle || thread.paused();
     if !looping {
         append(ctx, thread, body);
@@ -661,7 +667,7 @@ impl Step {
 
 pub(crate) async fn converse(ctx: &Ctx, id: u64) {
     let driven = match resume::recover(ctx, id).await {
-        Ok(()) => drive(ctx, id).await,
+        Ok(calls) => drive(ctx, id, calls).await,
         Err(error) => Err(error),
     };
     if let Err(error) = driven {
@@ -673,24 +679,76 @@ pub(crate) async fn converse(ctx: &Ctx, id: u64) {
     crate::drafts::settled(ctx, id).await;
 }
 
-async fn drive(ctx: &Ctx, id: u64) -> Result<(), Error> {
-    while let Some(step) = claim(ctx, id)? {
-        if let Some(asked) = step.asked() {
-            resume::watch(ctx, id, asked.wait, Some(asked.config)).await;
-            crate::drafts::asking(ctx, id).await;
-        }
-        match step {
-            Step::Learn { asked, model } => learn(ctx, id, asked, model).await?,
-            Step::Compact {
-                asked,
-                through,
-                parts,
-            } => compact(ctx, id, asked, through, parts).await?,
-            Step::Ask { asked, upto, parts } => ask(ctx, id, asked, upto, parts).await?,
-            Step::Again(failure) => resume::again(ctx, id, failure).await?,
+pub(crate) type Calls = Vec<(u64, String)>;
+
+enum Work {
+    Step(Step),
+    Call(u64, String),
+}
+
+async fn work(ctx: &Ctx, id: u64, work: Work) -> Result<Calls, Error> {
+    match work {
+        Work::Step(step) => take_step(ctx, id, step).await,
+        Work::Call(index, call) => {
+            let settled = run_call(ctx, id, index, call).await?;
+            if settled.gather {
+                crate::waiting::gather(ctx, id).await;
+            }
+            Ok(Vec::new())
         }
     }
-    Ok(())
+}
+
+async fn take_step(ctx: &Ctx, id: u64, step: Step) -> Result<Calls, Error> {
+    if let Some(asked) = step.asked() {
+        resume::watch(ctx, id, asked.wait, Some(asked.config)).await;
+        crate::drafts::asking(ctx, id).await;
+    }
+    match step {
+        Step::Learn { asked, model } => learn(ctx, id, asked, model).await?,
+        Step::Compact {
+            asked,
+            through,
+            parts,
+        } => compact(ctx, id, asked, through, parts).await?,
+        Step::Ask { asked, upto, parts } => return ask(ctx, id, asked, upto, parts).await,
+        Step::Again(failure) => resume::again(ctx, id, failure).await?,
+    }
+    Ok(Vec::new())
+}
+
+async fn drive(ctx: &Ctx, id: u64, calls: Calls) -> Result<(), Error> {
+    let mut pending: Vec<_> = calls
+        .into_iter()
+        .map(|(index, call)| Box::pin(work(ctx, id, Work::Call(index, call))))
+        .collect();
+    loop {
+        if let Some(step) = claim(ctx, id)? {
+            pending.push(Box::pin(work(ctx, id, Work::Step(step))));
+        }
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let completed = poll_fn(|context| {
+            let mut completed = Vec::new();
+            for (index, future) in pending.iter_mut().enumerate() {
+                if let Poll::Ready(result) = future.as_mut().poll(context) {
+                    completed.push((index, result));
+                }
+            }
+            match completed.is_empty() {
+                true => Poll::Pending,
+                false => Poll::Ready(completed),
+            }
+        })
+        .await;
+        for (index, result) in completed.into_iter().rev() {
+            drop(pending.swap_remove(index));
+            for (index, call) in result? {
+                pending.push(Box::pin(work(ctx, id, Work::Call(index, call))));
+            }
+        }
+    }
 }
 
 fn may_ask(thread: &ThreadRow) -> bool {
@@ -896,7 +954,7 @@ fn largest_unseen(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Optio
         let new = frame.seq > thread.seen;
         let input = frame.body.role() == Some(Role::User);
         let kept = !WITHHELD.has(ctx, &(thread.id, frame.seq));
-        new && input && kept
+        new && input && shrinks(&frame.body) && kept
     });
     let sized = unseen.map(|frame| {
         let one = std::slice::from_ref(&frame);
@@ -1048,7 +1106,13 @@ fn summarize(
     unseal(ctx, thread)
 }
 
-async fn ask(ctx: &Ctx, id: u64, asked: Asked, upto: u64, parts: Vec<BlobId>) -> Result<(), Error> {
+async fn ask(
+    ctx: &Ctx,
+    id: u64,
+    asked: Asked,
+    upto: u64,
+    parts: Vec<BlobId>,
+) -> Result<Calls, Error> {
     let head = wire::turn_head(asked.wire);
     let delivery = egress::Delivery::Events {
         deliver: streamed_as(id),
@@ -1067,29 +1131,17 @@ pub(crate) async fn conclude(
     upto: u64,
     config: BlobId,
     read: impl FnOnce(Option<Partial>) -> Result<Answered, Failure>,
-) -> Result<(), Error> {
+) -> Result<Calls, Error> {
     let partial = crate::replies::read(ctx, id)?;
     crate::replies::clear(ctx, id)?;
     take_back_showing(ctx, id).await?;
     let answered = read(partial.clone());
     let Turned { calls, again } = turned(ctx, id, upto, config, answered, partial)?;
-    if thread(ctx, id)?.open_calls > 0 {
-        resume::watch(ctx, id, None, Some(config)).await;
-        resume::receipts_due(ctx, id).await;
-    }
-    let runs = calls
-        .into_iter()
-        .map(|(index, call)| run_call(ctx, id, index, call));
-    for ran in all(runs).await {
-        ran?;
-    }
     let mut thread = thread(ctx, id)?;
-    let finished = thread.asking == Asking::Running && thread.open_calls == 0;
-    if finished {
-        settle(ctx, &mut thread)?;
-        THREADS.put(ctx, &id, &thread);
-    }
-    retried(ctx, id, again).await
+    settle(ctx, &mut thread)?;
+    THREADS.put(ctx, &id, &thread);
+    retried(ctx, id, again).await?;
+    Ok(calls)
 }
 
 fn read_answer(
@@ -1268,9 +1320,27 @@ fn largest_input(ctx: &ExecCtx, thread: &ThreadRow) -> Result<Option<Frame>, Err
     let frames = FRAMES.scan(ctx, range)?.into_iter().map(|(_, frame)| frame);
     let kept = frames.filter(|frame| {
         let input = frame.body.role() == Some(Role::User);
-        input && !WITHHELD.has(ctx, &(thread.id, frame.seq))
+        input && shrinks(&frame.body) && !WITHHELD.has(ctx, &(thread.id, frame.seq))
     });
     Ok(kept.max_by_key(|frame| frame.body.text().len()))
+}
+
+fn shrinks(body: &Body) -> bool {
+    !matches!(body, Body::Receipt { .. })
+}
+
+fn acknowledge(ctx: &ExecCtx, thread: &mut ThreadRow, call: &str, tool: &str) {
+    append(
+        ctx,
+        thread,
+        Body::Receipt {
+            call: call.to_owned(),
+            tool: tool.to_owned(),
+        },
+    );
+    if tool == "wait_for" {
+        ENDING.insert(ctx, &thread.id);
+    }
 }
 
 fn record(
@@ -1319,16 +1389,37 @@ fn record(
     for (index, call, tool, input) in asked {
         match LIVE.get(ctx, &(thread.id, index))? {
             Some(Live {
-                outcome: Some(body),
+                outcome:
+                    Some(Body::Refused {
+                        call,
+                        tool,
+                        problem,
+                    }),
                 ..
             }) => {
-                append(ctx, thread, body);
-                pictures::called(ctx, thread.id, &call, thread.frames)?;
+                append(
+                    ctx,
+                    thread,
+                    Body::Refused {
+                        call,
+                        tool,
+                        problem,
+                    },
+                );
             }
-            Some(Live { outcome: None, .. }) => {}
+            Some(Live { outcome, .. }) => {
+                acknowledge(ctx, thread, &call, &tool);
+                if let Some(body) = outcome {
+                    let pictures = pictures::taken(ctx, thread.id, &call)?;
+                    say_with(ctx, thread, body, pictures);
+                }
+            }
             None => match place(ctx, thread, &call, &tool, &input)? {
                 Placed::Refused(body) => append(ctx, thread, body),
-                Placed::Relaying => calls.push((index, call)),
+                Placed::Relaying => {
+                    acknowledge(ctx, thread, &call, &tool);
+                    calls.push((index, call));
+                }
             },
         }
     }

@@ -858,6 +858,12 @@ fn a_reply_in_a_thread_the_agent_took_part_in_reaches_it_unmentioned_and_is_answ
         "end_turn",
     );
     chain.at(6, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "It landed." }]),
+        "end_turn",
+    );
+    chain.at(7, 0);
     let follow_up = chat::Op::PostMessage {
         channel_id: "general".into(),
         message_id: "a3".into(),
@@ -891,13 +897,13 @@ fn a_reply_in_a_thread_the_agent_took_part_in_reaches_it_unmentioned_and_is_answ
         "{heard}"
     );
     assert!(heard.ends_with("and the second part?"), "{heard}");
-    chain.at(7, 0);
+    chain.at(8, 0);
     model_says(
         chain,
         json!([in_thread("toolu_b", "the second part")]),
         "tool_use",
     );
-    chain.at(8, 0);
+    chain.at(9, 0);
     relay_back(chain, "toolu_b");
     let asked = chat::Query::MessageById {
         message_id: format!("harness-{thread}-toolu_b"),
@@ -1014,7 +1020,7 @@ fn an_agent_taken_back_from_harness_or_suspended_hears_nothing() {
 }
 
 #[test]
-fn every_tool_call_runs_a_block_later_and_the_model_is_asked_once_all_results_are_back() {
+fn every_tool_call_is_acked_at_once_and_its_result_arrives_independently() {
     let world = world();
     let chain = &world.chain;
     let thread = world.opened("m1", "note it", Some(WINDOW));
@@ -1028,14 +1034,32 @@ fn every_tool_call_runs_a_block_later_and_the_model_is_asked_once_all_results_ar
     ]);
     model_says(chain, calls, "tool_use");
     let bodies = frames(chain, thread);
-    assert!(matches!(&bodies[2], Body::Refused { call, .. } if call == "toolu_x"));
-    assert!(matches!(&bodies[3], Body::Refused { problem, .. } if problem.contains("path")));
-    assert_eq!(bodies.len(), 4);
-    assert_eq!(assigned(chain, RELAY).len(), 2);
     assert!(
-        assigned(chain, SERVICE).is_empty(),
-        "the model waits for the results"
+        bodies
+            .iter()
+            .any(|body| matches!(body, Body::Refused { call, .. } if call == "toolu_x"))
     );
+    assert!(
+        bodies
+            .iter()
+            .any(|body| matches!(body, Body::Refused { problem, .. } if problem.contains("path")))
+    );
+    assert_eq!(bodies.len(), 6);
+    assert_eq!(assigned(chain, RELAY).len(), 2);
+    let [receipt] = assigned(chain, SERVICE).try_into().unwrap();
+    let sent = provider_body(chain, &receipt);
+    let results = sent["messages"][2]["content"].as_array().unwrap();
+    for call in ["toolu_w", "toolu_l"] {
+        assert!(results.iter().any(|block| block["tool_use_id"] == call
+            && block["content"].to_string().contains("Accepted as call")));
+    }
+    for call in ["toolu_x", "toolu_bad"] {
+        assert!(
+            results
+                .iter()
+                .any(|block| block["tool_use_id"] == call && block["is_error"] == true)
+        );
+    }
 
     let same_block = egress::Op::Answer {
         id: assigned(chain, RELAY)[0].id,
@@ -1052,7 +1076,11 @@ fn every_tool_call_runs_a_block_later_and_the_model_is_asked_once_all_results_ar
         serde_json::from_str::<Value>(&listed).unwrap()["entries"],
         json!([])
     );
-    assert!(assigned(chain, SERVICE).is_empty());
+    assert_eq!(
+        assigned(chain, SERVICE).len(),
+        1,
+        "its receipt ask is still open"
+    );
     relay_back(chain, "toolu_w");
     let (written, failed) = result_of(chain, thread, "toolu_w");
     assert!(!failed, "{written}");
@@ -1081,35 +1109,31 @@ fn every_tool_call_runs_a_block_later_and_the_model_is_asked_once_all_results_ar
     );
     assert_eq!(thread_row(chain, thread).open_calls, 0);
 
+    assert_eq!(held(chain, thread).len(), 2);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Continuing while tools run." }]),
+        "end_turn",
+    );
     let [next] = assigned(chain, SERVICE).try_into().unwrap();
     let sent = provider_body(chain, &next);
     let messages = sent["messages"].as_array().unwrap();
-    assert_eq!(messages.len(), 3);
     assert_eq!(messages[1]["content"][1]["type"], "tool_use");
-    let results = messages[2]["content"].as_array().unwrap();
-    let answered: Vec<(&str, bool)> = results
+    let results = messages.last().unwrap()["content"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    let texts: Vec<_> = results
         .iter()
         .map(|block| {
-            assert_eq!(block["type"], "tool_result");
-            (
-                block["tool_use_id"].as_str().unwrap(),
-                block["is_error"].as_bool().unwrap(),
-            )
+            assert_eq!(block["type"], "text");
+            block["text"].as_str().unwrap()
         })
         .collect();
-    assert_eq!(
-        answered,
-        [
-            ("toolu_x", true),
-            ("toolu_bad", true),
-            ("toolu_l", false),
-            ("toolu_w", false)
-        ]
-    );
+    assert!(texts[0].starts_with("Result of tool call toolu_l"));
+    assert!(texts[1].starts_with("Result of tool call toolu_w"));
 }
 
 #[test]
-fn input_that_arrives_while_a_call_runs_is_held_and_follows_its_result() {
+fn input_and_results_that_arrive_during_the_receipt_ask_follow_their_arrival_order() {
     let world = world();
     let chain = &world.chain;
     let thread = world.opened("m1", "look", Some(WINDOW));
@@ -1120,13 +1144,25 @@ fn input_that_arrives_while_a_call_runs_is_held_and_follows_its_result() {
     assert_eq!(held(chain, thread).len(), 1);
     chain.at(4, 0);
     relay_back(chain, "toolu_l");
+    assert_eq!(held(chain, thread).len(), 2);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Continuing." }]),
+        "end_turn",
+    );
     let [again] = assigned(chain, SERVICE).try_into().unwrap();
     let sent = provider_body(chain, &again);
     let last = sent["messages"].as_array().unwrap().last().unwrap().clone();
     assert_eq!(last["role"], "user");
-    assert_eq!(last["content"][0]["type"], "tool_result");
-    let text = last["content"][1]["text"].as_str().unwrap();
+    assert_eq!(last["content"][0]["type"], "text");
+    let text = last["content"][0]["text"].as_str().unwrap();
     assert!(text.ends_with("and also"), "{text}");
+    assert!(
+        last["content"][1]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Result of tool call toolu_l")
+    );
     chain.at(5, 0);
     model_says(
         chain,
@@ -1186,7 +1222,16 @@ fn a_call_in_flight_when_its_agent_is_taken_back_does_not_run() {
         panic!()
     };
     assert_eq!(entry, None, "the agent taken back wrote nothing");
-    assert!(assigned(chain, SERVICE).is_empty());
+    chain.at(5, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Waiting." }]),
+        "end_turn",
+    );
+    assert!(
+        assigned(chain, SERVICE).is_empty(),
+        "its failed result asks nothing of an agent taken back"
+    );
     assert_eq!(chain.frames(), 0);
 }
 
@@ -1848,23 +1893,34 @@ fn a_result_that_alone_overflows_the_window_is_left_out_and_the_model_searches_a
     chain.at(4, 0);
     relay_back(chain, "toolu_l");
     chain.at(5, 0);
-    refused_as_too_long(chain);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Waiting for it." }]),
+        "end_turn",
+    );
     chain.at(6, 0);
-    summarized(chain, "Ada asked to read it.");
+    refused_as_too_long(chain);
     chain.at(7, 0);
+    summarized(chain, "Ada asked to read it.");
+    chain.at(8, 0);
     refused_as_too_long(chain);
     let messages = sent_messages(chain);
-    let result = &messages[messages.len() - 1]["content"][0];
-    assert_eq!(result["type"], "tool_result");
-    assert_eq!(result["tool_use_id"], "toolu_l");
-    assert_eq!(result["is_error"], false);
+    let content = messages[messages.len() - 1]["content"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let result = content.last().unwrap();
+    assert_eq!(result["type"], "text");
     let (text, failed) = result_of(chain, thread, "toolu_l");
     assert!(!failed, "the transcript keeps the result as it came");
     let note = format!(
-        "left out of your context: frame 3 is {} bytes in 1 lines, too large for the model to take whole. Find lines in it with thread_search (frame 3) and read parts of it with thread_read (frame 3, an offset and a length).",
+        "left out of your context: frame 5 is {} bytes in 1 lines, too large for the model to take whole. Find lines in it with thread_search (frame 5) and read parts of it with thread_read (frame 5, an offset and a length).",
         text.len()
     );
-    assert_eq!(result["content"], note);
+    assert_eq!(
+        result["text"],
+        Body::arrived("toolu_l", "files_list", &note, false)
+    );
     let Reply::Withheld(left_out) = chain.query(PROGRAM, &Query::Withheld { thread }).unwrap()
     else {
         panic!()
@@ -1872,7 +1928,7 @@ fn a_result_that_alone_overflows_the_window_is_left_out_and_the_model_searches_a
     assert_eq!(
         left_out,
         [WithheldFrame {
-            seq: 3,
+            seq: 5,
             size: text.len() as u64
         }]
     );
@@ -1884,30 +1940,30 @@ fn a_result_that_alone_overflows_the_window_is_left_out_and_the_model_searches_a
         "{told:?}"
     );
 
-    chain.at(8, 0);
+    chain.at(9, 0);
     let wanted = &text[2..6];
     let calls = json!([
         tool_use(
             "toolu_s",
             "thread_search",
-            json!({ "pattern": wanted, "frame": 3, "around": 1 })
+            json!({ "pattern": wanted, "frame": 5, "around": 1 })
         ),
         tool_use(
             "toolu_r",
             "thread_read",
-            json!({ "frame": 3, "offset": 2, "length": 4 })
+            json!({ "frame": 5, "offset": 2, "length": 4 })
         ),
         tool_use("toolu_n", "thread_read", json!({ "frame": 99 })),
     ]);
     model_says(chain, calls, "tool_use");
-    chain.at(9, 0);
+    chain.at(10, 0);
     for call in ["toolu_s", "toolu_r", "toolu_n"] {
         relay_back(chain, call);
     }
     let (searched, failed) = result_of(chain, thread, "toolu_s");
     assert!(!failed, "{searched}");
     let searched: Value = serde_json::from_str(&searched).unwrap();
-    assert_eq!(searched["hits"][0]["frame"], 3);
+    assert_eq!(searched["hits"][0]["frame"], 5);
     assert_eq!(searched["hits"][0]["line"], 1);
     assert_eq!(searched["hits"][0]["offsets"][0], 2);
     assert_eq!(searched["hits"][0]["excerpts"][0], &text[1..7]);
@@ -1916,12 +1972,17 @@ fn a_result_that_alone_overflows_the_window_is_left_out_and_the_model_searches_a
     let read: Value = serde_json::from_str(&read).unwrap();
     assert_eq!(
         read,
-        json!({ "frame": 3, "offset": 2, "size": text.len(), "text": wanted, "rest": text.len() - 6 })
+        json!({ "frame": 5, "offset": 2, "size": text.len(), "text": wanted, "rest": text.len() - 6 })
     );
     let (missing, failed) = result_of(chain, thread, "toolu_n");
     assert!(failed && missing.contains("no frame 99"), "{missing}");
-    chain.at(10, 0);
-
+    chain.at(11, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Reading what comes back." }]),
+        "end_turn",
+    );
+    chain.at(12, 0);
     model_says(
         chain,
         json!([{ "type": "text", "text": "Found it." }]),

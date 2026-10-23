@@ -120,6 +120,7 @@ fn a_run_asks_fleet_as_the_agent_and_its_end_wakes_the_conversation_that_asked()
     turn(&world, 3, &[("r1", "fleet_run", run)]);
     let id = run_of(chain, thread, "r1");
     said(chain, 5, "Asked.");
+    said(chain, 6, "It runs.");
 
     let asked = workload(chain, id);
     assert_eq!(asked.by, world.agent, "it asks as the agent");

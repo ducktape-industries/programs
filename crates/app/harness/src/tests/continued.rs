@@ -140,6 +140,8 @@ fn the_agents_own_reply_ends_the_run() {
     relay_back(chain, "toolu_a");
     chain.at(5, 0);
     model_says(chain, says("Posted."), "end_turn");
+    chain.at(6, 0);
+    model_says(chain, says("It landed."), "end_turn");
     assert!(runs(chain, thread).is_empty(), "its answer ends the run");
     assert!(!watches(chain, world.agent));
     world.post(ADA, "general", "a3", "and one more thing");
@@ -467,6 +469,8 @@ fn an_answer_in_another_room_ends_the_run_and_its_watch() {
     assert!(!watches(chain, world.agent));
     chain.at(5, 0);
     model_says(chain, says("Posted."), "end_turn");
+    chain.at(6, 0);
+    model_says(chain, says("It landed."), "end_turn");
     world.post(ADA, "general", "a2", "days later, another subject");
     assert!(heard_of(chain, thread, "another subject").is_empty());
     assert!(

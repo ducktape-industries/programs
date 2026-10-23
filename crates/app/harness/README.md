@@ -83,8 +83,9 @@ calls are not all back; either becomes current. Its manager may claim who starts
 conversations (`ClaimConversations { agent }`): the ownership role then records the row
 as theirs (kind `harness.agent-conversation`), and its policy decides each later
 `ForkThread`, and each `NewThread` but the agent's own. A thread that `NewThread` or
-`ForkThread` replaced closes once its loop is idle, and stays readable. `Query::Threads`
-lists an agent's threads newest first, and `Query::ThreadAt` names the thread an input
+`ForkThread` replaced closes once its loop is idle and its calls are back, and stays
+readable. `Query::Threads` lists an agent's threads newest first, and `Query::ThreadAt`
+names the thread an input
 from a place last reached. An agent with no current thread on record takes as current
 its open thread whose loop is idle and that moved last (its newest frame at the highest
 block), so on a network whose harness is swapped for this one the agent carries on in

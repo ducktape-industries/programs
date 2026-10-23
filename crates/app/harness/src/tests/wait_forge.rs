@@ -41,9 +41,11 @@ fn a_wait_for_a_ref_wakes_once_when_it_moves() {
     let wanted = json!({ "event": { "ref": { "repo": "notes", "ref": "main" } } });
     turn(chain, 7, &[("w1", "wait_for", wanted)]);
     let wait = waited(chain, thread, "w1");
+    let words = json!([{ "type": "text", "text": "Committed; waiting for main." }]);
+    model_says(chain, words, "end_turn");
     assert!(
         assigned(chain, SERVICE).is_empty(),
-        "the turn that armed it ends"
+        "the turn that armed it ends once the result before it is heard"
     );
     let before = head(chain, "notes", "main");
 

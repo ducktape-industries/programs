@@ -8,13 +8,13 @@ use abi::role::identity::AccountNumber;
 
 use crate::agents::{configured, harnessed_agent, running, thread};
 use crate::bookings::note;
-use crate::calls::{lost, refusal, run_call};
+use crate::calls::{lost, refusal};
 use crate::conversations::{binding, conversation};
 use crate::routes;
 use crate::schema::code_of;
 use crate::state::{
-    ASKED, AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, RECEIPTED, REPORTING,
-    REPORTS, RETRIES, RUNNING, Retry, STREAMING, THREADS, WATCHES,
+    ASKED, AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES,
+    RUNNING, Retry, STREAMING, THREADS, WATCHES,
 };
 use crate::tools::Write;
 use crate::turns::{append, bound, conclude, converse, give_up, say, settle};
@@ -164,11 +164,6 @@ pub(crate) async fn watch(ctx: &Ctx, id: u64, wait: Option<u64>, config: Option<
         .await
         .ok();
     FLIGHTS.put(ctx, &id, &flight);
-}
-
-pub(crate) async fn receipts_due(ctx: &Ctx, id: u64) {
-    let next = ctx.env().height.saturating_add(1);
-    let _ = ctx.schedule(next, &ctx.env().program, &wake(id)).await;
 }
 
 pub(crate) async fn awaiting(ctx: &Ctx, id: u64, call: &str, writes: &[Write]) {
@@ -544,14 +539,27 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
     crate::providers::forget_unreported(ctx)?;
     let mut fronts = crate::kept::Fronts::default();
     let mut wakes = Vec::new();
-    for (id, row) in THREADS.all(ctx)? {
+    for (id, mut row) in THREADS.all(ctx)? {
+        row.open_calls = CALLS
+            .scan(ctx, CALLS.prefix_of(&id))?
+            .into_iter()
+            .filter(|(_, call)| {
+                matches!(
+                    call.state,
+                    CallState::Showing | CallState::Relaying | CallState::Writing
+                )
+            })
+            .count()
+            .try_into()
+            .unwrap_or(u32::MAX);
+        THREADS.put(ctx, &id, &row);
         crate::kept::switched(ctx, &mut fronts, &row)?;
         let before = FLIGHTS
             .get(ctx, &id)?
             .is_none_or(|flight| flight.made < since);
         let listened = !STREAMING.scan(ctx, STREAMING.prefix_of(&id))?.is_empty();
-        let acked = !RECEIPTED.scan(ctx, RECEIPTED.prefix_of(&id))?.is_empty();
-        let woken = (row.asking != Asking::Idle && before) || listened || acked;
+        let unfinished = row.open_calls > 0;
+        let woken = (row.asking != Asking::Idle && before) || listened || unfinished;
         if woken {
             wakes.push(wake(id));
         }
@@ -608,30 +616,14 @@ fn delivered(ctx: &QueryCtx, deliver: &[u8]) -> Result<bool, Error> {
     Ok(false)
 }
 
-fn block_ended(ctx: &QueryCtx, made: u64) -> bool {
-    let env = ctx.env();
-    let next = made.saturating_add(1);
-    let at_its_end = env.height == next && matches!(env.cause, Cause::Scheduled { .. });
-    env.height > next || at_its_end
-}
-
-async fn relay_receipted(ctx: &Ctx, id: u64, since: Option<u64>) -> Result<(), Error> {
-    let cut = crate::calls::unrelayed(ctx, id, since)?;
-    let runs = cut.into_iter().map(|call| run_call(ctx, id, 0, call));
-    for ran in all(runs).await {
-        ran?;
-    }
-    Ok(())
-}
-
-pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
+pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<crate::turns::Calls, Error> {
     let since = switched(ctx).await?;
     lost_writes(ctx, id).await?;
     lost_streams(ctx, id, since).await?;
-    relay_receipted(ctx, id, since).await?;
+    let mut calls = crate::calls::unrelayed(ctx, id, since)?;
     let row = thread(ctx, id)?;
     if row.asking == Asking::Idle {
-        return Ok(());
+        return Ok(calls);
     }
     let flight = FLIGHTS.get(ctx, &id)?;
     let height = ctx.env().height;
@@ -645,17 +637,7 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
         (false, None) => false,
     };
     if !cut {
-        let recorded = flight
-            .as_ref()
-            .is_some_and(|flight| block_ended(ctx, flight.made));
-        let acks = row.asking == Asking::Running && row.open_calls > 0 && recorded;
-        if acks {
-            let mut row = row;
-            crate::calls::receipt(ctx, &mut row)?;
-            settle(ctx, &mut row)?;
-            THREADS.put(ctx, &id, &row);
-        }
-        return Ok(());
+        return Ok(calls);
     }
     let text = match (&flight, switch) {
         (Some(flight), Some(since)) if !lapsed => format!(
@@ -670,7 +652,7 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
         (None, _) => "the model call was cut off by a harness update".to_owned(),
     };
     match row.asking {
-        Asking::Idle => Ok(()),
+        Asking::Idle => {}
         Asking::Compacting { .. } => {
             let mut row = row;
             crate::summaries::clear(ctx, id);
@@ -678,13 +660,12 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
             settle(ctx, &mut row)?;
             THREADS.put(ctx, &id, &row);
             answered(ctx, id);
-            Ok(())
         }
         Asking::Learning => {
             let mut row = row;
             settle(ctx, &mut row)?;
             THREADS.put(ctx, &id, &row);
-            again(ctx, id, Failure::lost(text)).await
+            again(ctx, id, Failure::lost(text)).await?;
         }
         Asking::Asked { upto } => {
             let config = match flight.and_then(|flight| flight.config) {
@@ -696,15 +677,19 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
                 Some(partial) => Ok(wire::folded(partial)),
                 None => Err(Failure::lost(text)),
             };
-            conclude(ctx, id, upto, config, read).await?;
+            calls.extend(conclude(ctx, id, upto, config, read).await?);
             if whole {
                 let line = "its model's reply had streamed whole when the call was cut off; harness recorded it and placed its calls";
                 tell(ctx, &row, line.to_owned(), "its model call was lost").await?;
             }
-            Ok(())
         }
-        Asking::Running => rerun(ctx, id, flight.and_then(|flight| flight.config)).await,
+        Asking::Running => {
+            let mut row = row;
+            settle(ctx, &mut row)?;
+            THREADS.put(ctx, &id, &row);
+        }
     }
+    Ok(calls)
 }
 
 pub(crate) fn streamed(partial: &Partial) -> bool {
@@ -723,35 +708,6 @@ fn configured_now(ctx: &QueryCtx, row: &ThreadRow) -> Result<BlobId, Error> {
             row.id
         ))
     })
-}
-
-async fn rerun(ctx: &Ctx, id: u64, config: Option<BlobId>) -> Result<(), Error> {
-    let cut: Vec<String> = CALLS
-        .scan(ctx, CALLS.prefix_of(&id))?
-        .into_iter()
-        .filter(|(_, call)| call.state == CallState::Relaying)
-        .map(|(_, call)| call.id)
-        .collect();
-    let mut row = thread(ctx, id)?;
-    if cut.is_empty() {
-        if row.open_calls == 0 {
-            settle(ctx, &mut row)?;
-            THREADS.put(ctx, &id, &row);
-        }
-        return Ok(());
-    }
-    watch(ctx, id, None, config).await;
-    receipts_due(ctx, id).await;
-    let line = format!(
-        "the relays of {} placed tool calls were cut off; harness relays them again",
-        cut.len()
-    );
-    tell(ctx, &row, line, "its tool calls' relays were lost").await?;
-    let runs = cut.into_iter().map(|call| run_call(ctx, id, 0, call));
-    for ran in all(runs).await {
-        ran?;
-    }
-    Ok(())
 }
 
 async fn tell(ctx: &Ctx, row: &ThreadRow, line: String, why: &str) -> Result<(), Error> {

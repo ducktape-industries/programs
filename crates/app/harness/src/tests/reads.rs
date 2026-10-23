@@ -127,11 +127,24 @@ fn only_a_turn_moves_last_turn_never_a_heard_post_a_result_a_notice_or_a_summary
     chain.at(3, 0);
     let call = tool_use("toolu_t", "thread_topic", json!({ "topic": "the plan" }));
     model_says(chain, json!([call]), "tool_use");
-    assert!(matches!(newest(chain, thread), Body::Turn { .. }));
+    let acked = frames(chain, thread);
+    assert!(
+        matches!(&acked[..], [.., Body::Turn { .. }, Body::Receipt { .. }]),
+        "{acked:?}"
+    );
     assert_eq!(last_turn(chain, thread), Some(3));
     chain.at(4, 0);
     relay_back(chain, "toolu_t");
-    assert!(matches!(newest(chain, thread), Body::Result { .. }));
+    let landed: Vec<Body> = frames(chain, thread)
+        .into_iter()
+        .chain(held(chain, thread))
+        .collect();
+    assert!(
+        landed
+            .iter()
+            .any(|body| matches!(body, Body::Arrived { call, .. } if call == "toolu_t")),
+        "{landed:?}"
+    );
     assert_eq!(
         last_turn(chain, thread),
         Some(3),

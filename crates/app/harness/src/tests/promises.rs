@@ -81,6 +81,7 @@ fn a_promise_wakes_its_conversation_when_due_and_again_each_interval_until_it_is
     );
     let id = promised(chain, thread, "p1");
     said(chain, 5, "Promised.");
+    said(chain, 6, "It is recorded.");
     let [made] = open(chain, world.agent)
         .try_into()
         .expect("one open promise");
@@ -179,10 +180,46 @@ fn a_promise_whose_conversation_closed_wakes_the_agents_current_one_and_moves_th
     turn(&world, 3, &[("p1", "promise", promise("follow up", 20))]);
     let id = promised(chain, thread, "p1");
     said(chain, 5, "Promised.");
+    said(chain, 6, "It is recorded.");
     chain
         .submit(signed(ADA), PROGRAM, &Op::Close { thread })
         .unwrap();
-    chain.at(6, 0);
+    chain.at(7, 0);
+    let fresh = world.mention("m2", "a fresh start");
+    assert_ne!(fresh, thread);
+    let due = row(chain, id).unwrap().due;
+    chain.at(due + 1, 0);
+    assert!(told(chain, thread).is_empty(), "{:?}", told(chain, thread));
+    let heard = told(chain, fresh);
+    let [handover, wake] = &heard[..] else {
+        panic!("m1 handed over, then the promise's wake: {heard:?}")
+    };
+    let carried = "notice queue Note: 1 unanswered\n\n";
+    assert!(handover.starts_with(carried), "{handover}");
+    assert!(handover.ends_with("promise then go"), "{handover}");
+    let due = format!("Promise {id} is due: follow up");
+    assert!(wake.starts_with(&due), "{wake}");
+    assert_eq!(row(chain, id).unwrap().thread, fresh);
+}
+
+#[test]
+fn a_conversation_closed_mid_ask_hands_its_unanswered_over_once_that_ask_is_answered() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "promise then go", Some(WINDOW));
+    turn(&world, 3, &[("p1", "promise", promise("follow up", 20))]);
+    let id = promised(chain, thread, "p1");
+    said(chain, 5, "Promised.");
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
+        .unwrap();
+    assert_ne!(
+        thread_row(chain, thread).asking,
+        Asking::Idle,
+        "the closed conversation's turn ends once its ask is answered"
+    );
+    said(chain, 6, "It is recorded.");
+    chain.at(7, 0);
     let fresh = world.mention("m2", "a fresh start");
     assert_ne!(fresh, thread);
     let due = row(chain, id).unwrap().due;

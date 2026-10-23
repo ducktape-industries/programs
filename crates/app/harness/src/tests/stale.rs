@@ -172,7 +172,20 @@ fn posted(case: &Case) -> (Rig, (String, bool)) {
     rig.world.chain.at(4, 0);
     relay_back(&rig.world.chain, "toolu_p");
     let result = result_of(&rig.world.chain, rig.thread, "toolu_p");
+    assert_eq!(
+        read_mark(&rig, "toolu_p"),
+        None,
+        "a post's read mark goes with its call"
+    );
     (rig, result)
+}
+
+fn read_mark(rig: &Rig, call: &str) -> Option<u64> {
+    let host = rig.world.chain.host(PROGRAM);
+    let exec = host.exec(::program::MockHost::env(PROGRAM));
+    crate::state::POST_READ_THROUGH
+        .get(&exec, &(rig.thread, call.to_owned()))
+        .unwrap()
 }
 
 #[test]
@@ -239,14 +252,17 @@ fn a_post_is_refused_exactly_when_something_heard_from_its_place_came_after_its_
         prop_assert!(text.contains("not posted"), "{}", text);
         prop_assert!(rig.landed("toolu_p").is_none());
         let chain = &rig.world.chain;
+        chain.at(5, 0);
+        let noted = json!([{ "type": "text", "text": "Noted." }]);
+        model_says(chain, noted, "end_turn");
         prop_assert!(
             held(chain, rig.thread).is_empty(),
-            "the next ask reads what reached it"
+            "the ask after the refusal reads what reached it"
         );
-        chain.at(5, 0);
+        chain.at(6, 0);
         let again = tool_use("toolu_q", "chat_post", rig.post(case.post, "again"));
         model_says(chain, json!([again]), "tool_use");
-        chain.at(6, 0);
+        chain.at(7, 0);
         relay_back(chain, "toolu_q");
         let (text, refused) = result_of(chain, rig.thread, "toolu_q");
         prop_assert!(!refused, "{}", text);

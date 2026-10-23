@@ -204,15 +204,6 @@ pub(crate) fn added(ctx: &ExecCtx, thread: u64, call: &str, picture: Picture) ->
     Ok(())
 }
 
-pub(crate) fn called(ctx: &ExecCtx, thread: u64, call: &str, seq: u64) -> Result<(), Error> {
-    let key = (thread, call.to_owned());
-    if let Some(pictures) = CALL_PICTURES.get(ctx, &key)? {
-        PICTURES.put(ctx, &(thread, seq), &pictures);
-        CALL_PICTURES.remove(ctx, &key);
-    }
-    Ok(())
-}
-
 pub(crate) fn taken(ctx: &ExecCtx, thread: u64, call: &str) -> Result<Vec<Picture>, Error> {
     let key = (thread, call.to_owned());
     let pictures = CALL_PICTURES.get(ctx, &key)?.unwrap_or_default();

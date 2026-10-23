@@ -113,6 +113,12 @@ fn a_refused_wait_does_not_end_the_turn() {
     let thread = world.opened("m1", "wake me in the past", Some(WINDOW));
     turn(&world, 3, &[("w1", "wait_for", height(2))]);
     refused(chain, thread, "w1");
+    assert_eq!(
+        asking(chain),
+        0,
+        "the refusal waits out its one-block window"
+    );
+    chain.at(6, 0);
     assert_eq!(asking(chain), 1, "the model hears the refusal");
     assert!(armed(chain, thread).is_empty());
 }
@@ -362,7 +368,8 @@ fn a_cancelled_message_wait_stops_watching_and_an_unknown_channel_is_refused() {
     assert_eq!(answered(chain, thread, "c1"), json!({ "ok": true }));
     assert!(!watches(chain, world.agent, "random"));
     ended_turn(chain, 8);
-    chain.at(9, 0);
+    ended_turn(chain, 9);
+    chain.at(10, 0);
     world.post(BO, "random", "r1", "hello?");
     assert!(wakes(chain, thread).is_empty());
     assert_eq!(asking(chain), 0);

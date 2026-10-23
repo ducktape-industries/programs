@@ -1,5 +1,13 @@
 # Tool files
 
+Every accepted tool call is acknowledged immediately when its model reply is recorded. The agent
+can keep working before the call finishes. Every actual result arrives as a separate input headed
+`Result of tool call`, including results already available when the reply is recorded. A result
+received during a model request is included in its next request. Results that reach an idle
+conversation in one block are heard together: the first opens a one-block settle window, and the
+conversation asks once as the next block ends. A successful `wait_for` ends the
+turn explicitly; its acknowledgement and successful result do not ask the model again.
+
 A tool file is a TOML file in files that harness offers an agent as a tool. Nothing is compiled or
 deployed per tool: writing the file is the whole of it, and the agent has the tool on its next model
 call. A tool file only sends queries, ops and egress service calls its agent could send itself, as

@@ -356,16 +356,42 @@ fn image_view_shows_an_image_file_in_its_result_and_refuses_another_kind() {
         "{refused}"
     );
 
+    chain.at(5, 0);
+    let looking = json!([{ "type": "text", "text": "Looking." }]);
+    model_says(chain, looking, "end_turn");
     let content = last_content(chain);
-    let result = |call: &str| {
-        let found = content.iter().find(|block| block["tool_use_id"] == call);
-        found.unwrap_or_else(|| panic!("no result for {call}: {content:?}"))
+    let heads = |block: &Value| {
+        let text = block["text"].as_str().unwrap_or_default();
+        text.starts_with("Result of tool call ")
     };
-    let shown = result("v1")["content"].as_array().unwrap();
-    assert_eq!(shown[0]["text"], text);
-    let [image] = images(shown)[..] else {
+    let result = |call: &str| {
+        let heading = format!("Result of tool call {call} (");
+        let at = content
+            .iter()
+            .position(|block| {
+                block["text"]
+                    .as_str()
+                    .is_some_and(|text| text.starts_with(&heading))
+            })
+            .unwrap_or_else(|| panic!("no result for {call}: {content:?}"));
+        let rest = &content[at + 1..];
+        let end = rest.iter().position(heads).unwrap_or(rest.len());
+        content[at..=at + end].to_vec()
+    };
+    let shown = result("v1");
+    assert_eq!(
+        shown[0]["text"],
+        Body::arrived("v1", "image_view", &text, false)
+    );
+    let [image] = images(&shown)[..] else {
         panic!("one image in the result: {shown:?}");
     };
     assert_eq!(decoded(image), bytes);
-    assert!(result("v2")["content"].is_string());
+    let [told] = &result("v2")[..] else {
+        panic!("one text block for the refusal");
+    };
+    assert_eq!(
+        told["text"],
+        Body::arrived("v2", "image_view", &refused, true)
+    );
 }

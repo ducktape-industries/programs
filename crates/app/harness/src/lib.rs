@@ -453,6 +453,11 @@ impl Body {
     pub fn input(&self) -> bool {
         match self {
             Body::Light { .. } => false,
+            Body::Arrived {
+                tool,
+                failed: false,
+                ..
+            } if tool == "wait_for" => false,
             _ => self.role() == Some(Role::User),
         }
     }

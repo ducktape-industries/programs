@@ -36,15 +36,18 @@ fn a_request_too_large_for_the_service_leaves_its_largest_result_out_and_asks_ag
     chain.at(4, 0);
     relay_back(chain, "toolu_l");
     let (text, _) = result_of(chain, thread, "toolu_l");
+    chain.at(5, 0);
+    let waiting = json!([{ "type": "text", "text": "Waiting for it." }]);
+    model_says(chain, waiting, "end_turn");
     let (refused, _) = open_request(chain);
     let before = raw(chain, &refused);
-    chain.at(5, 0);
+    chain.at(6, 0);
     answer(chain, refused.id, Answer::Output(too_large()));
 
     let (asked, _) = open_request(chain);
     let after = raw(chain, &asked);
     let note = format!(
-        "left out of your context: frame 3 is {} bytes in 1 lines, too large for the model to take whole. Find lines in it with thread_search (frame 3) and read parts of it with thread_read (frame 3, an offset and a length).",
+        "left out of your context: frame 5 is {} bytes in 1 lines, too large for the model to take whole. Find lines in it with thread_search (frame 5) and read parts of it with thread_read (frame 5, an offset and a length).",
         text.len()
     );
     let (result, stub) = (escaped(&text), escaped(&note));
@@ -73,7 +76,7 @@ fn a_request_too_large_for_the_service_leaves_its_largest_result_out_and_asks_ag
     assert_eq!(
         left_out,
         [WithheldFrame {
-            seq: 3,
+            seq: 5,
             size: text.len() as u64
         }]
     );
@@ -85,7 +88,7 @@ fn a_request_too_large_for_the_service_leaves_its_largest_result_out_and_asks_ag
         "{told:?}"
     );
 
-    chain.at(6, 0);
+    chain.at(7, 0);
     model_says(
         chain,
         json!([{ "type": "text", "text": "Read." }]),
@@ -93,19 +96,25 @@ fn a_request_too_large_for_the_service_leaves_its_largest_result_out_and_asks_ag
     );
     world.mention("m2", "again");
     assert_eq!(
-        sent_result(chain, "toolu_l")["content"],
+        sent_result(chain, "toolu_l"),
         note,
         "a later turn sends the same note"
     );
 }
 
-fn sent_result(chain: &MockChain, call: &str) -> Value {
+fn sent_result(chain: &MockChain, call: &str) -> String {
     let messages = sent_messages(chain);
     let blocks = messages
         .iter()
         .flat_map(|message| message["content"].as_array().cloned().unwrap_or_default());
-    let mut found = blocks.filter(|block| block["tool_use_id"] == call);
-    found.next().expect("the request sends the call's result")
+    let heading = format!("Result of tool call {call} (");
+    let texts = blocks.filter_map(|block| block["text"].as_str().map(str::to_owned));
+    let mut found = texts.filter(|text| text.starts_with(&heading));
+    let sent = found.next().expect("the request sends the call's result");
+    let (_, result) = sent
+        .split_once('\n')
+        .expect("a result's heading is its first line");
+    result.to_owned()
 }
 
 #[test]
@@ -119,8 +128,11 @@ fn a_huge_result_a_give_up_already_moved_past_is_the_one_left_out_not_the_new_in
     chain.at(4, 0);
     relay_back(chain, "toolu_l");
     let (text, _) = result_of(chain, thread, "toolu_l");
-    let (refused, _) = open_request(chain);
     chain.at(5, 0);
+    let waiting = json!([{ "type": "text", "text": "Waiting for it." }]);
+    model_says(chain, waiting, "end_turn");
+    let (refused, _) = open_request(chain);
+    chain.at(6, 0);
     let error = json!({
         "type": "error",
         "error": { "type": "invalid_request_error", "message": "messages: something else" },
@@ -130,11 +142,11 @@ fn a_huge_result_a_give_up_already_moved_past_is_the_one_left_out_not_the_new_in
         assigned(chain, SERVICE).is_empty(),
         "the refusal gives the turn up, which moves seen past the result"
     );
-    assert!(thread_row(chain, thread).seen >= 3);
+    assert!(thread_row(chain, thread).seen >= 5);
 
     world.mention("m2", "again");
     let (refused, _) = open_request(chain);
-    chain.at(6, 0);
+    chain.at(7, 0);
     answer(chain, refused.id, Answer::Output(too_large()));
     let Reply::Withheld(left_out) = chain.query(PROGRAM, &Query::Withheld { thread }).unwrap()
     else {
@@ -143,18 +155,16 @@ fn a_huge_result_a_give_up_already_moved_past_is_the_one_left_out_not_the_new_in
     assert_eq!(
         left_out,
         [WithheldFrame {
-            seq: 3,
+            seq: 5,
             size: text.len() as u64
         }],
         "the huge result is left out, not the new input"
     );
     let sent = Value::Array(sent_messages(chain)).to_string();
     assert!(sent.contains("again"), "the new input still goes");
-    let note = sent_result(chain, "toolu_l")["content"].clone();
+    let note = sent_result(chain, "toolu_l");
     assert!(
-        note.as_str()
-            .unwrap()
-            .starts_with("left out of your context: frame 3 is"),
+        note.starts_with("left out of your context: frame 5 is"),
         "{note}"
     );
 }
@@ -193,27 +203,28 @@ fn a_huge_result_already_sealed_is_left_out_of_its_sealed_part_too() {
     relay_back(chain, "toolu_l");
     let (text, _) = result_of(chain, thread, "toolu_l");
     chain.at(5, 0);
+    let waiting = json!([{ "type": "text", "text": "Waiting for it." }]);
+    model_says(chain, waiting, "end_turn");
+    chain.at(6, 0);
     model_says(
         chain,
         json!([{ "type": "text", "text": "Read." }]),
         "end_turn",
     );
     world.mention("m2", "again");
-    assert_eq!(sent_result(chain, "toolu_l")["content"], text);
+    assert_eq!(sent_result(chain, "toolu_l"), text);
     assert!(
-        thread_row(chain, thread).tail_from > 3,
+        thread_row(chain, thread).tail_from > 5,
         "the result sits in a sealed part"
     );
     let (refused, _) = open_request(chain);
-    chain.at(6, 0);
+    chain.at(7, 0);
     answer(chain, refused.id, Answer::Output(too_large()));
-    let note = sent_result(chain, "toolu_l")["content"].clone();
+    let note = sent_result(chain, "toolu_l");
     assert!(
-        note.as_str()
-            .unwrap()
-            .starts_with("left out of your context: frame 3 is"),
+        note.starts_with("left out of your context: frame 5 is"),
         "the re-asked request carries the note, not the text: {}",
-        note.as_str().map_or(0, str::len)
+        note.len()
     );
     let Reply::Withheld(left_out) = chain.query(PROGRAM, &Query::Withheld { thread }).unwrap()
     else {

@@ -1,15 +1,14 @@
-//! A tool call's life: placed and relayed once its block of the model's reply is whole, run as the
-//! agent when its relay comes back, its result held until its turn is recorded. Each call's tool
-//! sees its input as it arrives and may show it; what it showed, or did, is taken back if its
-//! reply starts over or breaks, where its tool can take it back.
+//! Tool calls run independently of the model. A reply acknowledges every accepted call;
+//! actual results enter as separate inputs, held only until their model reply is recorded.
+//! A tool may show partial input and take it back if the reply restarts.
 use ::program::{Ctx, Error, ExecCtx, QueryCtx, unauthorized};
 use abi::role::egress::{self, RELAY};
 use serde_json::Value;
 
 use crate::agents::{running, thread};
-use crate::state::{AWAITED, CALLS, FRAMES, LIVE, Live, RECEIPTED, SHOWN, THREADS};
+use crate::state::{AWAITED, CALLS, LIVE, Live, SHOWN, THREADS};
 use crate::tools::{self, Resolved, Run, Seat, Show, Undo, Write};
-use crate::turns::{append, request, say_with, serves, settle};
+use crate::turns::{append, request, say_with, serves};
 use crate::watches;
 use crate::{Asking, Body, CallRow, CallState, Op, Said, ThreadRow};
 
@@ -20,11 +19,13 @@ pub(crate) fn refusal(error: &Error) -> String {
 #[derive(Default)]
 pub(crate) struct Settled {
     pub carry_on: bool,
+    pub gather: bool,
 }
 
 impl Settled {
     pub fn and(mut self, other: Settled) -> Settled {
         self.carry_on |= other.carry_on;
+        self.gather |= other.gather;
         self
     }
 }
@@ -115,6 +116,13 @@ pub(crate) fn place(
             }
         }
     };
+    if tool == "chat_post" {
+        let read_through = match thread.asking {
+            Asking::Asked { upto } => upto,
+            _ => thread.seen,
+        };
+        crate::state::POST_READ_THROUGH.put(ctx, &key, &read_through);
+    }
     CALLS.put(ctx, &key, &row);
     Ok(Placed::Relaying)
 }
@@ -123,7 +131,7 @@ fn mark(ctx: &ExecCtx, id: u64, call: &str, state: CallState) -> Result<(), Erro
     let key = (id, call.to_owned());
     if let Some(mut row) = CALLS.get(ctx, &key)? {
         if matches!(state, CallState::Done { .. } | CallState::Voided { .. }) {
-            ran(&mut row);
+            ran(ctx, &key, &mut row);
         }
         row.state = state;
         CALLS.put(ctx, &key, &row);
@@ -132,8 +140,9 @@ fn mark(ctx: &ExecCtx, id: u64, call: &str, state: CallState) -> Result<(), Erro
 }
 
 // a call that ran, or never will, needs its input no more: it stays in its turn's frame alone
-fn ran(row: &mut CallRow) {
+fn ran(ctx: &ExecCtx, key: &(u64, String), row: &mut CallRow) {
     row.input.clear();
+    crate::state::POST_READ_THROUGH.remove(ctx, key);
 }
 
 fn shown(ctx: &ExecCtx, id: u64, call: &str) -> Result<Option<Value>, Error> {
@@ -279,55 +288,24 @@ fn voided(ctx: &ExecCtx, id: u64, call: &str) -> Result<(), Error> {
 }
 
 fn release(ctx: &ExecCtx, id: u64) -> Result<Settled, Error> {
-    let mut thread = thread(ctx, id)?;
-    thread.open_calls = thread.open_calls.saturating_sub(1);
-    let recorded = thread.asking == Asking::Running;
-    let carry_on = recorded && thread.open_calls == 0;
-    if carry_on {
-        settle(ctx, &mut thread)?;
-    }
-    THREADS.put(ctx, &id, &thread);
-    Ok(Settled { carry_on })
+    let mut owner = thread(ctx, id)?;
+    owner.open_calls = owner.open_calls.saturating_sub(1);
+    THREADS.put(ctx, &id, &owner);
+    Ok(Settled::default())
 }
 
-pub(crate) fn receipt(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
-    let turn = (thread.base..=thread.frames).rev().find_map(|seq| {
-        let frame = FRAMES.get(ctx, &(thread.id, seq)).ok().flatten()?;
-        match frame.body {
-            Body::Turn { said, .. } => Some(said),
-            _ => None,
-        }
-    });
-    for said in turn.unwrap_or_default() {
-        let Said::ToolUse { id: call, name, .. } = said else {
-            continue;
-        };
-        let key = (thread.id, call.clone());
-        let open = CALLS
-            .get(ctx, &key)?
-            .is_some_and(|row| matches!(row.state, CallState::Relaying | CallState::Writing));
-        let acked = !open || RECEIPTED.has(ctx, &key);
-        if acked {
-            continue;
-        }
-        RECEIPTED.insert(ctx, &key);
-        thread.open_calls = thread.open_calls.saturating_sub(1);
-        append(ctx, thread, Body::Receipt { call, tool: name });
-    }
-    Ok(())
-}
-
-pub(crate) fn unrelayed(ctx: &ExecCtx, id: u64, since: Option<u64>) -> Result<Vec<String>, Error> {
+pub(crate) fn unrelayed(
+    ctx: &ExecCtx,
+    id: u64,
+    since: Option<u64>,
+) -> Result<crate::turns::Calls, Error> {
     let height = ctx.env().height;
     let mut cut = Vec::new();
-    for (_, call) in RECEIPTED.scan(ctx, RECEIPTED.prefix_of(&id))? {
-        let key = (id, call.clone());
-        let relaying = CALLS
-            .get(ctx, &key)?
-            .filter(|row| row.state == CallState::Relaying);
-        let Some(row) = relaying else {
+    for (key, row) in CALLS.scan(ctx, CALLS.prefix_of(&id))? {
+        if row.state != CallState::Relaying {
             continue;
-        };
+        }
+        let call = row.id.clone();
         let switched = since.is_some_and(|since| row.made < since);
         let lapsed = height > row.made.saturating_add(egress::DEFAULT_WAIT);
         let lost = switched || lapsed;
@@ -340,7 +318,12 @@ pub(crate) fn unrelayed(ctx: &ExecCtx, id: u64, since: Option<u64>) -> Result<Ve
                     ..row
                 },
             );
-            cut.push(call);
+            let index = LIVE
+                .scan(ctx, LIVE.prefix_of(&id))?
+                .into_iter()
+                .find(|(_, live)| live.call == call)
+                .map_or(0, |((_, index), _)| index);
+            cut.push((index, call));
         }
     }
     Ok(cut)
@@ -352,13 +335,14 @@ fn arrived(
     mut owner: ThreadRow,
     result: Body,
 ) -> Result<Settled, Error> {
-    RECEIPTED.remove(ctx, key);
     SHOWN.remove(ctx, key);
+    let quiet_since_an_earlier_block = owner.last_height < ctx.env().height;
     let pictures = crate::pictures::taken(ctx, key.0, &key.1)?;
     say_with(ctx, &mut owner, result, pictures);
     let carry_on = owner.asking == Asking::Idle && owner.due();
     THREADS.put(ctx, &key.0, &owner);
-    Ok(Settled { carry_on })
+    let gather = carry_on && quiet_since_an_earlier_block;
+    Ok(Settled { carry_on, gather })
 }
 
 pub(crate) async fn void_reply(ctx: &Ctx, id: u64) -> Result<Settled, Error> {
@@ -602,24 +586,30 @@ pub(crate) async fn run_call(
     index: u64,
     call: String,
 ) -> Result<Settled, Error> {
+    let settled = relay_call(ctx, id, index, &call).await;
+    crate::drafts::ran(ctx, id, &call).await;
+    settled
+}
+
+async fn relay_call(ctx: &Ctx, id: u64, index: u64, call: &str) -> Result<Settled, Error> {
     let note = call.as_bytes().to_vec();
     let relay = egress::Request::Relay { note };
     let relayed = request(ctx, relay, egress::Delivery::Whole, None).await;
-    if is_voided(ctx, id, &call)? {
+    if is_voided(ctx, id, call)? {
         return release(ctx, id);
     }
     let (text, failed) = match relayed {
-        Ok(_) => perform(ctx, id, &call).await?,
+        Ok(_) => perform(ctx, id, call).await?,
         Err(error) => (format!("the relay failed: {}", refusal(&error)), true),
     };
-    if reported_lost(ctx, id, &call)? {
+    if reported_lost(ctx, id, call)? {
         let text = format!(
             "call {call} was answered after harness reported its answer lost, and the model is not told again: {text}"
         );
         notice(ctx, id, text)?;
         return Ok(Settled::default());
     }
-    finish(ctx, id, index, &call, text, failed)
+    finish(ctx, id, index, call, text, failed)
 }
 
 // a frame that comes back to a call harness already failed as lost (its code read as changed
@@ -805,50 +795,37 @@ fn finish(
     let Some(mut row) = CALLS.get(ctx, &key)? else {
         return Ok(Settled::default());
     };
-    let receipted = RECEIPTED.has(ctx, &key);
-    let (call_id, tool) = (row.id.clone(), row.tool.clone());
-    let result = match receipted {
-        true => Body::Arrived {
-            call: call_id,
-            tool,
-            text,
-            failed,
-        },
-        false => Body::Result {
-            call: call_id,
-            tool,
-            text,
-            failed,
-        },
+    let result = Body::Arrived {
+        call: row.id.clone(),
+        tool: row.tool.clone(),
+        text,
+        failed,
     };
     row.state = CallState::Done {
         height: ctx.env().height,
         failed,
     };
-    ran(&mut row);
+    ran(ctx, &key, &mut row);
     CALLS.put(ctx, &key, &row);
     let mut owner = thread(ctx, id)?;
     let answered = tools::posts(&row.tool) && !failed;
     if answered {
         crate::runs::answered(ctx, owner.agent, id)?;
     }
-    if receipted {
-        return arrived(ctx, &key, owner, result);
-    }
-    match owner.asking {
-        Asking::Asked { .. } => {
-            let live = Live {
+    owner.open_calls = owner.open_calls.saturating_sub(1);
+    THREADS.put(ctx, &id, &owner);
+    let live = LIVE.get(ctx, &(id, index))?;
+    let unrecorded = live.is_some_and(|live| live.call == call);
+    if unrecorded {
+        LIVE.put(
+            ctx,
+            &(id, index),
+            &Live {
                 call: call.to_owned(),
                 outcome: Some(result),
-            };
-            LIVE.put(ctx, &(id, index), &live);
-        }
-        Asking::Idle | Asking::Learning | Asking::Compacting { .. } | Asking::Running => {
-            SHOWN.remove(ctx, &key);
-            append(ctx, &mut owner, result);
-            crate::pictures::called(ctx, id, call, owner.frames)?;
-            THREADS.put(ctx, &id, &owner);
-        }
+            },
+        );
+        return Ok(Settled::default());
     }
-    release(ctx, id)
+    arrived(ctx, &key, owner, result)
 }

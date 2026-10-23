@@ -1,6 +1,6 @@
-//! The settle window: general input (a thread reply, a message in a channel the agent listens
-//! to) to an idle conversation whose agent's configuration names `settle` waits that long for
-//! more, then one turn hears it all; direct input (a mention, a direct message) ends it at once.
+//! The settle window: general input to an idle conversation whose agent names `settle` waits that
+//! long, and a call's result to one idle since an earlier block waits out the next block, so one
+//! turn hears what came with it; direct input (a mention, a direct message) ends either at once.
 use ::program::{Cause, Ctx, Error, QueryCtx, code};
 
 use crate::agents::{configured, running, thread};
@@ -10,6 +10,27 @@ use crate::{Asking, Op, SettleWindow};
 
 pub(crate) fn settling(ctx: &QueryCtx, id: u64) -> bool {
     SETTLING.has(ctx, &id)
+}
+
+pub(crate) async fn gather(ctx: &Ctx, id: u64) {
+    let already_open = SETTLING.has(ctx, &id);
+    let scheduled = ctx.env().roles.get(abi::role::SCHEDULER).is_some();
+    let opens = scheduled && !already_open;
+    if !opens {
+        return;
+    }
+    let env = ctx.env();
+    let wake = Op::Settle { thread: id };
+    let Ok(entry) = ctx.schedule(env.height + 1, &env.program, &wake).await else {
+        return;
+    };
+    let window = SettleWindow {
+        opened: env.height,
+        opened_time: env.time,
+        until: env.time,
+        entry,
+    };
+    SETTLING.put(ctx, &id, &window);
 }
 
 pub(crate) async fn wait(ctx: &Ctx, id: u64) -> Result<bool, Error> {

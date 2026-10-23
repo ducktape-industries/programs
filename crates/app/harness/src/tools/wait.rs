@@ -1,5 +1,5 @@
 //! Tools over waits: the agent names one event (a height, a chat message, a forge ref
-//! or change, a files path, a chat place clearing), and this turn ends once its calls are back; the
+//! or change, a files path, a chat place clearing), and this turn ends immediately; the
 //! event wakes the conversation once, as a message. The agent lists its waits and cancels one.
 use ::program::{Error, ExecCtx, unexpected_reply};
 use serde::Deserialize;
@@ -113,7 +113,7 @@ fn repo_schema() -> Value {
 
 impl Tool for For {
     const NAME: &'static str = "wait_for";
-    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you, writes to you directly or reacts to your message with `mentions_me`; a reaction on your message counts as a message here; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, that is reviewed, or that is closed or merged (one already closed or merged is refused), or with `until` only once it is merged, closed or either, its pushes heard by nothing (a change that ends the other way still ends the wait, saying so), and either kind ends when forge takes the change out of a merge queue, saying why; a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one), or `in`, a number of blocks counted from the block this call runs in, which stays right however long the reply that makes the call took to come; a `file` of files that a commit changes (a file's bytes, mode or meta; anything below a directory; or the path being made or removed); or a chat place to `clear` (a channel's foot, or a thread by its root message's seq) of everyone else's hold and draft, not counting those who wait there too (at once when it already is). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
+    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn immediately. You are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you, writes to you directly or reacts to your message with `mentions_me`; a reaction on your message counts as a message here; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, that is reviewed, or that is closed or merged (one already closed or merged is refused), or with `until` only once it is merged, closed or either, its pushes heard by nothing (a change that ends the other way still ends the wait, saying so), and either kind ends when forge takes the change out of a merge queue, saying why; a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one), or `in`, a number of blocks counted from the block this call runs in, which stays right however long the reply that makes the call took to come; a `file` of files that a commit changes (a file's bytes, mode or meta; anything below a directory; or the path being made or removed); or a chat place to `clear` (a channel's foot, or a thread by its root message's seq) of everyone else's hold and draft, not counting those who wait there too (at once when it already is). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
     const WRITES: bool = true;
     type Args = ForArgs;
 
@@ -183,7 +183,7 @@ impl Tool for For {
             .map_err(|fault| unexpected_reply(PROGRAM, "Wait", &fault.sentence))?;
         Ok(json!({
             "wait": wait,
-            "turn": "this turn ends once this reply's calls are back; the event wakes this conversation",
+            "turn": "this turn ends immediately; the event wakes this conversation",
         }))
     }
 }
