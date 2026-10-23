@@ -23,7 +23,7 @@ use view::prelude::*;
 use create::Draft;
 use harness::{Asking, ThreadRow, Written};
 use identity::Identity;
-use read::{Detail, Offer, Roster, Route, Touched, Transcript};
+use read::{Detail, Offer, Roster, Route, Shown, Touched, Transcript};
 use routes::RouteDraft;
 use setup::SetupDraft;
 
@@ -81,6 +81,10 @@ pub struct Agents {
     earlier: Option<Task<()>>,
     #[serde(skip)]
     calling: Option<Task<()>>,
+    #[serde(skip)]
+    shown: Shown,
+    #[serde(skip)]
+    more: Option<Task<()>>,
     #[serde(skip)]
     wanted: RefCell<Wanted>,
     #[serde(skip)]
@@ -481,9 +485,66 @@ impl Agents {
         cx.reread(
             self,
             |view| &mut view.detail,
-            move |view, cx| read::detail(cx.host(), agent, view.rooms.clone()),
+            move |view, cx| {
+                read::detail(cx.host(), agent, view.rooms.clone(), view.shown_of(agent))
+            },
             Self::read_screen,
         );
+    }
+
+    fn shown_of(&self, agent: u64) -> Shown {
+        match self.shown.agent == agent {
+            true => self.shown,
+            false => Shown {
+                agent,
+                ..Shown::default()
+            },
+        }
+    }
+
+    fn show_sessions(&mut self, agent: u64, closed: bool, cx: &mut Context<Self>) {
+        self.shown = Shown {
+            agent,
+            closed,
+            asked: None,
+        };
+        self.more = None;
+        self.read_detail(agent, cx);
+    }
+
+    fn read_more(&mut self, agent: u64, cx: &mut Context<Self>) {
+        if self.more.is_some() {
+            return;
+        }
+        let Some(detail) = self.detail.ready() else {
+            return;
+        };
+        let Some(after) = detail.next.clone() else {
+            return;
+        };
+        let closed = detail.closed;
+        let read = read::more(cx.host(), agent, closed, after, self.rooms.clone());
+        self.more = Some(cx.land(read, move |view, page, cx| {
+            view.more = None;
+            match page {
+                Ok(page) => {
+                    let landed = view
+                        .detail
+                        .ready_mut()
+                        .filter(|detail| detail.agent == agent && detail.closed == closed);
+                    if let Some(detail) = landed {
+                        detail.took(page);
+                        view.shown = Shown {
+                            agent,
+                            closed,
+                            asked: Some(detail.threads.len() as u64),
+                        };
+                    }
+                    cx.notify();
+                }
+                Err(refusal) => cx.log_refused("the agent's next conversations", &refusal),
+            }
+        }));
     }
 
     fn read_screen(&mut self, cx: &mut Context<Self>) {

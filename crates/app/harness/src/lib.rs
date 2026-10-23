@@ -30,6 +30,7 @@ mod room_rules;
 mod routes;
 mod runs;
 mod schema;
+mod sessions;
 mod state;
 mod streams;
 mod summaries;
@@ -689,6 +690,25 @@ pub struct ConversationModel {
     pub window: Window,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum SessionStatus {
+    Live,
+    Running,
+    Stuck,
+    Idle,
+    Closed,
+    All,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Session {
+    pub row: ThreadRow,
+    pub topic: Option<String>,
+    pub tally: Option<Tally>,
+    pub kept: Option<ModelKept>,
+    pub window: Window,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct FinalError {
     pub thread: u64,
@@ -1237,6 +1257,22 @@ pub enum Query {
     #[reads(state::LAST_TURNS)]
     #[tool_query(description = "The block of a conversation's newest turn, its model's own output: a heard post, a tool result, a notice or a summary never moves it; null for one with no turn since harness began keeping it.", example = examples::last_turn)]
     LastTurn { thread: u64 },
+    #[ask(Reply::Sessions(PageResponse<Session>))]
+    #[reads(
+        state::BY_AGENT,
+        state::OPEN_BY_AGENT,
+        state::THREADS,
+        state::TOPICS,
+        state::TALLIES,
+        state::MODEL_KEPT,
+        state::PROVIDER_WINDOWS
+    )]
+    #[tool_query(description = "An agent's conversations of one status, newest first, each with its topic, its tally, the model it keeps and that model's window: live (the default: running, stuck or idle), running (asking, no input held), stuck (asking with input held), idle (open and not asking), closed or all. Every page holds only conversations of that status, 20 unless the page names a limit; live, running, stuck and idle read only the open ones, so no closed history fills their pages.", example = examples::sessions)]
+    Sessions {
+        agent: AccountNumber,
+        status: Option<SessionStatus>,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1276,6 +1312,7 @@ pub enum Reply {
     Promise(Option<PromiseRow>),
     ConversationModels(PageResponse<ConversationModel>),
     LastTurn(Option<u64>),
+    Sessions(PageResponse<Session>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1590,8 +1627,17 @@ fn query_variants_only_append() {
             "Asked",
             "ThreadCard",
             "ConversationModels",
-            "LastTurn"
+            "LastTurn",
+            "Sessions"
         ]
+    );
+}
+
+#[test]
+fn session_status_variants_only_append() {
+    assert_eq!(
+        describe::variants::<SessionStatus>(),
+        ["Live", "Running", "Stuck", "Idle", "Closed", "All"]
     );
 }
 

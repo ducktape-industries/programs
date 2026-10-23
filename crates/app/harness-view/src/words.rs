@@ -284,12 +284,10 @@ pub(crate) struct Reach {
 }
 
 pub(crate) fn reach(view: &Agents, detail: &Detail, agent: u64) -> Reach {
-    let current = detail.setup.as_ref().and_then(|setup| setup.current);
     let place = detail
-        .threads
-        .iter()
-        .find(|(thread, _)| Some(thread.id) == current)
-        .map(|(thread, _)| thread.place.as_str())
+        .current
+        .as_ref()
+        .map(|thread| thread.place.as_str())
         .filter(|place| !place.is_empty());
     let link = |place: &str| links::place_link(&view.chain, place).map(|(_, link)| link);
     let dm = view
@@ -452,10 +450,17 @@ fn first_words(prompt: &str) -> String {
 pub(crate) fn usage_total(detail: &Detail) -> String {
     let total = read::sum(detail.threads.iter().map(|(_, usage)| usage));
     format!(
-        "{} tokens over {}",
+        "{} tokens over {} shown",
         design::grouped(all_tokens(&total)),
         design::plural(detail.threads.len() as u64, "conversation", "conversations")
     )
+}
+
+pub(crate) fn no_sessions(closed: bool) -> &'static str {
+    match closed {
+        true => "No closed conversation yet.",
+        false => "No open conversation: a mention or a direct message opens one.",
+    }
 }
 
 pub(crate) fn answers(ownership: &Ownership, roster: &Roster) -> String {

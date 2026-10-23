@@ -51,7 +51,7 @@ fn learn_next(chain: &MockChain) {
     answer(chain, request.id, Answer::Output(response(200, info)));
 }
 
-fn done(chain: &MockChain) {
+pub(super) fn done(chain: &MockChain) {
     model_says(
         chain,
         json!([{ "type": "text", "text": "Done." }]),
@@ -78,7 +78,7 @@ fn room(world: &World, channel: &str) {
     world.chain.submit(signed(ADA), chat::PROGRAM, &op).unwrap();
 }
 
-fn codes(build: &[u8]) -> [(&'static str, Vec<u8>); 3] {
+pub(super) fn codes(build: &[u8]) -> [(&'static str, Vec<u8>); 3] {
     [
         (PROGRAM, module(&[("ducktape.build", build)])),
         (egress::PROGRAM, code_with(&interface::<Egress>())),

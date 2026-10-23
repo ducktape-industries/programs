@@ -12,15 +12,16 @@ use super::list::{ROW, pressable};
 use super::setup::editor;
 use super::{
     BOUND_WORDS, agent_face, agent_gone, back, bound_badge, caption, closed_badge, current_badge,
-    fact, fold, meter, no_node, opened, panel, state_badge, waiting,
+    fact, fold, meter, no_node, opened, panel, sessions_more, sessions_toggle, state_badge,
+    waiting,
 };
 use crate::policies::{CLAIM, CLAIM_HINT};
 use crate::read::{self, Detail, Roster};
 use crate::setup::Press;
 use crate::words::{
     PROBLEM_CAPTION, about, agent_sentence, ago, answers, compacts_words, context_short,
-    conversation_label, file_link, full, may_change, model_more, prompt, prompt_words, quoted,
-    reach, read_at, removes, renames, revokes, starts, thinking_words, thread_words,
+    conversation_label, file_link, full, may_change, model_more, no_sessions, prompt, prompt_words,
+    quoted, reach, read_at, removes, renames, revokes, starts, thinking_words, thread_words,
     threshold_source, tools_words, upper_first, usage_total, usage_words, wait_words, window_words,
 };
 use crate::words::{configured_words, listen_words, server_tools_words, settle_words};
@@ -611,6 +612,8 @@ fn threads(
 ) -> impl IntoElement + use<> {
     let policy = crate::policies::conversations_row(view, cx, ladder, theme);
     let claim = claim(view, detail, cx, theme, ladder);
+    let toggle = sessions_toggle(detail, cx, theme, ladder);
+    let more = sessions_more(detail, cx, theme, ladder);
     let current = detail.setup.as_ref().and_then(|setup| setup.current);
     let threshold = detail
         .setup
@@ -779,7 +782,8 @@ fn threads(
                         .items_baseline()
                         .gap(space::SM)
                         .child(design::heading("agent-threads", "Conversations", 2, theme))
-                        .child(caption(detail.threads.len().to_string(), theme)),
+                        .child(caption(detail.threads.len().to_string(), theme))
+                        .child(toggle),
                 )
                 .children(actions),
         )
@@ -787,9 +791,11 @@ fn threads(
         .children(claim)
         .children(rows)
         .when(detail.threads.is_empty(), |list| {
-            list.child(div().py(space::SM).child(design::quiet(
-                "No conversation yet: a mention or a direct message opens one.",
-                theme,
-            )))
+            list.child(
+                div()
+                    .py(space::SM)
+                    .child(design::quiet(no_sessions(detail.closed), theme)),
+            )
         })
+        .children(more)
 }

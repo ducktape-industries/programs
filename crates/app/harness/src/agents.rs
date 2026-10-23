@@ -269,6 +269,7 @@ pub(crate) async fn close(ctx: &Ctx, id: u64) -> Result<(), Error> {
         VACATED.put(ctx, &place, &id);
     }
     thread.closed = true;
+    crate::sessions::closed(ctx, &thread);
     crate::unanswered::closing(ctx, id)?;
     if thread.asking == crate::Asking::Idle {
         crate::turns::let_go(ctx, &mut thread)?;

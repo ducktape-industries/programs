@@ -37,6 +37,7 @@ fn session_models(touch: bool) {
         ..Net::default()
     };
     net.threads.push(thread(11, SCOUT, EDDY, "chat/deploys"));
+    net.threads[1].closed = false;
     let (mut cx, shared) = seated(net, EDDY);
     cx.simulate_touch(touch);
     let (width, height) = match touch {

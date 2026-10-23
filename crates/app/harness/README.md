@@ -24,8 +24,16 @@ conversations opened after it (that first run also forgets each model window a s
 reported none for, so each is asked once more), and `ForkThread` moves a conversation
 onto the current front, as the fork is a new conversation; `Query::ThreadCard { thread
 }` answers `Card` as that conversation runs it, and `Query::ConversationModels { agent,
-page }` what each of an agent's conversations keeps with its model's window, which
-harness-view draws for each conversation's model, meter and window wait.
+page }` what each of an agent's conversations keeps with its model's window.
+`Query::Sessions { agent, status, page }` answers an agent's conversations of one status
+(`live`, the default: running, stuck or idle; `running`, asking with no input held;
+`stuck`, asking with input held; `idle`, open and not asking; `closed`; `all`), newest
+first, each with its topic, tally, kept model and that model's window, 20 a page unless
+the page names a limit. Every page holds only conversations of that status: harness
+keeps the open ones apart (`open-by-agent/`, written as one opens, dropped as it closes,
+and filled for those already open as new harness code first runs), so a page of open
+ones never reads the closed history. harness-view draws an agent's conversations, their
+models, meters and window waits from it.
 `Query::LastTurn { thread }` answers the block of a conversation's newest turn, its
 model's own output (a heard post, a tool result, a notice or a summary never moves it),
 or null for one with no turn since harness began keeping it, so board tells an owner's

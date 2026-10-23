@@ -13,13 +13,14 @@ use crate::setup::Press;
 use crate::ui::agent_face;
 use crate::ui::setup::editor;
 use crate::ui::{
-    BOUND_WORDS, agent_gone, bound_badge, closed_badge, current_badge, state_badge, waiting,
+    BOUND_WORDS, agent_gone, bound_badge, closed_badge, current_badge, sessions_more,
+    sessions_toggle, state_badge, waiting,
 };
 use crate::words::{
     PROBLEM_CAPTION, agent_sentence, answers, compacts_line, conversation_label, file_link, lower,
-    may_change, model_more, no_node_words, prompt, prompt_words, quoted, reach, read_at, removes,
-    renames, revokes, starts, thinking_words, thread_words, tools_words, upper_first, usage_total,
-    usage_words, wait_words, window_words,
+    may_change, model_more, no_node_words, no_sessions, prompt, prompt_words, quoted, reach,
+    read_at, removes, renames, revokes, starts, thinking_words, thread_words, tools_words,
+    upper_first, usage_total, usage_words, wait_words, window_words,
 };
 use crate::words::{configured_words, listen_words, server_tools_words, settle_words};
 use crate::{Agents, Arm, Part, Screen, Sheet, State, agent_state, standing_toggle, thread_state};
@@ -194,6 +195,8 @@ fn threads(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let current = detail.setup.as_ref().and_then(|setup| setup.current);
+    let toggle = sessions_toggle(detail, cx, theme, ladder);
+    let more = sessions_more(detail, cx, theme, ladder);
     let rows: Vec<Stateful<view::Div>> = detail
         .threads
         .iter()
@@ -279,12 +282,9 @@ fn threads(
         })
         .collect();
     let empty = detail.threads.is_empty().then(|| {
-        design::quiet(
-            "No conversation yet: a mention or a direct message opens one.",
-            theme,
-        )
-        .text_type(ladder.secondary)
-        .p(space::BLOCK)
+        design::quiet(no_sessions(detail.closed), theme)
+            .text_type(ladder.secondary)
+            .p(space::BLOCK)
     });
     div()
         .flex()
@@ -296,8 +296,10 @@ fn threads(
             theme,
             ladder,
         ))
+        .child(div().px(space::BLOCK).py(space::SM).child(toggle))
         .children(rows)
         .children(empty)
+        .children(more)
 }
 
 fn setup_rows(

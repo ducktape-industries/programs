@@ -22,6 +22,7 @@ pub const PROVIDER_WINDOWS: Map<(String, String), Window> = Map::new("provider-w
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
 pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/");
 pub const BY_AGENT: Set<(AccountNumber, u64)> = Set::new("by-agent/");
+pub const OPEN_BY_AGENT: Set<(AccountNumber, u64)> = Set::new("open-by-agent/");
 pub const PLACES: Map<(AccountNumber, String), u64> = Map::new("place/");
 pub const BOUND: Map<(AccountNumber, String), Binding> = Map::new("bound/");
 pub const CURRENT: Map<AccountNumber, u64> = Map::new("current/");
@@ -415,6 +416,7 @@ pub fn written(key: &[u8]) -> Option<Written> {
         CURRENT.key(&()),
         LAST.key(&()),
         BY_AGENT.key(&()),
+        OPEN_BY_AGENT.key(&()),
         PLACES.key(&()),
         BOUND.key(&()),
     ];

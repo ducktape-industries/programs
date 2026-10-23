@@ -554,6 +554,7 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
             .unwrap_or(u32::MAX);
         THREADS.put(ctx, &id, &row);
         crate::kept::switched(ctx, &mut fronts, &row)?;
+        crate::sessions::switched(ctx, &row);
         let before = FLIGHTS
             .get(ctx, &id)?
             .is_none_or(|flight| flight.made < since);

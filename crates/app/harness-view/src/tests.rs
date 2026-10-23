@@ -470,6 +470,51 @@ impl Default for Net {
     }
 }
 
+const HARNESS_LISTED: usize = 20;
+
+fn session_of(net: &Net, row: &ThreadRow) -> harness::Session {
+    let mut tally = harness::Tally::default();
+    for (_, frame) in net.frames.iter().filter(|(id, _)| *id == row.id) {
+        tally.count(&frame.body);
+    }
+    let topic = net.topics.iter().find(|(id, _)| *id == row.id);
+    let kept = net.kept.iter().find(|kept| kept.thread == row.id);
+    harness::Session {
+        row: row.clone(),
+        topic: topic.map(|(_, topic)| topic.clone()),
+        tally: Some(tally),
+        kept: kept.and_then(|kept| kept.kept.clone()),
+        window: kept.map_or(Window::Unasked, |kept| kept.window),
+    }
+}
+
+fn sessions_of(
+    net: &Net,
+    agent: u64,
+    status: harness::SessionStatus,
+    asked: &harness::PageRequest,
+) -> harness::PageResponse<harness::Session> {
+    let mut rows: Vec<&ThreadRow> = net
+        .threads
+        .iter()
+        .filter(|row| row.agent == agent && status.admits(row))
+        .collect();
+    rows.sort_by_key(|row| u64::MAX - row.id);
+    let start = asked.after.as_ref().map_or(0, |after| {
+        u64::from_be_bytes(after[..].try_into().expect("an 8-byte offset")) as usize
+    });
+    let limit = asked.limit.map_or(HARNESS_LISTED, |limit| limit as usize);
+    let end = start.saturating_add(limit).min(rows.len());
+    harness::PageResponse {
+        height: 1,
+        items: rows[start..end]
+            .iter()
+            .map(|row| session_of(net, row))
+            .collect(),
+        next: (end < rows.len()).then(|| (end as u64).to_be_bytes().to_vec()),
+    }
+}
+
 fn kept_card(net: &Net, thread: u64, mut setup: AgentSetup) -> AgentSetup {
     let kept = net.kept.iter().find(|row| row.thread == thread);
     let Some(harness::ConversationModel {
@@ -662,6 +707,16 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                 rows.sort_by_key(|row| u64::MAX - row.thread);
                 harness::Reply::ConversationModels(page(rows))
             }
+            harness::Query::Sessions {
+                agent,
+                status,
+                page: asked,
+            } => harness::Reply::Sessions(sessions_of(
+                &net,
+                agent,
+                status.unwrap_or(harness::SessionStatus::Live),
+                &asked,
+            )),
             harness::Query::BudgetFacts => {
                 harness::Reply::BudgetFacts(harness::BudgetFactsReport {
                     budget: net.budget.clone(),
@@ -1790,9 +1845,6 @@ fn the_agent_shows_its_configuration_model_threads_and_usage() {
         "#general · 7",
         "Current",
         "waiting for the model",
-        "#release · 3",
-        "Closed",
-        "closed at block 9,003",
         // the setup opens for its manager
         "read at each model call · snapshot abababababab",
         "claude-sonnet-5-5",
@@ -1805,11 +1857,21 @@ fn the_agent_shows_its_configuration_model_threads_and_usage() {
         " · only Eddy may change it",
         "2 · 1 write as Scout",
         "1 line · “You are Scout.”",
-        "Usage · 39,926 tokens over 2 conversations",
+        "Usage · 39,926 tokens over 1 conversation shown",
         "input 1,204 · output 312 · cache read 38,410 · cache write 0 · all 39,926",
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
+    assert!(
+        !cx.has_text("#release · 3"),
+        "a closed one waits behind Closed"
+    );
+    cx.simulate_click("agent-sessions-closed");
+    cx.run_until_parked();
+    for text in ["#release · 3", "closed at block 9,003"] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+    assert!(!cx.has_text("#general · 7"), "{:?}", cx.texts());
     // the prompt is folded until a press opens it
     assert!(!cx.has_text("You are Scout."));
     cx.simulate_click("system");

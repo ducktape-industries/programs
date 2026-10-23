@@ -59,7 +59,7 @@ fn the_agent_screen_adds_up_its_usage_from_tallies_and_reads_no_frames() {
     cx.simulate_click("agent-12");
     cx.run_until_parked();
     assert!(
-        cx.has_text("Usage · 39,926 tokens over 2 conversations"),
+        cx.has_text("Usage · 39,926 tokens over 1 conversation shown"),
         "{:?}",
         cx.texts()
     );
@@ -68,7 +68,7 @@ fn the_agent_screen_adds_up_its_usage_from_tallies_and_reads_no_frames() {
     let asked = cx.host().requests::<Query<harness::Harness>>();
     let listed = asked
         .iter()
-        .filter(|query| matches!(query, harness::Query::Conversations { agent: SCOUT, .. }));
+        .filter(|query| matches!(query, harness::Query::Sessions { agent: SCOUT, .. }));
     assert!(listed.count() > 0, "{asked:?}");
     let each = asked.iter().filter(|query| {
         matches!(

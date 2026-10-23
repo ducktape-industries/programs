@@ -2788,6 +2788,26 @@
       }
     ],
     [
+      "Option<SessionStatus>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "SessionStatus"
+            ]
+          ]
+        }
+      }
+    ],
+    [
       "Option<SettleWindow>",
       {
         "enum": {
@@ -3307,6 +3327,29 @@
       }
     ],
     [
+      "PageResponse<Session>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<Session>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "PageResponse<ThreadRow>",
       {
         "struct": {
@@ -3812,6 +3855,11 @@
               44,
               "LastTurn",
               "Query__LastTurn"
+            ],
+            [
+              45,
+              "Sessions",
+              "Query__Sessions"
             ]
           ]
         }
@@ -4280,6 +4328,29 @@
               [
                 "thread",
                 "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Sessions",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "agent",
+                "u64"
+              ],
+              [
+                "status",
+                "Option<SessionStatus>"
+              ],
+              [
+                "page",
+                "PageRequest"
               ]
             ]
           }
@@ -4782,6 +4853,11 @@
               37,
               "LastTurn",
               "Reply__LastTurn"
+            ],
+            [
+              38,
+              "Sessions",
+              "Reply__Sessions"
             ]
           ]
         }
@@ -5058,6 +5134,18 @@
           "fields": {
             "unnamed_fields": [
               "Vec<RunRow>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Sessions",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<Session>"
             ]
           }
         }
@@ -5558,6 +5646,125 @@
               ]
             ]
           }
+        }
+      }
+    ],
+    [
+      "Session",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "row",
+                "ThreadRow"
+              ],
+              [
+                "topic",
+                "Option<String>"
+              ],
+              [
+                "tally",
+                "Option<Tally>"
+              ],
+              [
+                "kept",
+                "Option<ModelKept>"
+              ],
+              [
+                "window",
+                "Window"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "SessionStatus",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "Live",
+              "SessionStatus__Live"
+            ],
+            [
+              1,
+              "Running",
+              "SessionStatus__Running"
+            ],
+            [
+              2,
+              "Stuck",
+              "SessionStatus__Stuck"
+            ],
+            [
+              3,
+              "Idle",
+              "SessionStatus__Idle"
+            ],
+            [
+              4,
+              "Closed",
+              "SessionStatus__Closed"
+            ],
+            [
+              5,
+              "All",
+              "SessionStatus__All"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "SessionStatus__All",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "SessionStatus__Closed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "SessionStatus__Idle",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "SessionStatus__Live",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "SessionStatus__Running",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "SessionStatus__Stuck",
+      {
+        "struct": {
+          "fields": "empty"
         }
       }
     ],
@@ -6585,6 +6792,19 @@
       {
         "sequence": {
           "elements": "ServicePace",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<Session>",
+      {
+        "sequence": {
+          "elements": "Session",
           "length_range": {
             "end": 4294967295,
             "start": 0

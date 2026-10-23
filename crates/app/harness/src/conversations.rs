@@ -156,6 +156,7 @@ fn open(
     COUNT.put(ctx, &id);
     crate::kept::opened(ctx, agent, id)?;
     BY_AGENT.insert(ctx, &(agent.number, newest_first(id)));
+    crate::sessions::opened(ctx, agent.number, id);
     let predecessor = match opening {
         Opening::Fresh | Opening::Fork { .. } => {
             let replaced = CURRENT.get(ctx, &agent.number)?;
@@ -221,6 +222,7 @@ pub(crate) fn retire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let idle = row.asking == Asking::Idle && row.open_calls == 0;
     if superseded && idle && !row.closed {
         row.closed = true;
+        crate::sessions::closed(ctx, &row);
         crate::unanswered::closing(ctx, id)?;
         crate::turns::let_go(ctx, &mut row)?;
         THREADS.put(ctx, &id, &row);

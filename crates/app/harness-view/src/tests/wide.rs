@@ -4,7 +4,7 @@ use super::*;
 
 const WIDE: (f32, f32) = (2400., 900.);
 const NO_BUDGET: &str = "No model answer has named its usage windows yet.";
-const USAGE: &str = "Usage · 39,926 tokens over 2 conversations";
+const USAGE: &str = "Usage · 39,926 tokens over 1 conversation shown";
 
 fn wide() -> TestAppContext {
     let (mut cx, _) = seated(Net::default(), EDDY);

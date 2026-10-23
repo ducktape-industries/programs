@@ -44,6 +44,7 @@ mod schedule;
 mod server_tools;
 mod service_tools;
 mod services;
+mod sessions;
 mod stale;
 mod stranded;
 mod streams;

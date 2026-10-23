@@ -323,3 +323,11 @@ pub(crate) fn conversation_models() -> Query {
 pub(crate) fn last_turn() -> Query {
     Query::LastTurn { thread: 144 }
 }
+
+pub(crate) fn sessions() -> Query {
+    Query::Sessions {
+        agent: 21,
+        status: Some(crate::SessionStatus::Closed),
+        page: page(),
+    }
+}

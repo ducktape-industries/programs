@@ -115,6 +115,16 @@ impl Program for Harness {
                 crate::kept::models(ctx, agent, &page)?,
             )),
             Query::LastTurn { thread } => Ok(Reply::LastTurn(queries::last_turn(ctx, thread)?)),
+            Query::Sessions {
+                agent,
+                status,
+                page,
+            } => Ok(Reply::Sessions(crate::sessions::sessions(
+                ctx,
+                agent,
+                status.unwrap_or(crate::SessionStatus::Live),
+                &page,
+            )?)),
         }
     }
 }

@@ -523,3 +523,42 @@ pub(crate) fn copy_chip(
         .on_click(copy)
         .child(words)
 }
+
+pub(crate) fn sessions_toggle(
+    detail: &crate::read::Detail,
+    cx: &Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Stateful<Div> {
+    let agent = detail.agent;
+    let choices: [(ElementId, SharedString); 2] = [
+        ("agent-sessions-open".into(), "Open".into()),
+        ("agent-sessions-closed".into(), "Closed".into()),
+    ];
+    design::segmented(
+        "agent-sessions",
+        "Conversations shown",
+        ladder,
+        theme,
+        Some(usize::from(detail.closed)),
+        choices,
+        cx.processor(move |view: &mut Agents, picked: usize, _, cx| {
+            view.show_sessions(agent, picked == 1, cx)
+        }),
+    )
+}
+
+pub(crate) fn sessions_more(
+    detail: &crate::read::Detail,
+    cx: &Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<impl IntoElement + use<>> {
+    detail.next.as_ref()?;
+    let agent = detail.agent;
+    let more =
+        cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.read_more(agent, cx));
+    let button = design::button("agent-sessions-more", "More", ladder, theme, more)
+        .kind(design::Kind::Outline);
+    Some(div().py(space::SM).child(button))
+}

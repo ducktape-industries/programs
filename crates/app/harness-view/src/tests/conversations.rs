@@ -44,6 +44,8 @@ fn closing_a_conversation_says_whether_it_is_the_current_one() {
     let (mut cx, _) = seated(Net::default(), EDDY);
     cx.simulate_click("agent-12");
     cx.run_until_parked();
+    cx.simulate_click("agent-sessions-closed");
+    cx.run_until_parked();
     cx.simulate_click("thread-3");
     cx.run_until_parked();
     assert!(
@@ -128,6 +130,8 @@ fn the_strip_says_what_the_conversation_did_last_or_that_it_closed() {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
     cx.simulate_click("thread-back");
+    cx.run_until_parked();
+    cx.simulate_click("agent-sessions-closed");
     cx.run_until_parked();
     cx.simulate_click("thread-3");
     cx.run_until_parked();
@@ -234,4 +238,44 @@ fn a_conversation_bound_to_a_place_wears_a_bound_badge_on_desktop_and_phone() {
     cx.run_until_parked();
     assert!(cx.find("thread-11-bound").is_some(), "{:?}", cx.texts());
     assert!(cx.find("thread-7-bound").is_none());
+}
+
+#[test]
+fn an_agent_shows_its_open_conversations_and_its_closed_ones_a_page_at_a_time() {
+    let mut net = Net::default();
+    for id in 100..100 + HARNESS_LISTED as u64 {
+        let mut closed = thread(id, SCOUT, EDDY, "chat/general");
+        closed.closed = true;
+        net.threads.push(closed);
+    }
+    let (mut cx, _) = seated(net, EDDY);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(cx.find("thread-7").is_some(), "{:?}", cx.texts());
+    assert!(
+        cx.find("thread-3").is_none(),
+        "a closed conversation waits behind Closed"
+    );
+    assert!(cx.find("agent-sessions-more").is_none());
+    cx.simulate_click("agent-sessions-closed");
+    cx.run_until_parked();
+    assert!(cx.find("thread-7").is_none(), "{:?}", cx.texts());
+    assert!(cx.find("thread-119").is_some());
+    assert!(
+        cx.find("thread-3").is_none(),
+        "the oldest closed one is on the next page"
+    );
+    cx.simulate_click("agent-sessions-more");
+    cx.run_until_parked();
+    assert!(cx.find("thread-3").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("thread-100").is_some());
+    assert!(cx.find("agent-sessions-more").is_none());
+    let asked = cx.host().requests::<Query<harness::Harness>>();
+    let whole = asked.iter().filter(|query| {
+        matches!(
+            query,
+            harness::Query::Conversations { .. } | harness::Query::ConversationModels { .. }
+        )
+    });
+    assert_eq!(whole.count(), 0, "the agent page reads no whole history");
 }

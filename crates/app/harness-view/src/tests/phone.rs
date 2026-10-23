@@ -100,7 +100,6 @@ fn an_agent_page_says_what_it_does_and_opens_each_part_of_its_setup() {
         "#general · 7",
         "Current",
         "waiting for the model · 3 frames",
-        "#release · 3",
         "Setup",
         "Model, thinking, tools",
         "claude-sonnet-5-5 · model's default · 2 tools",
@@ -109,10 +108,13 @@ fn an_agent_page_says_what_it_does_and_opens_each_part_of_its_setup() {
         "System prompt",
         "1 line · “You are Scout.”",
         "Usage",
-        "39,926 tokens over 2 conversations",
+        "39,926 tokens over 1 conversation shown",
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
+    assert!(!cx.has_text("#release · 3"));
+    tap(&mut cx, &["agent-sessions-closed"]);
+    assert!(cx.has_text("#release · 3"), "{:?}", cx.texts());
     assert!(cx.back_handler().is_some());
     tap(&mut cx, &["agent-part-model"]);
     for text in [

@@ -8,8 +8,8 @@ use std::rc::Rc;
 use egress::{RELAY, ServiceRow};
 use harness::{
     AgentSetup, Asking, Awaited, BlobId, Body, CallRow, ConversationModel, FinalError, Frame,
-    Partial, ProviderRouteRow, RunRow, SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage,
-    WaitRow, WithheldFrame,
+    PageResponse, Partial, ProviderRouteRow, RunRow, Session, SessionStatus, SettleWindow, Spoken,
+    Tally, ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame,
 };
 use identity::{Ownership, PageRequest};
 use policy_view::link;
@@ -258,9 +258,52 @@ pub(crate) struct Detail {
     pub tools: Vec<ToolInfo>,
     pub failing: HashMap<u64, FinalError>,
     pub models: HashMap<u64, ConversationModel>,
+    pub agent: u64,
+    pub closed: bool,
+    pub next: Option<Vec<u8>>,
+    pub current: Option<ThreadRow>,
 }
 
-pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detail, Error> {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Shown {
+    pub agent: u64,
+    pub closed: bool,
+    pub asked: Option<u64>,
+}
+
+impl Detail {
+    pub(crate) fn took(&mut self, page: PageResponse<Session>) {
+        for session in page.items {
+            let id = session.row.id;
+            if let Some(topic) = session.topic {
+                self.topics.insert(id, topic);
+            }
+            let model = ConversationModel {
+                thread: id,
+                kept: session.kept,
+                window: session.window,
+            };
+            self.models.insert(id, model);
+            let usage = session.tally.map(|tally| tally.usage);
+            self.threads.push((session.row, usage.unwrap_or_default()));
+        }
+        self.next = page.next;
+    }
+}
+
+fn status_of(closed: bool) -> SessionStatus {
+    match closed {
+        true => SessionStatus::Closed,
+        false => SessionStatus::Live,
+    }
+}
+
+pub(crate) async fn detail(
+    host: Host,
+    agent: u64,
+    rooms: Rooms,
+    shown: Shown,
+) -> Result<Detail, Error> {
     let setup = setup(&host, agent).await?;
     let ownership = host
         .query(identity::ask::Answers { account: agent })
@@ -278,17 +321,26 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         }
         None => None,
     };
-    let conversations = host
-        .query_all(|after| harness::ask::Conversations {
+    let sessions = host
+        .query(harness::ask::Sessions {
             agent,
-            page: page(after),
+            status: Some(status_of(shown.closed)),
+            page: PageRequest {
+                after: None,
+                limit: shown.asked,
+            },
         })
         .await?;
+    let current = match setup.as_ref().and_then(|setup| setup.current) {
+        Some(thread) => host.query(harness::ask::Thread { thread }).await?,
+        None => None,
+    };
     let listen = setup.as_ref().and_then(|setup| setup.configured.config());
     let listen = listen.map_or(&[][..], |(_, config)| &config.listen[..]);
-    let places = conversations
+    let places = sessions
+        .items
         .iter()
-        .filter_map(|conversation| room_of(&conversation.row.place));
+        .filter_map(|session| room_of(&session.row.place));
     let channels = places.chain(listen.iter().map(String::as_str));
     name_rooms(&host, &rooms, channels.collect()).await?;
     let bound = host
@@ -305,37 +357,50 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         .into_iter()
         .map(|error| (error.thread, error))
         .collect();
-    let mut used = Vec::new();
-    let mut topics = HashMap::new();
-    for conversation in conversations {
-        if let Some(topic) = conversation.topic {
-            topics.insert(conversation.row.id, topic);
-        }
-        let usage = conversation.tally.map(|tally| tally.usage);
-        used.push((conversation.row, usage.unwrap_or_default()));
-    }
     let tools = host.query(harness::ask::Tools).await?;
-    let models = host
-        .query_all(|after| harness::ask::ConversationModels {
-            agent,
-            page: page(after),
-        })
-        .await?
-        .into_iter()
-        .map(|row| (row.thread, row))
-        .collect();
-    Ok(Detail {
+    let mut detail = Detail {
         setup,
         ownership,
         config_writers,
         conversation_writers,
-        threads: used,
-        topics,
+        threads: Vec::new(),
+        topics: HashMap::new(),
         bound,
         tools,
         failing,
-        models,
-    })
+        models: HashMap::new(),
+        agent,
+        closed: shown.closed,
+        next: None,
+        current,
+    };
+    detail.took(sessions);
+    Ok(detail)
+}
+
+pub(crate) async fn more(
+    host: Host,
+    agent: u64,
+    closed: bool,
+    after: Vec<u8>,
+    rooms: Rooms,
+) -> Result<PageResponse<Session>, Error> {
+    let page = host
+        .query(harness::ask::Sessions {
+            agent,
+            status: Some(status_of(closed)),
+            page: PageRequest {
+                after: Some(after),
+                limit: None,
+            },
+        })
+        .await?;
+    let places = page
+        .items
+        .iter()
+        .filter_map(|session| room_of(&session.row.place));
+    name_rooms(&host, &rooms, places.collect()).await?;
+    Ok(page)
 }
 
 async fn final_errors(host: &Host, agent: u64) -> Result<Vec<FinalError>, Error> {
