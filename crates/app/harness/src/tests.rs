@@ -21,6 +21,7 @@ mod final_errors;
 mod fleet_run;
 mod forge_commit;
 mod forge_copy;
+mod forge_merge;
 mod forge_review;
 mod forge_symbols;
 mod forge_tools;

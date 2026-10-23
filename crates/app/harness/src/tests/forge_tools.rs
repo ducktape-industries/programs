@@ -58,7 +58,7 @@ pub(super) fn head(chain: &MockChain, repo: &str, branch: &str) -> String {
     tip
 }
 
-fn file_at(chain: &MockChain, repo: &str, at: &str, path: &str) -> (String, String) {
+pub(super) fn file_at(chain: &MockChain, repo: &str, at: &str, path: &str) -> (String, String) {
     let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
     let asked = forge::Query::Tree {
         repo: repo.into(),

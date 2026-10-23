@@ -222,11 +222,12 @@ impl<S: Objects + ?Sized> Merging<'_, S> {
             self.clash(path, Clash::Binary);
             return Ok(None);
         }
-        match diff3(&base, &ours, &theirs, self.max_cost) {
-            Ok(Some(merged)) => self.keep(Kind::Blob, merged).map(Some),
-            Ok(None) => {
-                self.clash(path, Clash::Lines);
-                Ok(None)
+        match diff3_marked(&base, &ours, &theirs, self.max_cost) {
+            Ok(merged) => {
+                if merged.conflicted {
+                    self.clash(path, Clash::Lines);
+                }
+                self.keep(Kind::Blob, merged.text).map(Some)
             }
             Err(Error::CapReached) => {
                 self.clash(path, Clash::Searched);
@@ -300,12 +301,24 @@ fn side_lines_for_base_span(
 // that overlap or touch (adjacent lines, two insertions at one point) are one group, which
 // merges only when both sides wrote the same lines. `None` on a conflict.
 pub fn diff3(base: &[u8], ours: &[u8], theirs: &[u8], max_cost: usize) -> Result<Option<Vec<u8>>> {
+    let merged = diff3_marked(base, ours, theirs, max_cost)?;
+    Ok((!merged.conflicted).then_some(merged.text))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Marked {
+    pub text: Vec<u8>,
+    pub conflicted: bool,
+}
+
+pub fn diff3_marked(base: &[u8], ours: &[u8], theirs: &[u8], max_cost: usize) -> Result<Marked> {
     let base = split_lines(base);
     let our_lines = split_lines(ours);
     let their_lines = split_lines(theirs);
     let our_edits = edits(&myers(&base, &our_lines, max_cost)?);
     let their_edits = edits(&myers(&base, &their_lines, max_cost)?);
     let mut merged = Vec::new();
+    let mut conflicted = false;
     let (mut copied, mut i, mut j) = (0, 0, 0);
     loop {
         let start = match (our_edits.get(i), their_edits.get(j)) {
@@ -333,14 +346,37 @@ pub fn diff3(base: &[u8], ours: &[u8], theirs: &[u8], max_cost: usize) -> Result
             (true, false) => ours,
             (false, true) => theirs,
             _ if ours == theirs => ours,
-            _ => return Ok(None),
+            _ => {
+                conflicted = true;
+                between_markers(ours, theirs)
+            }
         };
         merged.extend(base[copied..start].concat());
         merged.extend(text);
         (copied, i, j) = (end, oi, tj);
     }
     merged.extend(base[copied..].concat());
-    Ok(Some(merged))
+    Ok(Marked {
+        text: merged,
+        conflicted,
+    })
+}
+
+fn between_markers(ours: Vec<u8>, theirs: Vec<u8>) -> Vec<u8> {
+    let mut text = b"<<<<<<< ours\n".to_vec();
+    push_closed_lines(&mut text, ours);
+    text.extend_from_slice(b"=======\n");
+    push_closed_lines(&mut text, theirs);
+    text.extend_from_slice(b">>>>>>> theirs\n");
+    text
+}
+
+fn push_closed_lines(text: &mut Vec<u8>, lines: Vec<u8>) {
+    let last_line_open = lines.last().is_some_and(|last| *last != b'\n');
+    text.extend(lines);
+    if last_line_open {
+        text.push(b'\n');
+    }
 }
 
 #[cfg(test)]
@@ -389,6 +425,15 @@ mod tests {
         assert_eq!(apart.as_deref(), Some("0\n1\n2\n3\n4\n"));
         assert_eq!(merged("", "a\n", "b\n"), None);
         assert_eq!(merged("", "a\n", "a\n").as_deref(), Some("a\n"));
+    }
+
+    #[test]
+    fn a_line_clash_is_marked_and_the_rest_merged() {
+        let base = b"1\n2\n3\n4\n5\n";
+        let marked = diff3_marked(base, b"one\n2\n3\n4\nA", b"1\n2\n3\n4\nB\n", 100).unwrap();
+        let expected = "one\n2\n3\n4\n<<<<<<< ours\nA\n=======\nB\n>>>>>>> theirs\n";
+        assert_eq!(String::from_utf8(marked.text).unwrap(), expected);
+        assert!(marked.conflicted);
     }
 
     #[test]

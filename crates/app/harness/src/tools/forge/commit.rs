@@ -1,12 +1,15 @@
 //! `forge_commit`, the agent's one write to forge: files written whole, edited by span or copied by
-//! id from what forge holds, and paths removed, as one git commit over the parent's trees, pushed as
-//! one pack blob as the agent's account; a repository not there yet is created.
+//! id from what forge holds, and paths removed, over the parent's trees or a 3-way merge with another
+//! commit, as one git commit pushed as one pack blob as the agent's account; a new repo is created.
 use std::collections::{BTreeMap, BTreeSet};
 
-use ::program::{BlobId, Error, ExecCtx, HashKind, capacity, code, invalid, not_found, stale};
+use ::program::{
+    BlobId, Error, ExecCtx, HashKind, capacity, code, invalid, not_found, stale, wrong_state,
+};
 use abi::role::identity::AccountNumber;
 use files::{EntryInfo, Node};
 use forge::{Bounds, EntryKind, Query, Reply, Repo, Settings};
+use gitcore::merge::{Clash, Conflict};
 use gitcore::wire::pktline::{self, Pkt};
 use gitcore::{Hash, Kind, Mode, Object, Oid, Signature, Tree, TreeEntry, pack};
 use serde::Deserialize;
@@ -59,6 +62,7 @@ struct Reading<'a> {
     ctx: &'a ExecCtx,
     repo: &'a str,
     hash: Hash,
+    made: &'a Objects,
 }
 
 impl Reading<'_> {
@@ -79,6 +83,14 @@ impl Reading<'_> {
     }
 
     fn entries(&self, at: Oid) -> Result<Entries, Error> {
+        if let Some(made) = self.made.get(&at) {
+            let tree = Tree::parse(&made.body, self.hash).map_err(git_refusal)?;
+            return Ok(tree
+                .entries
+                .into_iter()
+                .map(|entry| (entry.name, (entry.mode, entry.id)))
+                .collect());
+        }
         let entries = every(|page| {
             let asked = Query::Tree {
                 repo: self.repo.into(),
@@ -119,6 +131,10 @@ impl Reading<'_> {
 
     fn text(&self, id: Oid, path: &str) -> Result<String, Error> {
         let advice = "it can't be edited by span; write it whole";
+        if let Some(made) = self.made.get(&id) {
+            return String::from_utf8(made.body.clone())
+                .map_err(|_| invalid(format!("{path} is not UTF-8 text: {advice}")));
+        }
         super::text_of(self.ctx, self.repo, &id.to_hex(), path, advice)
     }
 }
@@ -501,6 +517,7 @@ fn copied_entry(
                 ctx,
                 repo: target.repo,
                 hash: target.hash,
+                made: target.made,
             };
             (reading, at)
         }
@@ -522,7 +539,16 @@ fn copied_entry(
                 None => forge::Revision::Ref(held.settings.head),
             };
             let at = oid(hash, &commit_of(ctx, repo, rev)?)?;
-            (Reading { ctx, repo, hash }, at)
+            let made = target.made;
+            (
+                Reading {
+                    ctx,
+                    repo,
+                    hash,
+                    made,
+                },
+                at,
+            )
         }
     };
     reading.entry(at, path)?.ok_or_else(|| {
@@ -532,6 +558,252 @@ fn copied_entry(
             at.to_hex()
         ))
     })
+}
+
+struct Merged {
+    rev: String,
+    commit: Oid,
+    tree: Oid,
+    objects: Objects,
+    conflicts: Vec<Conflict>,
+}
+
+struct Stored<'a>(&'a ExecCtx);
+
+impl gitcore::Objects for Stored<'_> {
+    fn get(&self, id: &Oid) -> gitcore::Result<Option<Object>> {
+        let Some(blob) = self.0.blob_get(forge::blob_id_of(id)) else {
+            return Ok(None);
+        };
+        let kind = Kind::parse(blob.kind.as_bytes())?;
+        Ok(Some(Object::new(kind, blob.body)))
+    }
+
+    fn has(&self, id: &Oid) -> gitcore::Result<bool> {
+        Ok(self.0.blob_stat(forge::blob_id_of(id)).is_some())
+    }
+}
+
+fn git_refusal(error: gitcore::Error) -> Error {
+    match error {
+        gitcore::Error::CapReached => capacity(
+            "the merge reaches past forge's bounds (log_walk commits to the merge base, merge_cost per file): merge with git and push the result",
+        ),
+        gitcore::Error::MissingObject(id) => not_found(format!("forge holds no object {id}")),
+        other => invalid(other.to_string()),
+    }
+}
+
+fn bound(value: u64) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
+}
+
+fn tree_of(store: &Stored, id: &Oid) -> Result<Oid, Error> {
+    let Some(object) = gitcore::Objects::get(store, id).map_err(git_refusal)? else {
+        return Err(not_found(format!("forge holds no object {id}")));
+    };
+    let commit = gitcore::Commit::parse(&object.body, id.hash()).map_err(git_refusal)?;
+    Ok(commit.tree)
+}
+
+fn merging(
+    ctx: &ExecCtx,
+    repo: &str,
+    hash: Hash,
+    held: &Option<(Repo, Bounds)>,
+    (into, branch): (Option<Oid>, &[u8]),
+    rev: &str,
+) -> Result<Merged, Error> {
+    let branch = String::from_utf8_lossy(branch);
+    let (Some(ours), Some((_, bounds))) = (into, held) else {
+        return Err(not_found(format!(
+            "{branch} has no commit for {rev} to merge into: start the branch with from"
+        )));
+    };
+    let hex = match commit_of(ctx, repo, revision(rev)) {
+        Ok(hex) => hex,
+        Err(missing) if missing.code == code::NOT_FOUND => {
+            return Err(not_found(format!("there is no {rev} in {repo} to merge")));
+        }
+        Err(refused) => return Err(refused),
+    };
+    let theirs = oid(hash, &hex)?;
+    match ctx.blob_stat(forge::blob_id_of(&theirs)) {
+        Some(header) if header.kind == "commit" => {}
+        Some(header) => {
+            return Err(invalid(format!(
+                "{rev} names a git {} ({hex}), not a commit: merge a branch, ref or commit id",
+                header.kind
+            )));
+        }
+        None => return Err(not_found(format!("forge holds no commit {hex} to merge"))),
+    }
+    let store = Stored(ctx);
+    let walk = bound(bounds.log_walk);
+    let Some(base) =
+        gitcore::walk::merge_base(&store, &ours, &theirs, walk).map_err(git_refusal)?
+    else {
+        return Err(wrong_state(format!(
+            "{branch} and {rev} share no history: there is no merge base to merge from"
+        )));
+    };
+    if base == theirs {
+        return Err(wrong_state(format!(
+            "{branch} already holds {rev} ({hex}): there is nothing to merge"
+        )));
+    }
+    let (base, ours, theirs_tree) = (
+        tree_of(&store, &base)?,
+        tree_of(&store, &ours)?,
+        tree_of(&store, &theirs)?,
+    );
+    let cost = bound(bounds.merge_cost);
+    let merge = gitcore::merge::trees(&store, Some(&base), &ours, &theirs_tree, cost)
+        .map_err(git_refusal)?;
+    Ok(Merged {
+        rev: rev.to_owned(),
+        commit: theirs,
+        tree: merge.tree,
+        objects: merge.objects,
+        conflicts: merge.conflicts,
+    })
+}
+
+fn clash_words(clash: Clash) -> &'static str {
+    match clash {
+        Clash::Lines => {
+            "both sides changed the same or adjacent lines: it holds both sides merged, each clash between a <<<<<<< ours line, the branch's lines, a ======= line, merge's lines and a >>>>>>> theirs line, so edits replacing each marked span resolve it"
+        }
+        Clash::Searched => {
+            "edits too interleaved to merge within forge's merge_cost: it holds the branch's version whole, so the resolution carries every change merge made to it"
+        }
+        Clash::Binary => "a binary file both sides changed: it holds the branch's version whole",
+        Clash::Mode => {
+            "both sides changed its mode: it holds the branch's version whole, so the resolution carries every change merge made to it"
+        }
+        Clash::Deleted => {
+            "deleted on one side, changed on the other: it holds the branch's side, absent where the branch deleted it; remove leaves it deleted, writing it keeps it"
+        }
+        Clash::Kind => {
+            "changed on both sides, and not as two files: it holds the branch's side whole"
+        }
+    }
+}
+
+fn settled(merged: &Merged, puts: &[Put], removed: &[String]) -> Result<(), Error> {
+    let given: Vec<&str> = puts
+        .iter()
+        .map(|put| put.path.as_str())
+        .chain(removed.iter().map(String::as_str))
+        .map(|path| path.trim_matches('/'))
+        .collect();
+    let covered = |path: &str| {
+        given.iter().any(|done| {
+            let under = path
+                .strip_prefix(done)
+                .is_some_and(|rest| rest.starts_with('/'));
+            path == *done || under
+        })
+    };
+    let left: Vec<String> = merged
+        .conflicts
+        .iter()
+        .map(|conflict| (String::from_utf8_lossy(&conflict.path), conflict.clash))
+        .filter(|(path, _)| !covered(path))
+        .map(|(path, clash)| format!("{path} ({})", clash_words(clash)))
+        .collect();
+    if left.is_empty() {
+        return Ok(());
+    }
+    Err(wrong_state(format!(
+        "merging {} leaves conflicts the files don't resolve, so nothing was pushed: {}; write or edit each of these paths in files, or remove it, as the resolution",
+        merged.rev,
+        left.join("; ")
+    )))
+}
+
+fn holds_a_conflict_marker(body: &[u8]) -> bool {
+    body.split(|byte| *byte == b'\n')
+        .any(|line| matches!(line, b"<<<<<<< ours" | b">>>>>>> theirs"))
+}
+
+fn unmarked(ctx: &ExecCtx, merged: &Merged, puts: &[Put]) -> Result<(), Error> {
+    let store = Stored(ctx);
+    let mut marked = Vec::new();
+    for put in puts {
+        let path = put.path.trim_matches('/');
+        let clashed_in_lines = merged
+            .conflicts
+            .iter()
+            .any(|conflict| conflict.clash == Clash::Lines && conflict.path == path.as_bytes());
+        if !clashed_in_lines {
+            continue;
+        }
+        let held;
+        let body = match &put.body {
+            Body::Bytes(bytes) => bytes.as_slice(),
+            Body::Held(id) => {
+                held = gitcore::Objects::get(&store, id).map_err(git_refusal)?;
+                held.as_ref()
+                    .map_or(&[][..], |object| object.body.as_slice())
+            }
+        };
+        if holds_a_conflict_marker(body) {
+            marked.push(path.to_owned());
+        }
+    }
+    if marked.is_empty() {
+        return Ok(());
+    }
+    Err(wrong_state(format!(
+        "merging {} leaves conflict markers in {}, so nothing was pushed: replace each span from a <<<<<<< ours line to its >>>>>>> theirs line with the lines it should hold",
+        merged.rev,
+        marked.join(", ")
+    )))
+}
+
+fn gone_by_the_merge(
+    merged: Option<&Merged>,
+    reading: &Reading,
+    tree: Option<Oid>,
+    path: &str,
+) -> Result<bool, Error> {
+    let (Some(merged), Some(tree)) = (merged, tree) else {
+        return Ok(false);
+    };
+    let wanted = path.trim_matches('/').as_bytes();
+    let clashed = merged
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.path == wanted);
+    if !clashed {
+        return Ok(false);
+    }
+    Ok(reading.entry(tree, path)?.is_none())
+}
+
+fn reached_from(
+    hash: Hash,
+    root: Oid,
+    written: &Objects,
+    mut merged: Objects,
+) -> Result<Objects, Error> {
+    let mut reached = Objects::new();
+    let mut pending = vec![root];
+    while let Some(id) = pending.pop() {
+        let from_merge = merged.remove(&id);
+        let Some(object) = from_merge.as_ref().or_else(|| written.get(&id)) else {
+            continue;
+        };
+        if matches!(object.kind, Kind::Tree) {
+            let tree = Tree::parse(&object.body, hash).map_err(git_refusal)?;
+            pending.extend(tree.entries.into_iter().map(|entry| entry.id));
+        }
+        if let Some(object) = from_merge {
+            reached.insert(id, object);
+        }
+    }
+    Ok(reached)
 }
 
 fn counted(bounds: &Bounds, objects: usize) -> Result<(), Error> {
@@ -567,6 +839,7 @@ pub(crate) struct CommitArgs {
     repo: String,
     branch: Option<String>,
     from: Option<String>,
+    merge: Option<String>,
     files: Vec<FileArg>,
     #[serde(default)]
     remove: Vec<String>,
@@ -579,7 +852,7 @@ pub(crate) struct Commit;
 
 impl Tool for Commit {
     const NAME: &'static str = "forge_commit";
-    const DESCRIPTION: &'static str = "Commit files to a forge repository as one git commit on a branch, as your account, and push it. Each item of files is written whole, from inline content or from a files source, or edited by span: a source file lands at its path, and a source directory lands under its path with every file beneath it, each in its files mode; an item with edits changes part of a text file the branch holds (each span must occur exactly once in it, as in files_edit), keeps its mode, and is refused naming where a span occurs when it is not there once. An item may instead land what forge already holds, with none of its bytes passing through you: copy names a path at a rev of this repository or of another of the same hash, a file landing with its mode and a directory as its whole tree (replacing any directory at path), and blob names a git blob id forge holds; a move is a copy plus a remove. Every source is read at one files snapshot, the newest if omitted, so a workspace kept in files commits without re-sending it. A source directory adds and replaces files and never deletes; remove deletes paths (a directory with everything in it). Paths are inside the repository, like src/main.rs. A repository that does not exist yet is created, owned by you, and stays even if forge refuses the commit. An existing one takes the push only if its write list in the access program allows your account or harness: its owner alone unless the owner lists others, and a refusal says unauthorized. The commit goes on top of the branch's newest commit, and a new branch starts from from (a branch, ref or commit id), or from the default branch; with base, only while the branch is still at base, and a branch that moved since the edits read it is refused, never overwritten. Forge takes a bounded number of objects (each file and each changed directory is one) and of bytes per file in one push; a larger commit is refused, so split it. The answer names the commit, which is the branch's head after the push, and its parent.";
+    const DESCRIPTION: &'static str = "Commit files to a forge repository as one git commit on a branch, as your account, and push it. Each item of files is written whole, from inline content or from a files source, or edited by span: a source file lands at its path, and a source directory lands under its path with every file beneath it, each in its files mode; an item with edits changes part of a text file the branch holds (each span must occur exactly once in it, as in files_edit), keeps its mode, and is refused naming where a span occurs when it is not there once. An item may instead land what forge already holds, with none of its bytes passing through you: copy names a path at a rev of this repository or of another of the same hash, a file landing with its mode and a directory as its whole tree (replacing any directory at path), and blob names a git blob id forge holds; a move is a copy plus a remove. Every source is read at one files snapshot, the newest if omitted, so a workspace kept in files commits without re-sending it. A source directory adds and replaces files and never deletes; remove deletes paths (a directory with everything in it). Paths are inside the repository, like src/main.rs. A repository that does not exist yet is created, owned by you, and stays even if forge refuses the commit. An existing one takes the push only if its write list in the access program allows your account or harness: its owner alone unless the owner lists others, and a refusal says unauthorized. The commit goes on top of the branch's newest commit, and a new branch starts from from (a branch, ref or commit id), or from the default branch; with base, only while the branch is still at base, and a branch that moved since the edits read it is refused, never overwritten. With merge (a branch, ref or commit id), the commit is a merge commit: the branch's head is its first parent and merge's commit, which forge must hold and the branch must not hold yet, its second; its tree is the two merged three ways from their merge base, as forge's SquashMerge merges and within its bounds, and files, edits and remove apply to that merged tree as the resolution. A path both sides changed that does not merge cleanly must be written, edited or removed, or the commit is refused naming each such path and what it holds: a text file whose lines clash holds both sides merged, each clash between a <<<<<<< ours line, the branch's lines, a ======= line, merge's lines and a >>>>>>> theirs line, so edits replacing each marked span resolve it, and a commit still holding a <<<<<<< ours or >>>>>>> theirs line in such a file is refused naming it; any other clash holds the branch's side whole. With merge, files may be empty. Forge takes a bounded number of objects (each file and each changed directory is one) and of bytes per file in one push; a larger commit is refused, so split it. The answer names the commit, which is the branch's head after the push, its parent, and with merge the merged commit.";
     const WRITES: bool = true;
     type Args = CommitArgs;
 
@@ -612,6 +885,7 @@ impl Tool for Commit {
                 "repo": { "type": "string", "description": "a repository name, as forge_repos lists them; a new name creates it" },
                 "branch": { "type": "string", "description": "the branch to commit on, like main; the repository's default branch if omitted" },
                 "from": { "type": "string", "description": "for a branch that does not exist yet: the branch (dev), ref or commit id it starts at; the default branch if omitted" },
+                "merge": { "type": "string", "description": "a branch, ref or commit id forge holds to merge in: the commit gets it as its second parent, and its tree is the 3-way merge of the two that files, edits and remove resolve" },
                 "files": { "type": "array", "items": file, "description": "the files to write or edit, each with content, a source, a copy, a blob or edits" },
                 "remove": { "type": "array", "items": { "type": "string" }, "description": "paths to delete" },
                 "message": { "type": "string", "description": "the commit message" },
@@ -623,15 +897,24 @@ impl Tool for Commit {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: CommitArgs) -> Result<Run, Error> {
-        if args.files.is_empty() && args.remove.is_empty() {
-            return Err(invalid("a commit writes or removes at least one file"));
+        let changes_nothing =
+            args.merge.is_none() && args.files.is_empty() && args.remove.is_empty();
+        if changes_nothing {
+            return Err(invalid(
+                "a commit writes or removes at least one file, or merges another commit",
+            ));
         }
         let Gathered {
             mut puts,
             edited,
             copied,
         } = gathered(ctx, args.files, &args.snapshot)?;
-        if puts.is_empty() && edited.is_empty() && copied.is_empty() && args.remove.is_empty() {
+        let sources_change_nothing = args.merge.is_none()
+            && puts.is_empty()
+            && edited.is_empty()
+            && copied.is_empty()
+            && args.remove.is_empty();
+        if sources_change_nothing {
             return Err(invalid(
                 "the sources hold no files and nothing is removed, so the commit changes nothing",
             ));
@@ -642,10 +925,12 @@ impl Tool for Commit {
             None => (HashKind::Sha1, Settings::default().head),
         };
         let hash = forge::hash_of(kind);
+        let none = Objects::new();
         let reading = Reading {
             ctx,
             repo: &args.repo,
             hash,
+            made: &none,
         };
         let branch = branch_ref(args.branch.as_deref(), &default)?;
         let refs = match held {
@@ -681,11 +966,26 @@ impl Tool for Commit {
                 Some(oid(hash, &at)?)
             }
         };
+        let merged = match &args.merge {
+            Some(rev) => {
+                let into = (parent, branch.as_slice());
+                Some(merging(ctx, &args.repo, hash, &held, into, rev)?)
+            }
+            None => None,
+        };
+        let reading = Reading {
+            made: merged.as_ref().map_or(&none, |merged| &merged.objects),
+            ..reading
+        };
+        let base_tree = match &merged {
+            Some(merged) => Some(merged.tree),
+            None => parent,
+        };
         for Edited { path, steps } in edited {
-            let Some(parent) = parent else {
+            let Some(at) = base_tree else {
                 return Err(not_found(format!("there is no file at {path} to edit")));
             };
-            let (mode, blob) = reading.file(parent, &path)?;
+            let (mode, blob) = reading.file(at, &path)?;
             let text = applied(reading.text(blob, &path)?, steps, &path)?;
             puts.push(Put {
                 path,
@@ -705,6 +1005,10 @@ impl Tool for Commit {
                 mode,
                 body: Body::Held(id),
             });
+        }
+        if let Some(merged) = &merged {
+            settled(merged, &puts, &args.remove)?;
+            unmarked(ctx, merged, &puts)?;
         }
         if let Some((_, bounds)) = &held {
             sized(bounds, &puts)?;
@@ -730,11 +1034,14 @@ impl Tool for Commit {
             }
         }
         for path in &args.remove {
+            if gone_by_the_merge(merged.as_ref(), &reading, base_tree, path)? {
+                continue;
+            }
             let (dirs, name) = split(path)?;
             edits.at(&dirs).removed.insert(name.into());
         }
-        let root = match parent {
-            Some(parent) => reading.entries(parent)?,
+        let root = match base_tree {
+            Some(tree) => reading.entries(tree)?,
             None => Entries::new(),
         };
         let tree = match rebuilt(&reading, "", root, edits, &mut objects)? {
@@ -746,9 +1053,14 @@ impl Tool for Commit {
         if !message.ends_with(b"\n") {
             message.push(b'\n');
         }
+        let second = merged.as_ref().map(|merged| merged.commit);
+        if let Some(merged) = merged {
+            let reached = reached_from(hash, tree, &objects, merged.objects)?;
+            objects.extend(reached);
+        }
         let commit = gitcore::Commit {
             tree,
-            parents: parent.into_iter().collect(),
+            parents: parent.into_iter().chain(second).collect(),
             author: author.clone(),
             committer: author,
             extra: Vec::new(),
@@ -780,14 +1092,26 @@ impl Tool for Commit {
             })
             .collect();
         let (commit, parent) = (commit.to_hex(), parent.map(|parent| parent.to_hex()));
-        let read = Box::new(move |output: &[u8]| reported(output, &commit, parent.as_deref()));
+        let second = second.map(|second| second.to_hex());
+        let read = Box::new(move |output: &[u8]| {
+            reported(output, &commit, parent.as_deref(), second.as_deref())
+        });
         Ok(Run::Read { writes, read })
     }
 }
 
-fn reported(output: &[u8], commit: &str, parent: Option<&str>) -> Result<Value, Error> {
+fn reported(
+    output: &[u8],
+    commit: &str,
+    parent: Option<&str>,
+    merged: Option<&str>,
+) -> Result<Value, Error> {
     let branch = moved(output)?;
-    Ok(json!({ "ok": true, "pushed": branch, "commit": commit, "parent": parent }))
+    let mut said = json!({ "ok": true, "pushed": branch, "commit": commit, "parent": parent });
+    if let Some(merged) = merged {
+        said["merged"] = json!(merged);
+    }
+    Ok(said)
 }
 
 pub(crate) fn moved(output: &[u8]) -> Result<String, Error> {

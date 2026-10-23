@@ -200,6 +200,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
                     "repo": "programs",
                     "branch": "j-066/catalog-test",
                     "from": "dev",
+                    "merge": "main",
                     "files": [
                         { "path": "src/lib.rs", "content": CODE, "executable": false },
                         { "path": "docs", "source": "/home/tech/work/j-066/docs" },
