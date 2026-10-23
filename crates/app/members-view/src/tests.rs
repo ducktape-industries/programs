@@ -180,7 +180,13 @@ fn respond(cx: &mut TestAppContext) {
                     keys: vec![key(SCOUT, "sandbox")],
                 },
             ),
-            agent(10, "relay", 7, identity::Life::Revoked),
+            agent(
+                10,
+                "relay",
+                7,
+                identity::Life::Suspended { keys: Vec::new() },
+            ),
+            agent(13, "gone", 7, identity::Life::Revoked),
             person(11, "ada", vec![key(b"\x0b", "phone")]),
         ])))
     });
@@ -248,7 +254,7 @@ fn the_list_groups_people_then_agents_then_programs_and_chooses_no_one() {
         "User",
         "Program",
         "Agent · external · managed by eddy",
-        "Agent · external · managed by eddy · revoked",
+        "Agent · external · managed by eddy · suspended",
         "Choose a member",
     ] {
         assert!(cx.has_text(text), "{text}: {texts:?}");
@@ -286,7 +292,7 @@ fn choosing_a_person_shows_their_devices_the_agents_they_manage_and_their_activi
         "Manages",
         "account 9 · Agent",
         "active",
-        "revoked",
+        "suspended",
         "Recent activity",
         "newest first",
         "chat",
@@ -363,10 +369,11 @@ fn a_program_has_no_devices_and_is_dmed_as_any_account() {
 }
 
 #[test]
-fn a_revoked_agent_stays_listed_dimmed() {
+fn a_suspended_agent_stays_listed_dimmed_and_a_revoked_one_is_not_listed() {
     let (cx, _) = ready();
     let theme = Theme::light();
     assert_eq!(color_of(&cx, "members-row-10", "relay"), Some(theme.faint));
+    assert!(cx.find("members-row-13").is_none(), "{:?}", cx.texts());
     assert_ne!(color_of(&cx, "members-row-9", "scout"), Some(theme.faint));
 }
 
@@ -689,7 +696,11 @@ fn a_row_is_named_by_the_member_not_the_avatar() {
     for (number, name, description) in [
         (7, "eddy", "you · User"),
         (11, "ada", "User"),
-        (10, "relay", "Agent · external · managed by eddy · revoked"),
+        (
+            10,
+            "relay",
+            "Agent · external · managed by eddy · suspended",
+        ),
         (8, "chat", "Program"),
     ] {
         let row = aria(&format!("members-row-{number}"));
@@ -705,7 +716,7 @@ fn a_managed_agent_is_named_by_the_agent_not_the_avatar() {
     cx.run_until_parked();
     for (number, name, description) in [
         (9, "scout", "account 9 · Agent · active"),
-        (10, "relay", "account 10 · Agent · revoked"),
+        (10, "relay", "account 10 · Agent · suspended"),
     ] {
         let Some(Node::Container(ContainerNode {
             interactivity: Some(interactivity),

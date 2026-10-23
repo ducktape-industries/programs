@@ -112,7 +112,10 @@ impl Names {
     }
 
     pub fn people(&self) -> impl Iterator<Item = u64> + '_ {
-        self.profiles.keys().copied()
+        self.profiles
+            .values()
+            .filter(|profile| identity::view::listed(&profile.kind))
+            .map(|profile| profile.number)
     }
 
     pub fn pickable(&self, principal: &Principal) -> bool {

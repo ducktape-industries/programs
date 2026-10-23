@@ -1,5 +1,6 @@
 // The program natively over `program::MockHost`: what the founding suite checks on the host, without the host.
 
+mod listed;
 mod managers;
 mod renames;
 

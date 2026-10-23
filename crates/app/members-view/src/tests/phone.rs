@@ -94,7 +94,7 @@ fn the_phone_roster_groups_people_agents_and_programs_and_says_what_each_is() {
         "Program",
         "managed by eddy",
         "active",
-        "revoked",
+        "suspended",
         "  5",
     ] {
         assert!(cx.has_text(text), "{text}: {texts:?}");

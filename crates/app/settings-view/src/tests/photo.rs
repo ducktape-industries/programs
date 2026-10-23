@@ -222,7 +222,7 @@ fn an_agents_refused_removal_says_why_beside_the_agent_alone() {
 }
 
 #[test]
-fn a_revoked_agent_offers_no_photo() {
+fn a_revoked_agent_is_not_listed_and_offers_no_photo() {
     let (mut cx, props) = seated("ready", false);
     cx.host().handle::<BlobGet>(|_| Ok(Some(png(8, 8))));
     cards(
@@ -232,7 +232,7 @@ fn a_revoked_agent_offers_no_photo() {
         scouting(held(), identity::Life::Revoked),
     );
     cx.simulate_click("settings/nav/agents");
-    assert!(cx.find("settings/agents/12/label").is_some());
+    assert!(cx.find("settings/agents/12/label").is_none());
     for press in ["change", "remove"] {
         let id = format!("settings/agents/12/photo/{press}");
         assert!(cx.find(&id).is_none(), "{press}");

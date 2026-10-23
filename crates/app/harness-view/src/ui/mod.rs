@@ -408,7 +408,7 @@ pub(crate) fn groups(roster: &Roster, me: Option<u64>) -> Groups<'_> {
     let (revoked, standing): (Vec<&Card>, Vec<&Card>) = roster
         .agents
         .iter()
-        .partition(|card| card.setup.standing == identity::Standing::Revoked);
+        .partition(|card| !identity::view::standing_listed(card.setup.standing));
     let (mine, others) = standing
         .into_iter()
         .partition(|card| Some(card.setup.manager) == me);

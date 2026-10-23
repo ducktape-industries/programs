@@ -706,3 +706,35 @@ fn an_accounts_activity_and_a_blocks_transactions_are_drawn_whole() {
         "the page past it is not read"
     );
 }
+
+#[test]
+fn a_revoked_account_leaves_the_list_and_its_name_search_and_still_opens_by_number() {
+    let mut cx = TestAppContext::new();
+    node(&mut cx, Rc::new(RefCell::new(12)));
+    cx.open::<Explorer>();
+    cx.run_until_parked();
+    cx.simulate_click("explorer-tab-accounts");
+    cx.run_until_parked();
+    assert!(cx.find("explorer-account-5").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("explorer-account-13").is_none(), "{:?}", cx.texts());
+    assert!(cx.has_text("3 · tx recorded"), "{:?}", cx.texts());
+    let search = |cx: &mut TestAppContext, text: &str| {
+        cx.simulate_input("explorer-search", text);
+        cx.simulate_submit("explorer-search");
+        cx.run_until_parked();
+    };
+    search(&mut cx, "Gone");
+    assert!(
+        cx.has_text("Nothing here is called “Gone”."),
+        "{:?}",
+        cx.texts()
+    );
+    search(&mut cx, "#13");
+    assert!(
+        cx.texts()
+            .iter()
+            .any(|text| text.starts_with("account 13 ")),
+        "{:?}",
+        cx.texts()
+    );
+}

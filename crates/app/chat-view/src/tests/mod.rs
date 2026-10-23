@@ -34,6 +34,7 @@ mod phone;
 mod placeholders;
 mod policies;
 mod reader;
+mod revoked;
 mod rich;
 mod room;
 mod rules;
@@ -276,12 +277,22 @@ fn owned(
                     7 => "eddy",
                     8 => "reviewer",
                     9 => "forge",
+                    11 => "gone",
                     _ => "ada",
+                };
+                let kind = match number {
+                    11 => identity::Kind::Program {
+                        script: None,
+                        manager: 7,
+                        category: identity::Category::Agent,
+                        standing: identity::Standing::Revoked,
+                    },
+                    _ => identity::Kind::User,
                 };
                 identity::Reply::Profile(Some(identity::Profile {
                     number,
                     name: name.into(),
-                    kind: identity::Kind::User,
+                    kind,
                 }))
             }
             identity::Query::List { .. } => no_cards(),

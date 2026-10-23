@@ -30,6 +30,24 @@ pub async fn avatars<F: Future<Output = Result<PageResponse<Account>, ::program:
     }
 }
 
+pub fn listed(kind: &crate::Kind) -> bool {
+    match kind {
+        crate::Kind::Program { standing, .. } => standing_listed(*standing),
+        crate::Kind::User | crate::Kind::System(_) => true,
+    }
+}
+
+pub fn standing_listed(standing: crate::Standing) -> bool {
+    standing != crate::Standing::Revoked
+}
+
+pub fn named(name: &str, kind: &crate::Kind) -> String {
+    match design::note(kind) {
+        Some(note) => format!("{name} ({note})"),
+        None => name.to_owned(),
+    }
+}
+
 pub fn kind(
     kind: &crate::Kind,
     name_of: impl FnOnce(crate::AccountNumber) -> Option<String>,

@@ -109,7 +109,11 @@ async fn managed_accounts_all_pages(host: Host, by: Option<u64>) -> Result<Vec<A
         kind: account.kind(),
         name: account.card.name,
     };
-    Ok(accounts.into_iter().map(agent).collect())
+    Ok(accounts
+        .into_iter()
+        .filter(|account| identity::view::listed(&account.kind()))
+        .map(agent)
+        .collect())
 }
 
 impl Render for Agents {

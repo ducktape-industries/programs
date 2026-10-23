@@ -92,7 +92,7 @@ pub async fn holdings(host: Host, owner: Party) -> Result<Holdings, Error> {
     let mut names = BTreeMap::new();
     for number in listed_accounts_once(&policies) {
         if let Some(profile) = host.query(identity::ask::Profile { number }).await? {
-            names.insert(number, profile.name);
+            names.insert(number, identity::view::named(&profile.name, &profile.kind));
         }
     }
     Ok(Holdings {

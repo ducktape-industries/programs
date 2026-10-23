@@ -168,11 +168,12 @@ pub(crate) fn landed(listing: Option<&Listing>) -> Result<&Listing, Option<Error
     Ok(listing)
 }
 
-/// Every account identity lists, as identity answers them.
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Accounts {
     #[serde(with = "borsh_bytes")]
     pub list: Vec<identity::Account>,
+    #[serde(default, with = "borsh_bytes")]
+    pub hidden: Vec<identity::Account>,
 }
 
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -422,9 +423,16 @@ impl Explorer {
         pictures.update(cx, |pictures, cx| pictures.get(&blob, cx))
     }
 
+    fn every_account(&self) -> impl Iterator<Item = &identity::Account> {
+        let hidden = self
+            .accounts
+            .ready()
+            .map_or(&[][..], |accounts| accounts.hidden.as_slice());
+        self.account_list().iter().chain(hidden)
+    }
+
     pub(crate) fn account(&self, number: u64) -> Option<&identity::Account> {
-        self.account_list()
-            .iter()
+        self.every_account()
             .find(|account| account.number == number)
     }
 
@@ -467,7 +475,7 @@ impl Explorer {
 
     /// The account holding `key`, and which of its keys it is.
     pub(crate) fn holder(&self, key: &[u8]) -> Option<(&identity::Account, usize)> {
-        self.account_list().iter().find_map(|account| {
+        self.every_account().find_map(|account| {
             let at = account.keys().iter().position(|held| held.key == key)?;
             Some((account, at))
         })

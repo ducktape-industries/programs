@@ -929,7 +929,11 @@ fn a_manager_renames_suspends_and_revokes_an_agent() {
             identity::Op::Revoke { account: 12 },
         ]
     );
-    assert!(cx.has_text("revoked"), "{:?}", cx.texts());
+    assert!(
+        cx.find("settings/agents/12/label").is_none(),
+        "a revoked agent leaves the list: {:?}",
+        cx.texts()
+    );
     for action in ["rename", "suspend", "resume", "revoke"] {
         assert!(cx.find(&format!("settings/agents/12/{action}")).is_none());
     }
@@ -1011,6 +1015,17 @@ fn listing(profiles: &[identity::Profile]) -> identity::Reply {
         identity::Kind::System(program) => identity::Control::System {
             program: program.clone(),
         },
+        identity::Kind::Program {
+            manager,
+            category,
+            standing: identity::Standing::Revoked,
+            script,
+        } => identity::Control::Program {
+            manager: *manager,
+            category: *category,
+            life: identity::Life::Revoked,
+            script: script.clone(),
+        },
         identity::Kind::User | identity::Kind::Program { .. } => {
             identity::Control::User { keys: Vec::new() }
         }
@@ -1046,6 +1061,16 @@ fn answering(ownership: identity::Ownership) -> (TestAppContext, Answers) {
         person(9, "Eve"),
         person(10, "Sam"),
         person(11, "sam"),
+        profile(
+            13,
+            "Gone",
+            identity::Kind::Program {
+                script: None,
+                manager: 7,
+                category: identity::Category::Agent,
+                standing: identity::Standing::Revoked,
+            },
+        ),
         profile(3, "forge", identity::Kind::System("forge".into())),
     ];
     cx.host().handle::<Query<Identity>>(move |q| {
@@ -1403,4 +1428,28 @@ fn a_refused_choice_shows_in_its_agents_row() {
         "{refusal:?}"
     );
     assert!(cx.has_text("That didn’t go through: account 7 does not manage account 12"));
+}
+
+#[test]
+fn a_revoked_account_is_found_by_its_number_alone_and_reads_as_revoked_once_listed() {
+    let (mut cx, answers) = answering(identity::Ownership::Owner);
+    cx.simulate_click("settings/agents/12/answers/specific");
+    cx.run_until_parked();
+    cx.simulate_input("settings/agents/12/answers/name", "Gone");
+    cx.simulate_click("settings/agents/12/answers/add");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("No account or program has that name or number."),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(answers_sent(&cx).is_empty());
+    cx.simulate_input("settings/agents/12/answers/name", "#13");
+    cx.simulate_click("settings/agents/12/answers/add");
+    cx.run_until_parked();
+    assert_eq!(*answers.borrow(), listed(&[13]));
+
+    let (cx, _) = answering(listed(&[13]));
+    assert!(cx.has_text("Gone (revoked)"), "{:?}", cx.texts());
+    assert!(cx.find("settings/agents/12/answers/13/remove").is_some());
 }

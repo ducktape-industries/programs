@@ -247,6 +247,15 @@ fn accounts() -> chat::PageResponse<chat::Profile> {
         kind: chat::Kind::System(forge::PROGRAM.into()),
         ..row(FORGE, forge::PROGRAM)
     };
+    let gone = chat::Profile {
+        kind: chat::Kind::Program {
+            script: None,
+            manager: 1,
+            category: chat::Category::Agent,
+            standing: chat::Standing::Revoked,
+        },
+        ..row(6, "Gone")
+    };
     chat::PageResponse {
         height: 1,
         next: None,
@@ -256,6 +265,7 @@ fn accounts() -> chat::PageResponse<chat::Profile> {
             row(4, "Tal"),
             row(9, "Wren"),
             forge,
+            gone,
         ],
     }
 }
@@ -1595,6 +1605,12 @@ fn settings_shows_only_what_the_contract_exposes_and_grants_by_account() {
     cx.simulate_click("forge-settings-grant");
     cx.run_until_parked();
     assert_eq!(set_lists(&cx), [listed(&[9, 4])]);
+    cx.simulate_input("forge-settings-grant-input", "gon");
+    cx.run_until_parked();
+    assert!(
+        cx.find("forge-grant-pick-6").is_none(),
+        "a revoked agent is offered nowhere"
+    );
     cx.simulate_input("forge-settings-grant-input", "ra");
     cx.run_until_parked();
     assert!(cx.find("forge-grant-pick-2").is_some(), "Rae matches");

@@ -1731,6 +1731,11 @@ impl Chat {
         };
         members
             .iter()
+            .filter(|row| {
+                names
+                    .kind(&row.principal)
+                    .is_none_or(identity::view::listed)
+            })
             .map(|row| (row.principal.clone(), names.member(&row.principal)))
             .collect()
     }

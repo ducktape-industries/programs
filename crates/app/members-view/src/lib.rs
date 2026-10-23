@@ -705,6 +705,7 @@ async fn roster(host: Host) -> Result<Vec<Row>, Error> {
         .await?;
     Ok(accounts
         .iter()
+        .filter(|account| identity::view::listed(&account.kind()))
         .map(|account| row(account, &members))
         .collect())
 }

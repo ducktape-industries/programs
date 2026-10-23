@@ -82,9 +82,9 @@ impl Explorer {
         let lower = query.to_lowercase();
         let accounts = self.account_list();
         let named = |account: &&identity::Account| account.card.name.to_lowercase() == lower;
-        let account = accounts
-            .iter()
-            .find(|account| Some(account.number) == number || named(account))
+        let account = number
+            .and_then(|number| self.account(number))
+            .or_else(|| accounts.iter().find(named))
             .or_else(|| {
                 accounts
                     .iter()

@@ -219,7 +219,7 @@ pub async fn standing(host: Host, item: Item, reader: Option<Party>) -> Result<S
             continue;
         }
         if let Some(profile) = host.query(identity::ask::Profile { number }).await? {
-            names.insert(number, profile.name);
+            names.insert(number, identity::view::named(&profile.name, &profile.kind));
         }
     }
     let (owns, admits) = match (&record, &reader) {
@@ -298,6 +298,7 @@ pub async fn find(host: Host, typed: String) -> Result<Found, Error> {
     let mut matched = accounts
         .into_iter()
         .filter(|account| account.card.name.to_lowercase() == wanted)
+        .filter(|account| identity::view::listed(&account.kind()))
         .map(|account| {
             let party = match account.kind() {
                 identity::Kind::System(program) => Party::Program(program),

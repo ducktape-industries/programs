@@ -256,6 +256,19 @@ pub(crate) fn forge() -> identity::Account {
         },
     )
 }
+pub(crate) fn gone() -> identity::Account {
+    account(
+        13,
+        "Gone",
+        identity::Control::Program {
+            script: None,
+            manager: 3,
+            category: identity::Category::Agent,
+            life: identity::Life::Revoked,
+        },
+    )
+}
+
 pub(crate) fn holder(signer: &[u8]) -> Option<u64> {
     (signer == ADA).then_some(3)
 }
@@ -353,7 +366,7 @@ pub(crate) fn node(cx: &mut TestAppContext, tip: Rc<RefCell<u64>>) {
     host.handle::<Query<Identity>>(|query| match query {
         identity::Query::List { .. } => Ok(identity::Reply::Accounts(programs::PageResponse {
             height: 1,
-            items: vec![ada(), scout(), forge()],
+            items: vec![ada(), scout(), forge(), gone()],
             next: None,
         })),
         other => panic!("unexpected identity query: {other:?}"),

@@ -185,7 +185,10 @@ async fn agents(host: &Host, manager: u64) -> Result<Vec<Agent>, Error> {
             .collect(),
     };
     let mut agents = Vec::new();
-    for agent in listed {
+    for agent in listed
+        .into_iter()
+        .filter(|agent| identity::view::listed(&agent.kind()))
+    {
         let kind @ Kind::Program { .. } = agent.kind() else {
             return Err(malformed(format!(
                 "identity lists account {} as managed, and it is not",
@@ -219,7 +222,10 @@ async fn agents(host: &Host, manager: u64) -> Result<Vec<Agent>, Error> {
         .await?
         .into_iter()
         .filter(|account| named.contains(&account.number))
-        .map(|account| (account.number, account.card.name))
+        .map(|account| {
+            let name = identity::view::named(&account.card.name, &account.kind());
+            (account.number, name)
+        })
         .collect();
     for agent in &mut agents {
         agent.names = agent
@@ -255,6 +261,7 @@ pub(crate) async fn find(host: Host, typed: String) -> Result<Found, Error> {
         .await?
         .into_iter()
         .filter(|account| account.card.name.to_lowercase() == wanted)
+        .filter(|account| identity::view::listed(&account.kind()))
         .map(|account| match account.kind() {
             Kind::System(program) => Party::Program(program),
             Kind::User | Kind::Program { .. } => Party::Account(account.number),

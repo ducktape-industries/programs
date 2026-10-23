@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn the_pickers_offer_every_account() {
+    fn the_pickers_offer_every_account_but_a_revoked_one() {
         let names = Names::from_roster([
             profile(1, "ada", Kind::User),
             profile(2, "scout", agent(1, Standing::Active)),
@@ -188,16 +188,13 @@ mod tests {
             profile(4, "idle", agent(1, Standing::Suspended)),
             profile(5, "gone", agent(1, Standing::Revoked)),
         ]);
-        assert_eq!(names.people().collect::<Vec<_>>(), [1, 2, 3, 4, 5]);
+        assert_eq!(names.people().collect::<Vec<_>>(), [1, 2, 3, 4]);
         let members = [3, 4, 9].map(Principal::Account);
         let labels: Vec<_> = mention_choices(&names, &members)
             .into_iter()
             .map(|choice| choice.label)
             .collect();
-        assert_eq!(
-            labels,
-            ["account-9", "ada", "forge", "gone", "idle", "scout"]
-        );
+        assert_eq!(labels, ["account-9", "ada", "forge", "idle", "scout"]);
         let account = Principal::Account;
         assert_eq!(names.member(&account(4)), "idle (suspended)");
         assert_eq!(names.member(&account(5)), "gone (revoked)");
@@ -264,7 +261,6 @@ mod tests {
                 ("account-9", false),
                 ("ada", true),
                 ("forge", false),
-                ("gone", false),
                 ("idle", false),
                 ("scout", true),
             ]

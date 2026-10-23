@@ -132,3 +132,21 @@ fn an_item_with_no_record_keeps_the_rule_from_before_policies() {
         "the reader's own message, as before"
     );
 }
+
+#[test]
+fn a_revoked_writer_on_a_rooms_policy_reads_as_revoked() {
+    let (mut cx, view) = opened();
+    let team = a_policy(3, 7, "Team", Writers::Listed(vec![Party::Account(11)]));
+    owned(&cx, general(), 7, team.clone(), vec![team]);
+    details(&mut cx, &view);
+    assert!(cx.has_text("You and gone (revoked)"), "{:?}", cx.texts());
+    cx.simulate_click("chat-room-policy");
+    cx.run_until_parked();
+    cx.simulate_click("chat-room-policy/relink");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("In use · You and gone (revoked)"),
+        "{:?}",
+        cx.texts()
+    );
+}

@@ -381,7 +381,7 @@ fn a_refused_suspend_says_why_under_the_actions() {
 }
 
 #[test]
-fn a_suspended_agent_resumes_and_a_revoked_one_only_says_who_it_was() {
+fn a_suspended_agent_resumes_and_a_revoked_one_leaves_the_list() {
     let mut cx = agents();
     scout_is(&cx, identity::Life::Suspended { keys: Vec::new() });
     identity_moves(&mut cx, 43);
@@ -395,7 +395,7 @@ fn a_suspended_agent_resumes_and_a_revoked_one_only_says_who_it_was() {
 
     scout_is(&cx, identity::Life::Revoked);
     identity_moves(&mut cx, 44);
-    assert!(cx.has_text("account 12 · revoked"), "{:?}", cx.texts());
+    assert!(!cx.has_text("account 12 · revoked"), "{:?}", cx.texts());
     for action in ["rename/open", "answers/open", "resume", "revoke"] {
         assert!(
             cx.find(&format!("settings/agents/12/{action}")).is_none(),

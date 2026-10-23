@@ -12,7 +12,10 @@ pub(crate) async fn accounts(host: Host) -> Result<Accounts, Error> {
             page: identity::PageRequest { after, limit: None },
         })
         .await?;
-    Ok(Accounts { list })
+    let (list, hidden) = list
+        .into_iter()
+        .partition(|account: &identity::Account| identity::view::listed(&account.kind()));
+    Ok(Accounts { list, hidden })
 }
 
 pub(crate) async fn validators(host: Host) -> Result<Vec<Vec<u8>>, Error> {
