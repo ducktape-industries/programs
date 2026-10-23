@@ -3,8 +3,8 @@ use ::program::{BlobId, HashKind};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 use crate::state::{
-    ACTIVITY, ARCHIVED, AUTHORED, CHANGES, FORMED, INVOLVED, PREVIEWS, PROTECTED, QUEUE, REFS,
-    REPOS, REQUIRED, REVIEWS, STATUSES, TRAINS,
+    ACTIVITY, ARCHIVED, AUTHORED, BOUNDS, CHANGES, FORMED, INVOLVED, PREVIEWS, PROTECTED, QUEUE,
+    REFS, REPOS, REQUIRED, REVIEWS, STATUSES, TRAINS,
 };
 
 pub use crate::read_contract::*;
@@ -483,6 +483,10 @@ pub enum Query {
     #[ask(Reply::Train { height: u64, train: Option<Train>, formed: Option<Formed> })]
     #[tool_query(description = "A branch's merge train: its length and tip contexts, and the changes it formed, first in line first, each with its Preview's commit (the last is the train's tip), whether a red tip sent the front on alone, and the block it formed in.", example = crate::examples::train)]
     Train { repo: String, branch: Vec<u8> },
+    #[reads(BOUNDS)]
+    #[ask(Reply::Bounds { height: u64, bounds: Bounds })]
+    #[tool_query(description = "The founded bounds (page size, walk and byte limits), with no repository named.", example = crate::examples::bounds)]
+    Bounds,
 }
 
 impl Query {
@@ -525,7 +529,8 @@ impl Query {
             | Query::History { .. }
             | Query::Shallow { .. }
             | Query::Compares { .. }
-            | Query::Train { .. } => None,
+            | Query::Train { .. }
+            | Query::Bounds => None,
         }
     }
 
@@ -558,7 +563,8 @@ impl Query {
             | Query::History { .. }
             | Query::Shallow { .. }
             | Query::Compares { .. }
-            | Query::Train { .. } => None,
+            | Query::Train { .. }
+            | Query::Bounds => None,
         }
     }
 }
@@ -718,6 +724,10 @@ pub enum Reply {
         height: u64,
         train: Option<Train>,
         formed: Option<Formed>,
+    },
+    Bounds {
+        height: u64,
+        bounds: Bounds,
     },
 }
 

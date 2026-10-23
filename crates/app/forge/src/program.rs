@@ -412,6 +412,7 @@ impl Program for Forge {
                     formed,
                 }
             }
+            Query::Bounds => Reply::Bounds { height, bounds },
         })
     }
 }

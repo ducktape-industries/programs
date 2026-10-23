@@ -134,6 +134,7 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Required { repo: r, page }` | `page<RequiredBranch>`: the branches with required checks, in byte-name order, each with its reporter and contexts |
 | `Queue { repo: r, branch: b"refs/heads/dev".to_vec(), page }` | `page<QueueEntry>`: the branch's merge queue, first in line first, each with its head when it joined and who queued it |
 | `Train { repo: r, branch: b"refs/heads/dev".to_vec() }` | `Option<Train>` and `Option<Formed>`: the branch's train, and the changes it formed, each with its Preview's commit, whether the front went on alone, and the block it formed in |
+| `Bounds` | the founded bounds `Repo` answers beside a repository, with no repository named |
 | `Archived { repo: r }` | `archived`: whether the repository is archived (`Archive`) |
 | `ArchivedRepos { page }` | `page<RepoInfo>`: the archived repositories, which `Repos` leaves out, in name order |
 

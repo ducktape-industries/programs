@@ -1009,3 +1009,15 @@ fn a_tree_wider_than_the_tree_walk_is_listed_in_one_page() {
     assert_eq!(listed, all);
     assert!(next.parse(HashKind::Sha1).unwrap().is_done());
 }
+
+#[test]
+fn bounds_answers_the_founded_bounds_with_no_repository() {
+    let sandbox = founded();
+    let Reply::Bounds {
+        bounds: answered, ..
+    } = abi::decode(&ask(&sandbox, &Query::Bounds).unwrap()).unwrap()
+    else {
+        panic!("Bounds answers Bounds");
+    };
+    assert_eq!(answered, bounds());
+}

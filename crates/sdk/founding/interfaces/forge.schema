@@ -3144,6 +3144,11 @@
               28,
               "Train",
               "Query__Train"
+            ],
+            [
+              29,
+              "Bounds",
+              "Query__Bounds"
             ]
           ]
         }
@@ -3218,6 +3223,14 @@
               ]
             ]
           }
+        }
+      }
+    ],
+    [
+      "Query__Bounds",
+      {
+        "struct": {
+          "fields": "empty"
         }
       }
     ],
@@ -3927,6 +3940,11 @@
               25,
               "Train",
               "Reply__Train"
+            ],
+            [
+              26,
+              "Bounds",
+              "Reply__Bounds"
             ]
           ]
         }
@@ -3983,6 +4001,25 @@
               [
                 "blob",
                 "BlobView"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Bounds",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "bounds",
+                "Bounds"
               ]
             ]
           }

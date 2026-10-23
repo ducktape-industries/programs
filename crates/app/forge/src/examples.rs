@@ -419,6 +419,10 @@ pub(crate) fn train() -> Query {
     }
 }
 
+pub(crate) fn bounds() -> Query {
+    Query::Bounds
+}
+
 pub(crate) fn archived() -> Query {
     Query::Archived { repo: repo() }
 }
