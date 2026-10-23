@@ -511,7 +511,7 @@ watchers `first..=last`) has run over it; a watch set under the new id already i
 | `Watched` | when |
 |---|---|
 | `Moved { reference, old, new, by }` | a push, a merge or a squash moved a ref (`old` or `new` None where it was made or deleted) |
-| `Opened { n, from, into, head, by }` | `ChangeOpen` |
+| `Opened { n, from, into, head, by }` | `ChangeOpen`, told before forge posts the opened notice in the change's room, so a watcher has acted on it by the time anyone hears that notice |
 | `Previewed { n, merge, by }` | a `Preview` made a new commit |
 | `Closed { n, by }` | `ChangeClose` |
 | `Merged { n, oid, by }` | a merge naming the change |

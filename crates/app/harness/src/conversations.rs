@@ -5,6 +5,7 @@ use ::program::{
     Error, ExecCtx, Principal, QueryCtx, already_exists, not_found, unauthorized, unexpected_reply,
 };
 use abi::role::identity::AccountNumber;
+use forge_review_chat::{Query as MirrorQuery, Reply as MirrorReply};
 use store::PageRequest;
 
 use crate::agents::{Agent, agent_named, managed, thread};
@@ -64,8 +65,33 @@ pub(crate) fn route(
     if let Some(found) = bound_at(ctx, agent.number, places)? {
         return Ok(found);
     }
+    if let Some((row, _)) = bound_at(ctx, agent.number, &mirrored(ctx, &place)?)? {
+        return Ok((row, place));
+    }
     let row = conversation(ctx, agent, &place)?;
     Ok((row, place))
+}
+
+fn mirrored(ctx: &QueryCtx, place: &str) -> Result<Vec<String>, Error> {
+    let room = place
+        .strip_prefix(chat::PROGRAM)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .and_then(forge::change_of_room);
+    let Some((repo, n)) = room else {
+        return Ok(Vec::new());
+    };
+    let asked = MirrorQuery::Room {
+        repo: repo.to_owned(),
+        n,
+    };
+    let into = match ctx.query(forge_review_chat::PROGRAM, &asked) {
+        Ok(MirrorReply::Room(into)) => into,
+        Ok(_) | Err(_) => None,
+    };
+    Ok(into
+        .map(|channel| Place::Channel { channel }.key())
+        .into_iter()
+        .collect())
 }
 
 pub(crate) fn bound_at(

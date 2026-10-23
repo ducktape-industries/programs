@@ -20,6 +20,19 @@ pub fn notice_link(repo: &str, n: u64) -> Option<String> {
     ducklink::path(crate::PROGRAM, &[repo, &n.to_string()])
 }
 
+pub fn change_of_room(channel: &str) -> Option<(&str, u64)> {
+    let (program, name) = channel.split_once(':')?;
+    if program != crate::PROGRAM {
+        return None;
+    }
+    let (repo, n) = name.rsplit_once(':')?;
+    let named = !repo.is_empty() && n.bytes().all(|byte| byte.is_ascii_digit());
+    if !named {
+        return None;
+    }
+    Some((repo, n.parse().ok()?))
+}
+
 pub enum Event {
     Opened,
     Closed,
@@ -322,4 +335,23 @@ pub fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), E
 
 fn emit(ctx: &ExecCtx, message: Op) {
     ctx.emit(chat::PROGRAM, &message, ::program::Reply::None);
+}
+
+#[test]
+fn a_change_room_names_its_change_back() {
+    for (repo, n) in [("notes", 7), ("ada/notes", 12), ("a:b", 3)] {
+        assert_eq!(change_of_room(&channel_id(repo, n)), Some((repo, n)));
+    }
+    let others = [
+        "j-375",
+        "forge:notes",
+        "forge::7",
+        "forge:notes:x",
+        "forge:notes:+7",
+        "forger:notes:7",
+        "chat:notes:7",
+    ];
+    for other in others {
+        assert_eq!(change_of_room(other), None, "{other}");
+    }
 }

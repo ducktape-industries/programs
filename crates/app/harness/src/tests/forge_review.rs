@@ -1,5 +1,6 @@
 //! A review forge asks of an agent reaches it through harness: once the agent answers forge, the
-//! change's opened notice and each new head of it reach the agent; before that harness drops them.
+//! change's notices reach the agent, before that harness drops them, and a change mirrored into a
+//! room where the agent has a conversation bound reaches that conversation.
 use ::program::{HashKind, Ownership, Party};
 use gitcore::wire::pktline;
 use gitcore::{
@@ -84,6 +85,79 @@ fn opened(world: &World, branch: &str) -> u64 {
     n
 }
 
+fn registered(world: &World, program: &str) {
+    let register = identity::Op::RegisterProgram {
+        program: program.into(),
+    };
+    world
+        .chain
+        .submit(Origin::Root, identity::PROGRAM, &register)
+        .unwrap();
+}
+
+fn founded(world: &World) -> Oid {
+    registered(world, forge::PROGRAM);
+    let create = forge::Op::Create {
+        repo: REPO.into(),
+        hash: HashKind::Sha1,
+    };
+    world
+        .chain
+        .submit(signed(ADA), forge::PROGRAM, &create)
+        .unwrap();
+    let (main, pack) = step(None, "first");
+    push(world, pack, Hash::Sha1.zero(), main, "main");
+    main
+}
+
+fn mirroring(world: &mut World, rooms: &[&str]) {
+    world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
+    world
+        .chain
+        .seat::<forge_review_chat::ForgeReviewChat>(forge_review_chat::PROGRAM);
+    registered(world, forge_review_chat::PROGRAM);
+    world.chain.init(forge_review_chat::PROGRAM, &()).unwrap();
+    let rule = forge_review_chat::Rule {
+        branch: "j-{}/".into(),
+        room: "j-{}".into(),
+    };
+    let rules = forge_review_chat::Op::SetRules { rules: vec![rule] };
+    world
+        .chain
+        .submit(signed(ADA), forge_review_chat::PROGRAM, &rules)
+        .unwrap();
+    for room in rooms {
+        let create = chat::Op::CreateChannel {
+            channel_id: (*room).into(),
+            name: (*room).into(),
+            post_policy: chat::PostPolicy::Open,
+        };
+        world
+            .chain
+            .submit(signed(ADA), chat::PROGRAM, &create)
+            .unwrap();
+    }
+}
+
+fn notices_in(world: &World, thread: u64) -> Vec<String> {
+    let chain = &world.chain;
+    let bodies = frames(chain, thread).into_iter().chain(held(chain, thread));
+    bodies
+        .filter_map(|body| match body {
+            Body::Post { text, .. } if text.contains("sent you a notice") => Some(text),
+            _ => None,
+        })
+        .collect()
+}
+
+fn told(texts: &[String], n: u64, words: &str) -> usize {
+    let about = format!("{REPO} #{n}: ");
+    texts
+        .iter()
+        .filter(|text| text.contains(&about) && text.contains(words))
+        .count()
+}
+
 fn bodies(world: &World) -> Vec<Body> {
     let chain = &world.chain;
     let threads = world.threads().into_iter();
@@ -105,24 +179,8 @@ fn posts(world: &World) -> Vec<String> {
 #[test]
 fn a_reviewer_hears_forges_request_and_each_new_head_once_it_answers_forge() {
     let world = forged(10_000);
-    let register = identity::Op::RegisterProgram {
-        program: forge::PROGRAM.into(),
-    };
-    world
-        .chain
-        .submit(Origin::Root, identity::PROGRAM, &register)
-        .unwrap();
-    let create = forge::Op::Create {
-        repo: REPO.into(),
-        hash: HashKind::Sha1,
-    };
-    world
-        .chain
-        .submit(signed(ADA), forge::PROGRAM, &create)
-        .unwrap();
+    let main = founded(&world);
     let zero = Hash::Sha1.zero();
-    let (main, pack) = step(None, "first");
-    push(&world, pack, zero, main, "main");
     let (feature, pack) = step(Some(main), "second");
     push(&world, pack, zero, feature, "feature");
     let (other, pack) = step(Some(main), "third");
@@ -170,5 +228,133 @@ fn a_reviewer_hears_forges_request_and_each_new_head_once_it_answers_forge() {
         (told(&open), told(&head), heard.len()),
         (1, 1, 2),
         "{heard:?}"
+    );
+}
+
+#[test]
+fn a_change_mirrored_into_a_room_is_heard_in_the_agents_conversation_bound_there() {
+    let mut world = forged(10_000);
+    let main = founded(&world);
+    mirroring(&mut world, &["j-375", "j-376"]);
+    answering(
+        &world,
+        Ownership::Listed(vec![Party::Program(forge::PROGRAM.into())]),
+    );
+    let bind = Op::OpenThread {
+        agent: world.agent,
+        place: Place::Channel {
+            channel: "j-375".into(),
+        },
+    };
+    let made = world.chain.submit(signed(ADA), PROGRAM, &bind).unwrap();
+    let bound: u64 = abi::decode(&made).unwrap();
+    let zero = Hash::Sha1.zero();
+    let branches = ["j-375/fix", "j-375/drop", "j-376/fix", "feature"];
+    let heads = branches.map(|branch| {
+        let (head, pack) = step(Some(main), branch);
+        push(&world, pack, zero, head, branch);
+        head
+    });
+    let [fixed, dropped, unbound, unruled] = branches.map(|branch| opened(&world, branch));
+    let (tip, pack) = step(Some(heads[0]), "a second look");
+    push(&world, pack, heads[0], tip, branches[0]);
+    let review = forge::Op::ReviewSubmit {
+        repo: REPO.into(),
+        n: fixed,
+        review: forge::ReviewDraft {
+            commit_oid: tip.to_string(),
+            base_oid: Some(main.to_string()),
+            verdict: forge::Verdict::Comment,
+            body: "Reads right.".into(),
+            comments: Vec::new(),
+        },
+    };
+    let merge = forge::Op::SquashMerge {
+        repo: REPO.into(),
+        change: Some(fixed),
+        from: forge::Revision::Ref(format!("refs/heads/{}", branches[0]).into_bytes()),
+        into: b"refs/heads/main".to_vec(),
+        expected_from: tip.to_string(),
+        expected_into: main.to_string(),
+        message: None,
+    };
+    let close = forge::Op::ChangeClose {
+        repo: REPO.into(),
+        n: dropped,
+    };
+    for op in [review, merge, close] {
+        world
+            .chain
+            .submit(signed(ADA), forge::PROGRAM, &op)
+            .unwrap();
+    }
+    let here = notices_in(&world, bound);
+    let opening = "opened, review requested";
+    let head = format!("new head {tip}");
+    assert_eq!(
+        [
+            told(&here, fixed, opening),
+            told(&here, fixed, &head),
+            told(&here, fixed, "commented"),
+            told(&here, fixed, "merged into main"),
+            told(&here, dropped, opening),
+            told(&here, dropped, "closed"),
+            here.len(),
+        ],
+        [1, 1, 1, 1, 1, 1, 6],
+        "{here:#?}"
+    );
+    let elsewhere: Vec<String> = world
+        .threads()
+        .into_iter()
+        .filter(|row| row.id != bound)
+        .flat_map(|row| notices_in(&world, row.id))
+        .collect();
+    assert_eq!(
+        [
+            told(&elsewhere, unbound, opening),
+            told(&elsewhere, unruled, opening),
+            elsewhere.len(),
+        ],
+        [1, 1, 2],
+        "{elsewhere:#?}"
+    );
+}
+
+#[test]
+fn a_conversation_bound_to_the_changes_own_room_hears_it_before_the_room_it_is_mirrored_into() {
+    let mut world = forged(10_000);
+    let main = founded(&world);
+    mirroring(&mut world, &["j-375"]);
+    answering(
+        &world,
+        Ownership::Listed(vec![Party::Program(forge::PROGRAM.into())]),
+    );
+    let bind = |channel: String| -> u64 {
+        let open = Op::OpenThread {
+            agent: world.agent,
+            place: Place::Channel { channel },
+        };
+        let made = world.chain.submit(signed(ADA), PROGRAM, &open).unwrap();
+        abi::decode(&made).unwrap()
+    };
+    let job = bind("j-375".into());
+    let branch = "j-375/fix";
+    let (head, pack) = step(Some(main), branch);
+    push(&world, pack, Hash::Sha1.zero(), head, branch);
+    let n = opened(&world, branch);
+    let own = bind(chat::namespace::id(forge::PROGRAM, &format!("{REPO}:{n}")));
+    let (tip, pack) = step(Some(head), "a second look");
+    push(&world, pack, head, tip, branch);
+    let new_head = format!("new head {tip}");
+    let (in_own, in_job) = (notices_in(&world, own), notices_in(&world, job));
+    assert_eq!(
+        [
+            told(&in_own, n, &new_head),
+            told(&in_job, n, &new_head),
+            told(&in_job, n, "opened, review requested"),
+        ],
+        [1, 0, 1],
+        "{in_own:#?}\n{in_job:#?}"
     );
 }

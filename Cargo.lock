@@ -3194,6 +3194,7 @@ dependencies = [
  "files",
  "fleet",
  "forge",
+ "forge-review-chat",
  "gitcore",
  "halo",
  "identity",

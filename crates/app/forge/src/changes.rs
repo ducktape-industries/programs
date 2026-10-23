@@ -86,7 +86,6 @@ pub(crate) fn open(
     AUTHORSHIP.put(ctx, &(repo.to_owned(), n), &authorship);
     discussion::create(ctx, repo, &change);
     crate::involved::seat_opened(ctx, &change);
-    discussion::post(ctx, repo, &change, message, Event::Opened, Some(actor))?;
     let opened = Watched::Opened {
         repo: repo.to_owned(),
         n,
@@ -96,6 +95,7 @@ pub(crate) fn open(
         by: actor.clone(),
     };
     crate::watchers::tell(ctx, &opened)?;
+    discussion::post(ctx, repo, &change, message, Event::Opened, Some(actor))?;
     Ok(OpReply::Change {
         height: env.height,
         n,
