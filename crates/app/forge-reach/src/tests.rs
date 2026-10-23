@@ -9,6 +9,8 @@ use gitcore::{Tree, TreeEntry, pack};
 
 use crate::*;
 
+mod enqueue;
+
 const OWNER: &[u8] = b"owner-key";
 const OWNER_ACCOUNT: u64 = 11;
 const LANE: &[u8] = b"lane-key";

@@ -141,6 +141,16 @@ pub(crate) fn report(ctx: &ExecCtx, reported: Reported) -> Result<(), Error> {
     for n in changes {
         tell(ctx, &reported.repo, n)?;
     }
+    if reported.state == CheckState::Passed {
+        enqueue_passed(
+            ctx,
+            &reported.repo,
+            &reported.commit,
+            reporter,
+            &reported.context,
+            reported.change,
+        )?;
+    }
     Ok(())
 }
 
@@ -160,7 +170,7 @@ pub(crate) fn report_patch(ctx: &ExecCtx, patched: Patched) -> Result<(), Error>
         patched.repo.clone(),
         patched.commit.clone(),
         reporter,
-        patched.context,
+        patched.context.clone(),
     );
     for old in REACH.scan(ctx, REACH.prefix_of(&key))? {
         REACH.remove(ctx, &old);
@@ -174,8 +184,184 @@ pub(crate) fn report_patch(ctx: &ExecCtx, patched: Patched) -> Result<(), Error>
         height: ctx.env().height,
     };
     PATCHES.put(ctx, &key, &kept);
-    HEADS.insert(ctx, &(patched.repo.clone(), patched.n, patched.commit));
-    tell(ctx, &patched.repo, patched.n)
+    HEADS.insert(
+        ctx,
+        &(patched.repo.clone(), patched.n, patched.commit.clone()),
+    );
+    tell(ctx, &patched.repo, patched.n)?;
+    if patched.state == CheckState::Passed {
+        enqueue_passed(
+            ctx,
+            &patched.repo,
+            &patched.commit,
+            reporter,
+            &patched.context,
+            Some(patched.n),
+        )?;
+    }
+    Ok(())
+}
+
+fn enqueue_passed(
+    ctx: &ExecCtx,
+    repo: &str,
+    commit: &str,
+    reporter: AccountNumber,
+    context: &str,
+    change: Option<u64>,
+) -> Result<(), Error> {
+    let context = format!("{reporter}/{context}");
+    let branches = branches_requiring(ctx, repo, &context)?;
+    if branches.is_empty() {
+        return Ok(());
+    }
+    for (n, branch) in changes_at(ctx, repo, commit, change)? {
+        let required = branches.contains(&branch);
+        if !required {
+            continue;
+        }
+        if queued(ctx, repo, &branch, n)? {
+            continue;
+        }
+        let enqueue = forge::Op::Enqueue {
+            repo: repo.to_owned(),
+            n,
+            expected_head: commit.to_owned(),
+        };
+        ctx.emit(forge::PROGRAM, &enqueue, Wanted::Wanted);
+    }
+    Ok(())
+}
+
+fn branches_requiring(
+    ctx: &QueryCtx,
+    repo: &str,
+    context: &str,
+) -> Result<BTreeSet<Vec<u8>>, Error> {
+    let Some(account) = own_account(ctx)? else {
+        return Ok(BTreeSet::new());
+    };
+    let reporter = Principal::Account(account);
+    let mut branches = BTreeSet::new();
+    let mut after = None;
+    loop {
+        let asked = forge::Query::Required {
+            repo: repo.to_owned(),
+            page: PageRequest { after, limit: None },
+        };
+        let page = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+            forge::Reply::Required { page, .. } => page,
+            other => return Err(unexpected_reply(forge::PROGRAM, "Required", &other)),
+        };
+        for branch in page.items {
+            let carries = branch.required.reporter == reporter;
+            let required = branch.required.contexts.iter().any(|each| each == context);
+            let ours = carries && required;
+            if ours {
+                branches.insert(branch.branch);
+            }
+        }
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return Ok(branches),
+        }
+    }
+}
+
+fn changes_at(
+    ctx: &QueryCtx,
+    repo: &str,
+    commit: &str,
+    n: Option<u64>,
+) -> Result<Vec<(u64, Vec<u8>)>, Error> {
+    if let Some(n) = n {
+        let Some((change, head)) = change_with_head(ctx, repo, n)? else {
+            return Ok(Vec::new());
+        };
+        let open = change.state == forge::ChangeState::Open;
+        let current = head.as_deref() == Some(commit);
+        let eligible = open && current;
+        return Ok(match eligible {
+            true => vec![(n, change.into)],
+            false => Vec::new(),
+        });
+    }
+    let refs = refs_at(ctx, repo, commit)?;
+    let mut changes = Vec::new();
+    let mut after = None;
+    loop {
+        let asked = forge::Query::Changes {
+            repo: repo.to_owned(),
+            filter: forge::ChangeFilter {
+                state: Some(forge::ChangeState::Open),
+                ..Default::default()
+            },
+            page: PageRequest { after, limit: None },
+        };
+        let page = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+            forge::Reply::Changes { page, .. } => page,
+            other => return Err(unexpected_reply(forge::PROGRAM, "Changes", &other)),
+        };
+        for change in page.items {
+            let current = match change.from {
+                Revision::Ref(name) => refs.contains(&name),
+                Revision::Oid(head) => head == commit,
+            };
+            if current {
+                changes.push((change.n, change.into));
+            }
+        }
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return Ok(changes),
+        }
+    }
+}
+
+fn refs_at(ctx: &QueryCtx, repo: &str, commit: &str) -> Result<BTreeSet<Vec<u8>>, Error> {
+    let mut refs = BTreeSet::new();
+    let mut after = None;
+    loop {
+        let asked = forge::Query::Refs {
+            repo: repo.to_owned(),
+            page: PageRequest { after, limit: None },
+        };
+        let page = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+            forge::Reply::Refs { page, .. } => page,
+            other => return Err(unexpected_reply(forge::PROGRAM, "Refs", &other)),
+        };
+        for entry in page.items {
+            if entry.target == commit {
+                refs.insert(entry.name);
+            }
+        }
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return Ok(refs),
+        }
+    }
+}
+
+fn queued(ctx: &QueryCtx, repo: &str, branch: &[u8], n: u64) -> Result<bool, Error> {
+    let mut after = None;
+    loop {
+        let asked = forge::Query::Queue {
+            repo: repo.to_owned(),
+            branch: branch.to_vec(),
+            page: PageRequest { after, limit: None },
+        };
+        let page = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+            forge::Reply::Queue { page, .. } => page,
+            other => return Err(unexpected_reply(forge::PROGRAM, "Queue", &other)),
+        };
+        if page.items.iter().any(|entry| entry.n == n) {
+            return Ok(true);
+        }
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return Ok(false),
+        }
+    }
 }
 
 fn check_named(commit: &str, context: &str) -> Result<(), Error> {
@@ -475,13 +661,25 @@ fn target_of(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Vec<u8>>, Erro
 }
 
 fn change_of(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<forge::Change>, Error> {
+    Ok(change_with_head(ctx, repo, n)?.map(|(change, _)| change))
+}
+
+fn change_with_head(
+    ctx: &QueryCtx,
+    repo: &str,
+    n: u64,
+) -> Result<Option<(forge::Change, Option<String>)>, Error> {
     let asked = forge::Query::Change {
         repo: repo.to_owned(),
         n,
         page: PageRequest::first(1),
     };
     match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
-        Ok(forge::Reply::Change { change, .. }) => Ok(Some(change)),
+        Ok(forge::Reply::Change {
+            change,
+            source_head,
+            ..
+        }) => Ok(Some((change, source_head))),
         Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
         Err(refused) if refused.code == code::NOT_FOUND => Ok(None),
         Err(refused) => Err(refused),
