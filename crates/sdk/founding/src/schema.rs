@@ -20,9 +20,27 @@ pub fn baseline(schema: &BorshSchemaContainer) -> Result<Vec<u8>> {
     let bytes = borsh::to_vec(schema)?;
     let json = borsh_json::decode(&container, container.declaration(), "interface", &bytes)
         .map_err(|fault| format!("the interface reads as no baseline: {fault}"))?;
-    let mut text = serde_json::to_vec_pretty(&json)?;
+    let mut text = serde_json::to_vec_pretty(&in_key_order(json))?;
     text.push(b'\n');
     Ok(text)
+}
+
+fn in_key_order(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<(String, serde_json::Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            let sorted = entries
+                .into_iter()
+                .map(|(key, value)| (key, in_key_order(value)))
+                .collect();
+            serde_json::Value::Object(sorted)
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(in_key_order).collect())
+        }
+        other => other,
+    }
 }
 
 pub(crate) fn from_baseline(text: &[u8]) -> Result<BorshSchemaContainer> {
