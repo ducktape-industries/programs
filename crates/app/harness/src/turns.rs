@@ -506,6 +506,7 @@ fn unseal(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
 pub(crate) fn let_go(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
     crate::failures::cleared(ctx, thread)?;
     crate::woken::let_go(ctx, thread.agent, thread.id)?;
+    crate::conversations::carry_to_heir(ctx, thread.id)?;
     unseal(ctx, thread)?;
     ctx.blob_release_lines(held_on(thread.id, b""));
     THREADS.put(ctx, &thread.id, thread);

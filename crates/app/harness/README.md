@@ -199,8 +199,13 @@ stays harness's, a filter on what harness already hears from chat. harness watch
 nothing else for a wait itself: its own watchers' ops (`WaitDue`, `PodWait`, `PodEvent`,
 `Forged`, `Filed`) and the one-time `MoveWaits` that put their waits on wakes are
 retired, each tag kept and refused, so a network takes this harness only after the one
-before it ran `MoveWaits` until it answered null. A wake for a conversation that has
-closed is a notice on it, never delivered to another. A mention, a direct message or a
+before it ran `MoveWaits` until it answered null. A conversation that takes a closed one's
+place is its heir: for a canonical one, the next canonical (`NewThread`, `ForkThread`, or the
+fresh one an input opens after a `Close`); for a bound one, the next `OpenThread` at its place.
+A wait, a wake or a booked run's report for a conversation that has closed reaches its heir,
+whose `Armed` lists the waits it took over; with no heir it is a notice on the closed one,
+never delivered to another. A promise whose conversation closed reaches its heir, else the
+agent's current conversation. A mention, a direct message or a
 thread reply that reaches a conversation stays the agent's until the agent posts or
 reacts in its place (that thread, or anywhere in that room for a message outside a
 thread; a reaction answers where the message it is on sits): when the conversation

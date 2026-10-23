@@ -14,7 +14,7 @@ use crate::conversations::{binding, bound_at, conversation, current, route};
 use crate::listening::chosen;
 use crate::pictures::{self, Picture};
 use crate::resume;
-use crate::state::{BOUND, LAST, PLACES, THREADS};
+use crate::state::{BOUND, LAST, PLACES, THREADS, VACATED};
 use crate::turns::{converse, say, say_from};
 use crate::waiting;
 use crate::{AgentSetup, Body, Config, Configured, Op, Place, ThreadRow};
@@ -264,7 +264,9 @@ pub(crate) async fn close(ctx: &Ctx, id: u64) -> Result<(), Error> {
     }
     let bound = binding(ctx, &thread)?.is_some();
     if bound {
-        BOUND.remove(ctx, &(thread.agent, thread.place.clone()));
+        let place = (thread.agent, thread.place.clone());
+        BOUND.remove(ctx, &place);
+        VACATED.put(ctx, &place, &id);
     }
     thread.closed = true;
     if thread.asking == crate::Asking::Idle {

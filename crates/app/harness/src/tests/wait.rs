@@ -88,32 +88,22 @@ fn waits_for_a_height(world: World) {
 }
 
 #[test]
-fn a_wait_whose_conversation_closed_ends_there_as_a_notice_and_wakes_no_other() {
+fn a_wait_whose_canonical_conversation_closed_wakes_the_fresh_one_in_its_place() {
     let world = schemed();
     let chain = &world.chain;
-    let thread = world.opened("m1", "wake me at block 20", Some(WINDOW));
-    turn(&world, 3, &[("w1", "wait_for", height(20))]);
-    let wait = waited(chain, thread, "w1");
+    let (thread, wait) = waiting_in_canonical(&world);
     chain
         .submit(signed(ADA), PROGRAM, &Op::Close { thread })
         .unwrap();
     chain.at(6, 0);
     let fresh = world.mention("m2", "a fresh start");
     assert_ne!(fresh, thread);
+    assert_eq!(armed(chain, fresh), [wait]);
+    assert!(armed(chain, thread).is_empty());
     chain.at(21, 0);
-    let woke = wakes(chain, fresh);
-    assert!(
-        woke.iter().all(|text| !text.starts_with("Wait")),
-        "{woke:?}"
-    );
+    assert_eq!(over(chain, fresh, wait), 1, "{:?}", wakes(chain, fresh));
     assert!(wakes(chain, thread).is_empty());
-    let noticed = frames(chain, thread).into_iter().any(|body| match body {
-        Body::Notice { text } => text.starts_with(&format!(
-            "Not delivered, as this conversation is closed: Wait {wait} is over: block"
-        )),
-        _ => false,
-    });
-    assert!(noticed, "{:?}", frames(chain, thread));
+    assert!(!undelivered(chain, thread), "{:?}", frames(chain, thread));
 }
 
 #[test]
@@ -222,7 +212,7 @@ fn a_wait_for_a_pod_is_refused_pointing_at_the_pods_services_own_wait() {
     assert!(armed(chain, thread).is_empty());
 }
 
-fn channel(world: &World, id: &str) {
+pub(super) fn channel(world: &World, id: &str) {
     let create = chat::Op::CreateChannel {
         channel_id: id.into(),
         name: id.into(),
@@ -441,7 +431,7 @@ fn wait_list_names_this_conversations_open_waits_and_every_wait_with_all() {
     let chain = &world.chain;
     let first = world.opened("m1", "wait here", Some(WINDOW));
     turn(&world, 3, &[("w1", "wait_for", height(40))]);
-    let elsewhere = waited(chain, first, "w1");
+    let inherited = waited(chain, first, "w1");
     chain
         .submit(signed(ADA), PROGRAM, &Op::Close { thread: first })
         .unwrap();
@@ -480,12 +470,141 @@ fn wait_list_names_this_conversations_open_waits_and_every_wait_with_all() {
     };
     assert_eq!(
         listed("l1"),
-        [json!(open)],
-        "this conversation's waits not over yet"
+        [json!(inherited), json!(open)],
+        "this conversation's waits not over yet, the closed one's it took over included"
     );
     assert_eq!(
         listed("l2"),
-        [json!(elsewhere), json!(over), json!(open)],
+        [json!(inherited), json!(over), json!(open)],
         "every wait the agent made, in every conversation, over ones included"
     );
+}
+
+pub(super) fn opened_at(world: &World, channel: &str) -> u64 {
+    let open = Op::OpenThread {
+        agent: world.agent,
+        place: Place::Channel {
+            channel: channel.into(),
+        },
+    };
+    abi::decode(&world.chain.submit(signed(ADA), PROGRAM, &open).unwrap()).unwrap()
+}
+
+pub(super) fn renewed(world: &World) -> u64 {
+    let new = Op::NewThread { agent: world.agent };
+    abi::decode(&world.chain.submit(signed(ADA), PROGRAM, &new).unwrap()).unwrap()
+}
+
+fn over(chain: &MockChain, thread: u64, wait: u64) -> usize {
+    let words = format!("Wait {wait} is over");
+    wakes(chain, thread)
+        .iter()
+        .filter(|text| text.starts_with(&words))
+        .count()
+}
+
+fn undelivered(chain: &MockChain, thread: u64) -> bool {
+    frames(chain, thread)
+        .into_iter()
+        .any(|body| body.text().contains("Not delivered"))
+}
+
+fn waiting_in_canonical(world: &World) -> (u64, u64) {
+    let thread = world.opened("m1", "wake me at block 20", Some(WINDOW));
+    turn(world, 3, &[("w1", "wait_for", height(20))]);
+    (thread, waited(&world.chain, thread, "w1"))
+}
+
+fn closed_waiting_in_ops(world: &World) -> (u64, u64) {
+    let chain = &world.chain;
+    world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Hi." }]),
+        "end_turn",
+    );
+    channel(world, "ops");
+    let thread = opened_at(world, "ops");
+    let ask = format!("<@{}> wake me at block 20", world.agent);
+    world.post(ADA, "ops", "o1", &ask);
+    turn(world, 4, &[("w1", "wait_for", height(20))]);
+    let wait = waited(chain, thread, "w1");
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
+        .unwrap();
+    (thread, wait)
+}
+
+#[test]
+fn a_wait_moves_to_the_conversation_new_thread_starts_in_its_place_and_wakes_it_there() {
+    let world = schemed();
+    let chain = &world.chain;
+    let (thread, wait) = waiting_in_canonical(&world);
+    let heir = renewed(&world);
+    assert!(
+        thread_row(chain, thread).closed,
+        "the idle one it replaced closes"
+    );
+    assert_eq!(armed(chain, heir), [wait]);
+    assert!(armed(chain, thread).is_empty());
+    assert_eq!(wait_row(chain, wait).unwrap().thread, heir);
+    chain.at(21, 0);
+    assert_eq!(over(chain, heir, wait), 1, "{:?}", wakes(chain, heir));
+    assert!(wakes(chain, thread).is_empty());
+    assert!(!undelivered(chain, thread), "{:?}", frames(chain, thread));
+}
+
+#[test]
+fn a_wait_left_on_a_closed_bound_conversation_moves_to_the_one_opened_next_at_its_place() {
+    let world = schemed();
+    let chain = &world.chain;
+    let (thread, wait) = closed_waiting_in_ops(&world);
+    let heir = opened_at(&world, "ops");
+    assert_ne!(heir, thread);
+    assert_eq!(armed(chain, heir), [wait]);
+    assert!(armed(chain, thread).is_empty());
+    chain.at(21, 0);
+    assert_eq!(over(chain, heir, wait), 1, "{:?}", wakes(chain, heir));
+    assert!(!undelivered(chain, thread), "{:?}", frames(chain, thread));
+}
+
+#[test]
+fn a_wait_whose_bound_conversation_closed_with_none_opened_at_its_place_ends_there_as_a_notice() {
+    let world = schemed();
+    let chain = &world.chain;
+    let (thread, wait) = closed_waiting_in_ops(&world);
+    chain.at(21, 0);
+    let noticed = frames(chain, thread).into_iter().any(|body| match body {
+        Body::Notice { text } => text.starts_with(&format!(
+            "Not delivered, as this conversation is closed: Wait {wait} is over: block"
+        )),
+        _ => false,
+    });
+    assert!(noticed, "{:?}", frames(chain, thread));
+}
+
+#[test]
+fn a_wait_the_replaced_conversation_arms_while_it_finishes_its_turn_moves_to_its_heir_as_it_closes()
+{
+    let world = schemed();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "wake me at block 20", Some(WINDOW));
+    let heir = renewed(&world);
+    assert!(
+        !thread_row(chain, thread).closed,
+        "its turn is still asking"
+    );
+    turn(&world, 3, &[("w1", "wait_for", height(20))]);
+    let wait = waited(chain, thread, "w1");
+    assert!(
+        thread_row(chain, thread).closed,
+        "it closes once its turn ends"
+    );
+    assert_eq!(armed(chain, heir), [wait]);
+    assert!(armed(chain, thread).is_empty());
+    assert_eq!(wait_row(chain, wait).unwrap().thread, heir);
+    chain.at(21, 0);
+    assert_eq!(over(chain, heir, wait), 1, "{:?}", wakes(chain, heir));
+    assert!(!undelivered(chain, thread), "{:?}", frames(chain, thread));
 }

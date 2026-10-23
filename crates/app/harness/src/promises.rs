@@ -9,7 +9,8 @@ use store::{PageRequest, PageResponse};
 
 use crate::agents::{profile, running, thread};
 use crate::bookings::note;
-use crate::state::{ASKING, PROMISE_COUNT, PROMISE_ENTRIES, PROMISES, PROMISING, THREADS};
+use crate::conversations::reaching;
+use crate::state::{ASKING, PROMISE_COUNT, PROMISE_ENTRIES, PROMISES, PROMISING};
 use crate::turns::converse;
 use crate::{Op, PromiseClosed, PromiseRow};
 
@@ -180,10 +181,8 @@ pub(crate) async fn due(ctx: Ctx, id: u64) -> Result<(), Error> {
     }
     let list = open_list(&ctx, row.asked_by)?.unwrap_or_default();
     let text = told_asker(&row, &list);
-    let alive = THREADS
-        .get(&ctx, &row.thread)?
-        .is_some_and(|told| !told.closed);
-    if let Some(told) = note(&ctx, row.asked_by, alive.then_some(row.thread), text)? {
+    let reached = reaching(&ctx, row.thread)?.map(|told| told.id);
+    if let Some(told) = note(&ctx, row.asked_by, reached, text)? {
         row.thread = told;
         PROMISES.put(&ctx, &id, &row);
         woken.push(told);

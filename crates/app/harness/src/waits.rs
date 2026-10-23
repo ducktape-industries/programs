@@ -388,6 +388,18 @@ fn unwatch(ctx: &ExecCtx, agent: AccountNumber, channel: &str, watched: bool) ->
     Ok(())
 }
 
+pub(crate) fn carried(ctx: &ExecCtx, from: u64, to: u64) -> Result<(), Error> {
+    for (_, id) in ARMED.scan(ctx, ARMED.prefix_of(&from))? {
+        ARMED.remove(ctx, &(from, id));
+        ARMED.insert(ctx, &(to, id));
+        if let Some(mut row) = WAITS.get(ctx, &id)? {
+            row.thread = to;
+            WAITS.put(ctx, &id, &row);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn still_armed(ctx: &QueryCtx, thread: u64) -> Result<String, Error> {
     let mut armed = Vec::new();
     for (_, id) in ARMED.scan(ctx, ARMED.prefix_of(&thread))? {

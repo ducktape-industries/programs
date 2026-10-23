@@ -652,3 +652,67 @@ fn a_run_booked_at_a_height_and_in_blocks_at_once_is_refused_and_books_nothing()
     assert!(due(chain, 20).is_empty(), "nothing is booked at its height");
     assert!(due(chain, 9).is_empty(), "nor in its blocks");
 }
+
+#[test]
+fn a_booked_run_reports_to_the_conversation_new_thread_started_in_place_of_the_one_that_booked_it()
+{
+    let world = schemed();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "wake yourself at block 10", Some(WINDOW));
+    turn(
+        &world,
+        3,
+        &[("b1", "schedule_run", book(10, "general", "wake"))],
+    );
+    let entry = entry_of(chain, thread, "b1");
+    said(chain, 5, "Booked.");
+    let heir = super::wait::renewed(&world);
+    assert!(thread_row(chain, thread).closed);
+    chain.at(11, 0);
+    assert!(booking(chain, entry).unwrap().ran.is_some(), "the run ran");
+    let ran_as_you = |thread: u64| {
+        reports(chain, thread)
+            .iter()
+            .filter(|text| text.contains("ran as you"))
+            .count()
+    };
+    assert_eq!(ran_as_you(heir), 1, "{:?}", reports(chain, heir));
+    assert_eq!(ran_as_you(thread), 0);
+    let undelivered = frames(chain, thread)
+        .into_iter()
+        .any(|body| body.text().contains("Not delivered"));
+    assert!(!undelivered, "{:?}", frames(chain, thread));
+}
+
+#[test]
+fn a_booked_run_reports_past_a_closed_heir_to_the_conversation_open_now() {
+    let world = schemed();
+    let chain = &world.chain;
+    let first = world.opened("m1", "wake yourself at block 10", Some(WINDOW));
+    turn(
+        &world,
+        3,
+        &[("b1", "schedule_run", book(10, "general", "wake"))],
+    );
+    let entry = entry_of(chain, first, "b1");
+    said(chain, 5, "Booked.");
+    let second = super::wait::renewed(&world);
+    let third = super::wait::renewed(&world);
+    said(chain, 7, "Noted.");
+    assert!(
+        thread_row(chain, second).closed,
+        "the second closes once its turn ends"
+    );
+    chain.at(11, 0);
+    assert!(booking(chain, entry).unwrap().ran.is_some(), "the run ran");
+    let ran_as_you = |thread: u64| {
+        frames(chain, thread)
+            .into_iter()
+            .chain(held(chain, thread))
+            .filter(|body| body.text().contains("ran as you"))
+            .count()
+    };
+    assert_eq!(ran_as_you(third), 1, "{:?}", reports(chain, third));
+    assert_eq!(ran_as_you(second), 0, "{:?}", frames(chain, second));
+    assert_eq!(ran_as_you(first), 0);
+}

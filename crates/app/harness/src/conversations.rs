@@ -9,8 +9,8 @@ use store::PageRequest;
 
 use crate::agents::{Agent, agent_named, managed, thread};
 use crate::state::{
-    BOUND, BY_AGENT, Binding, CONVERSATIONS, COUNT, CURRENT, Conversations, FRAMES, PLACES,
-    THREADS, TOPICS, WITHHELD, newest_first,
+    BOUND, BY_AGENT, Binding, CONVERSATIONS, COUNT, CURRENT, Conversations, FRAMES, HEIRS, PLACES,
+    THREADS, TOPICS, VACATED, WITHHELD, newest_first,
 };
 use crate::{Asking, Body, Context, Frame, Place, Said, ThreadRow};
 
@@ -130,17 +130,60 @@ fn open(
     COUNT.put(ctx, &id);
     crate::kept::opened(ctx, agent, id)?;
     BY_AGENT.insert(ctx, &(agent.number, newest_first(id)));
-    match opening {
-        Opening::Fresh | Opening::Fork { .. } => CURRENT.put(ctx, &agent.number, &id),
+    let predecessor = match opening {
+        Opening::Fresh | Opening::Fork { .. } => {
+            let replaced = CURRENT.get(ctx, &agent.number)?;
+            CURRENT.put(ctx, &agent.number, &id);
+            replaced
+        }
         Opening::Bound(bound) => {
             let binding = Binding {
                 thread: id,
                 place: bound.clone(),
             };
-            BOUND.put(ctx, &(agent.number, bound.key()), &binding);
+            let key = (agent.number, bound.key());
+            BOUND.put(ctx, &key, &binding);
+            let vacated = VACATED.get(ctx, &key)?;
+            VACATED.remove(ctx, &key);
+            vacated
         }
+    };
+    if let Some(from) = predecessor {
+        took_over(ctx, from, id)?;
     }
     Ok(row)
+}
+
+fn took_over(ctx: &ExecCtx, from: u64, to: u64) -> Result<(), Error> {
+    HEIRS.put(ctx, &from, &to);
+    crate::waits::carried(ctx, from, to)
+}
+
+pub(crate) fn heir(ctx: &QueryCtx, id: u64) -> Result<Option<ThreadRow>, Error> {
+    let mut from = id;
+    while let Some(next) = HEIRS.get(ctx, &from)? {
+        let row = thread(ctx, next)?;
+        if !row.closed {
+            return Ok(Some(row));
+        }
+        from = next;
+    }
+    Ok(None)
+}
+
+pub(crate) fn reaching(ctx: &QueryCtx, id: u64) -> Result<Option<ThreadRow>, Error> {
+    match THREADS.get(ctx, &id)? {
+        Some(row) if !row.closed => Ok(Some(row)),
+        Some(_) => heir(ctx, id),
+        None => Ok(None),
+    }
+}
+
+pub(crate) fn carry_to_heir(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+    let Some(taken_by) = heir(ctx, id)? else {
+        return Ok(());
+    };
+    crate::waits::carried(ctx, id, taken_by.id)
 }
 
 pub(crate) fn retire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {

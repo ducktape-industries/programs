@@ -341,3 +341,34 @@ fn a_compacted_conversation_hears_its_agents_open_promises_next() {
         && last.contains("post the plan");
     assert!(listed, "{last}");
 }
+
+#[test]
+fn a_promise_whose_bound_conversation_closed_wakes_the_one_opened_next_at_its_place() {
+    let world = world();
+    let chain = &world.chain;
+    let canonical = world.opened("m1", "hello", Some(WINDOW));
+    said(chain, 3, "Hi.");
+    super::wait::channel(&world, "ops");
+    let thread = super::wait::opened_at(&world, "ops");
+    let ask = format!("<@{}> promise then go", world.agent);
+    world.post(ADA, "ops", "o1", &ask);
+    turn(&world, 4, &[("p1", "promise", promise("follow up", 20))]);
+    let id = promised(chain, thread, "p1");
+    said(chain, 6, "Promised.");
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
+        .unwrap();
+    let heir = super::wait::opened_at(&world, "ops");
+    let due = row(chain, id).unwrap().due;
+    chain.at(due + 1, 0);
+    let words = format!("Promise {id} is due: follow up");
+    let woke = |thread: u64| {
+        told(chain, thread)
+            .iter()
+            .any(|text| text.starts_with(&words))
+    };
+    assert!(woke(heir), "{:?}", told(chain, heir));
+    assert!(!woke(canonical), "{:?}", told(chain, canonical));
+    assert!(!woke(thread));
+    assert_eq!(row(chain, id).unwrap().thread, heir);
+}

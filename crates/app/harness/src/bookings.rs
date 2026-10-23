@@ -1,6 +1,6 @@
 //! Runs an account books for a later block: harness holds the scheduler's entry and, when it is
 //! due, sends the booked op as that account; what it did is kept and told to the conversation it
-//! was booked from, which is how an agent wakes itself. Only who booked a run cancels it.
+//! was booked from or its heir, which is how an agent wakes itself. Only who booked cancels it.
 use ::program::{
     Cause, Ctx, Error, ExecCtx, Principal, QueryCtx, Range, corrupt, invalid, not_found,
     unauthorized, unexpected_reply, wrong_state,
@@ -10,7 +10,7 @@ use abi::role::scheduler;
 use store::{PageRequest, PageResponse};
 
 use crate::calls::{refusal, relayable};
-use crate::conversations::current;
+use crate::conversations::{current, heir};
 use crate::state::{BOOKED, BOOKINGS, THREADS};
 use crate::tools::interface::answered;
 use crate::turns::{append, converse, say};
@@ -179,34 +179,29 @@ fn report(booking: &Booking, ran: &Ran) -> String {
     }
 }
 
-fn told(
-    ctx: &QueryCtx,
-    agent: AccountNumber,
-    thread: Option<u64>,
-) -> Result<Option<ThreadRow>, Error> {
-    let from = match thread {
-        Some(id) => THREADS.get(ctx, &id)?.filter(|row| !row.closed),
-        None => None,
-    };
-    match from {
-        Some(row) => Ok(Some(row)),
-        None => current(ctx, agent),
-    }
-}
-
 pub(crate) fn note(
     ctx: &ExecCtx,
     agent: AccountNumber,
     thread: Option<u64>,
     text: String,
 ) -> Result<Option<u64>, Error> {
-    if let Some(id) = thread
-        && let Some(mut row) = THREADS.get(ctx, &id)?.filter(|row| row.closed)
-    {
-        undelivered(ctx, &mut row, text);
-        return Ok(None);
-    }
-    let Some(mut row) = told(ctx, agent, thread)? else {
+    let named = match thread {
+        Some(id) => THREADS.get(ctx, &id)?,
+        None => None,
+    };
+    let reached = match named {
+        Some(closed) if closed.closed => match heir(ctx, closed.id)? {
+            Some(taken_by) => Some(taken_by),
+            None => {
+                let mut closed = closed;
+                undelivered(ctx, &mut closed, text);
+                return Ok(None);
+            }
+        },
+        Some(open) => Some(open),
+        None => current(ctx, agent)?,
+    };
+    let Some(mut row) = reached else {
         return Ok(None);
     };
     let author = Principal::Root;
