@@ -5,6 +5,7 @@ pub(crate) mod answering;
 pub(crate) mod attachment;
 pub mod dialogs;
 pub(crate) mod filters;
+pub(crate) mod find;
 pub mod menu;
 pub mod message;
 pub(crate) mod notices;
@@ -37,6 +38,13 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
             cx.notify();
         }
     });
+    let find = cx.listener(|chat, event: &KeyDownEvent, window, cx| {
+        let opens = crate::find::asks_to_find(&event.keystroke) && chat.room.is_some();
+        if opens {
+            chat.find_open(window);
+            cx.notify();
+        }
+    });
     let press = cx.listener(|chat, event: &MouseDownEvent, _window, cx| {
         if !event.modifiers.shift && chat.holds() {
             chat.let_go();
@@ -58,6 +66,7 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
         .role(Role::Group)
         .aria_label(words::CHAT)
         .on_key_down(escape)
+        .capture_key_down(find)
         .when(chat.holds(), |screen| screen.consumes_keys(["escape"]))
         .on_any_mouse_down(press)
         // until the host hands a session, the panes draw their placeholders

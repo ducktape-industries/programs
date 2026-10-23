@@ -159,6 +159,8 @@ pub struct Chat {
     pub(crate) confirmation: String,
     pub(crate) copy: Option<CopyRange>,
     #[serde(skip)]
+    pub(crate) find: Option<crate::find::Find>,
+    #[serde(skip)]
     pub(crate) timeline_drawn: RefCell<Drawn>,
     #[serde(skip)]
     pub(crate) thread_drawn: RefCell<Drawn>,
@@ -337,6 +339,7 @@ impl Chat {
         self.menu = None;
         self.copy = None;
         self.hovered = None;
+        self.find = None;
         self.room_policy = Default::default();
         self.message_policy = Default::default();
     }
@@ -349,6 +352,7 @@ pub struct Drawn {
     pub(crate) whole: bool,
     pub(crate) follow: bool,
     pub(crate) restore: Option<(String, f32)>,
+    pub(crate) reveal: Option<String>,
     pub(crate) keys: Vec<String>,
     pub(crate) folded: Option<Folded>,
 }

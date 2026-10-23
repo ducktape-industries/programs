@@ -448,9 +448,27 @@ pub(crate) fn line(
     cx: &mut Context<Chat>,
     run: impl Fn(&ChatSpan) -> Run,
 ) -> InteractiveText {
+    marked_line(id, spans, names, &crate::find::Found::default(), cx, run)
+}
+
+#[cfg(not(feature = "notifier"))]
+pub(crate) fn marked_line(
+    id: ElementId,
+    spans: &[Span],
+    names: &Names,
+    found: &crate::find::Found,
+    cx: &mut Context<Chat>,
+    run: impl Fn(&ChatSpan) -> Run,
+) -> InteractiveText {
     let styled = styled_spans(spans, names);
     if styled.is_empty() {
-        return plain_line(id, &span_text(spans, names));
+        let text = span_text(spans, names);
+        let marks = found.marks(&text, Vec::new());
+        if marks.is_empty() {
+            return plain_line(id, &text);
+        }
+        let marked = StyledText::new(text).with_highlights(marks);
+        return InteractiveText::new(id, marked).w_full();
     }
     let mut text = String::new();
     let mut highlights = Vec::new();
@@ -471,6 +489,7 @@ pub(crate) fn line(
         }
         highlights.push((range, drawn.style));
     }
+    let highlights = found.marks(&text, highlights);
     let styled = StyledText::new(text)
         .with_highlights(highlights)
         .with_font_family_overrides(mono);

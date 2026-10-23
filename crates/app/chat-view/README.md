@@ -38,6 +38,16 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   new-channel form, the text before the first `/` typed becomes one chip at
   the field's start (a token whose id starts `wire::CHIP`); Backspace right
   after it makes it text again, and the whole text is the channel's name.
+- Find (`find.rs`, `ui/find.rs`): Cmd+F (Ctrl+F off macOS) in an open room
+  opens a bar over its timeline. The loaded rows of the room and its open
+  thread holding every word, folded as chat's `text_search` folds them, are
+  marked where the words stand (paragraphs, quotes, list items and notices;
+  the current match's card is raised and its marks underlined). It opens on
+  the newest match; Enter steps to the next older, Shift+Enter to the next
+  newer, Escape closes it. Past the oldest loaded match, Enter reads
+  `text_search` for this room a screenful at a time, following its cursor,
+  and lands on the hit as a link does (`open_at`). Another room opens
+  without it.
 - The room: its timeline (`ui/timeline.rs`, `ui/phone/timeline.rs`) and
   composer; a message's menu (desktop `ui/menu.rs` at the pointer, phone
   `ui/phone/actions.rs` as a sheet), the reaction picker and the delete

@@ -39,6 +39,7 @@ pub fn render(
         false => search_results(chat, cx, theme, ladder).into_any_element(),
     };
     pane.child(header(chat, room, cx, theme, ladder))
+        .children(super::find::bar(chat, cx, theme, ladder))
         .children(names_unread(chat, theme))
         .children(notice(chat, cx, theme, ladder))
         .children(confirmation(chat, cx, theme, ladder))

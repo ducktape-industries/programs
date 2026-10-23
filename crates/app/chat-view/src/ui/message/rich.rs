@@ -1,7 +1,8 @@
 //! The desktop's runs of a message's styled lines, over the machinery both
 //! designs share ([`crate::message::line`]).
 use super::*;
-use crate::message::{Run, line};
+use crate::find::Found;
+use crate::message::{Run, marked_line};
 
 // The desktop's runs: bold is bold, a link and a mention in the link
 // tone, inline code on the raised ground at the paragraph's size with a
@@ -10,11 +11,12 @@ pub(crate) fn rich_line(
     id: ElementId,
     spans: &[Span],
     names: &Names,
+    found: &Found,
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> InteractiveText {
     let theme = *theme;
-    line(id, spans, names, cx, move |span| {
+    marked_line(id, spans, names, found, cx, move |span| {
         let mut style = HighlightStyle::default();
         match &span.style {
             SpanStyle::Plain => {}

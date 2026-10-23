@@ -12,6 +12,7 @@ use chat::view::Names;
 use chat::{Block, Principal, Span};
 mod controls;
 pub(crate) mod rich;
+use crate::find::Found;
 use crate::markup::{Piece, opens, pieces};
 use crate::words;
 use controls::{Face, action_button, reaction_button, replies_button};
@@ -43,6 +44,7 @@ pub(crate) struct Seen {
     files: Vec<FileSeen>,
     answering: Vec<String>,
     ask: Option<Shown>,
+    current_find: bool,
 }
 
 #[derive(PartialEq)]
@@ -94,6 +96,7 @@ impl Seen {
                 .collect(),
             answering: answering_under(chat, pane, seq),
             ask: chat.ask_shown(message),
+            current_find: chat.find_current() == Some(seq),
         }
     }
 }
@@ -112,6 +115,7 @@ pub(crate) struct Shared {
     writable: bool,
     chain: String,
     room: String,
+    find_terms: Vec<String>,
 }
 
 impl Shared {
@@ -121,6 +125,7 @@ impl Shared {
             writable: chat.may_write(),
             chain: chat.session.chain_id.clone(),
             room: chat.room_id(),
+            find_terms: chat.find_terms().to_vec(),
         })
     }
 }
@@ -190,6 +195,8 @@ pub fn card(
         .from
         .account()
         .and_then(|account| chat.faces.of(account, cx));
+    let is_current_find = seq > 0 && chat.find_current() == Some(seq);
+    let raised = ranged || chat.pointer_on(key) || is_current_find;
     let card = div()
         .id(format!("chat-message-{id}-card"))
         .relative()
@@ -204,7 +211,7 @@ pub fn card(
         .pb(design::space::HAIR)
         .bg(if chosen {
             theme.accent_soft
-        } else if ranged || chat.pointer_on(key) {
+        } else if raised {
             theme.surface_raised
         } else {
             theme.background
@@ -636,7 +643,16 @@ fn blocks(
         return vec![text.into_any_element()];
     }
     let key = format!("chat-message-{}", message.id);
-    drawn(chat, &key, &message.blocks, Some(&message.from), cx, theme)
+    let found = Found::of(chat, message, theme);
+    found_drawn(
+        chat,
+        &key,
+        &message.blocks,
+        Some(&message.from),
+        &found,
+        cx,
+        theme,
+    )
 }
 
 pub(super) fn drawn(
@@ -647,13 +663,25 @@ pub(super) fn drawn(
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> Vec<AnyElement> {
+    found_drawn(chat, key, blocks, author, &Found::default(), cx, theme)
+}
+
+fn found_drawn(
+    chat: &Chat,
+    key: &str,
+    blocks: &[Block],
+    author: Option<&Principal>,
+    found: &Found,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+) -> Vec<AnyElement> {
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
     let sites = |file: &chat::message::Attachment| chat.holds_a_site(file);
     pieces(blocks, names, &chat.session.chain_id, author, &sites)
         .into_iter()
         .map(|(index, piece)| match piece {
-            Piece::Chat(block) => block_view(chat, key, index, block, names, cx, theme),
+            Piece::Chat(block) => block_view(chat, key, index, block, found, cx, theme),
             Piece::Artifact(link) => artifact(format!("{key}-block-{index}"), link)
                 .w_full()
                 .into_any_element(),
@@ -895,10 +923,12 @@ fn block_view(
     key: &str,
     index: usize,
     block: &Block,
-    names: &Names,
+    found: &Found,
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> AnyElement {
+    let empty = Names::empty();
+    let names = chat.names.ready().unwrap_or(&empty);
     let id = ElementId::from(format!("{key}-block-{index}"));
     match block {
         Block::Divider => div()
@@ -933,7 +963,7 @@ fn block_view(
             .pl_2()
             .cursor_text()
             .text_color(theme.muted)
-            .child(rich_line(id, spans, names, cx, theme))
+            .child(rich_line(id, spans, names, found, cx, theme))
             .into_any_element(),
         Block::Attachment(file) => {
             let id = format!("{key}-block-{index}");
@@ -957,6 +987,7 @@ fn block_view(
                     id,
                     &crate::message::notice_spans(notice, &chat.session.chain_id),
                     names,
+                    found,
                     cx,
                     theme,
                 )
@@ -980,12 +1011,12 @@ fn block_view(
                         }),
                 )
                 .child(
-                    rich_line(id, &item, names, cx, theme)
+                    rich_line(id, &item, names, found, cx, theme)
                         .flex_1()
                         .min_w(px(0.)),
                 )
                 .into_any_element(),
-            None => rich_line(id, spans, names, cx, theme)
+            None => rich_line(id, spans, names, found, cx, theme)
                 .cursor_text()
                 .into_any_element(),
         },

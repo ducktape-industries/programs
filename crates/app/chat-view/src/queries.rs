@@ -284,6 +284,25 @@ pub(crate) async fn search_hits(
     Ok((found.items, found.next))
 }
 
+pub(crate) async fn text_hits(
+    host: Host,
+    text: String,
+    channel_id: String,
+    viewer: Vec<Principal>,
+    after: Option<Vec<u8>>,
+    screenful: usize,
+) -> Result<(Vec<MsgRow>, Option<Vec<u8>>), Error> {
+    let found = host
+        .query(ask::TextSearch {
+            text,
+            viewer,
+            channel_id: Some(channel_id),
+            page: page(after, screenful),
+        })
+        .await?;
+    Ok((found.items, found.next))
+}
+
 pub(crate) async fn tagged(
     host: Host,
     tag: String,

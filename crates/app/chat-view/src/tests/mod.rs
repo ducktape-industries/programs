@@ -22,6 +22,7 @@ mod cost;
 mod dms;
 mod faces;
 mod filters;
+mod find;
 mod folders;
 mod held;
 mod history;

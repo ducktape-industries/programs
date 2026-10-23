@@ -208,6 +208,7 @@ fn list_state(
 }
 
 fn restore(drawn: &mut Drawn, state: &ListState, keys: &[String]) {
+    reveal(drawn, state, keys);
     let held = drawn.restore.as_ref();
     let Some(item_ix) = held.and_then(|(id, _)| keys.iter().position(|key| key == id)) else {
         return;
@@ -219,6 +220,15 @@ fn restore(drawn: &mut Drawn, state: &ListState, keys: &[String]) {
         item_ix,
         offset_in_item: px(offset),
     });
+}
+
+fn reveal(drawn: &mut Drawn, state: &ListState, keys: &[String]) {
+    let held = drawn.reveal.as_ref();
+    let Some(item_ix) = held.and_then(|key| keys.iter().position(|drawn| drawn == key)) else {
+        return;
+    };
+    drawn.reveal = None;
+    state.scroll_to_reveal_item(item_ix);
 }
 
 pub(crate) fn first_row(chat: &Chat, pane: Pane) -> String {
