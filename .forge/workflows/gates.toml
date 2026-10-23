@@ -11,4 +11,4 @@ runs-on = ["pods"]
 steps = ["sh /var/tmp/tools/gates.sh /work/programs"]
 
 [jobs.env]
-LANE_TESTS = "--lib"
+LANE_TESTS = "--tests"
