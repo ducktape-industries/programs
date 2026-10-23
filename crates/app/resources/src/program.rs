@@ -4,9 +4,9 @@ use ::program::tools::{Described, Tools};
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::rules::{
-    admit, beat, cancel, claim, confirm, count, decline, evict, holds, lapse, ledger, missed,
-    offer, offer_view, offers, passed_over, pick, place, queued, register_kind, replied, report,
-    request, request_view, set_policy, unclaimed, why, withdraw,
+    admission, admit, beat, cancel, claim, confirm, count, decline, evict, holds, in_force, lapse,
+    ledger, missed, offer, offer_view, offers, passed_over, pick, place, queued, rank,
+    register_kind, replied, report, request, request_view, set_policy, unclaimed, why, withdraw,
 };
 use crate::state::{ADMITTED, ASSIGNED, KINDS, POLICIES, RECORDS, USED};
 use crate::{Op, PROGRAM, Query, Reply};
@@ -77,6 +77,11 @@ impl Program for Resources {
                 attempt,
             } => unclaimed(ctx, id, attempt),
             Op::Place { kind } => place(ctx, kind),
+            Op::Rank {
+                kind,
+                provider,
+                tier,
+            } => rank(ctx, kind, provider, tier),
         }
     }
 
@@ -114,6 +119,10 @@ impl Program for Resources {
             Query::Why { request: id } => Reply::Why(why(ctx, id)?),
             Query::PassedOver { request: id, page } => {
                 Reply::PassedOver(passed_over(ctx, id, &page)?)
+            }
+            Query::InForce { kind } => Reply::InForce(in_force(ctx, &kind)?),
+            Query::Admission { kind, provider } => {
+                Reply::Admission(admission(ctx, kind, provider)?)
             }
         })
     }

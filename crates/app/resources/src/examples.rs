@@ -318,6 +318,25 @@ pub(crate) fn why() -> Query {
     Query::Why { request: 7 }
 }
 
+pub(crate) fn in_force() -> Query {
+    Query::InForce { kind: model() }
+}
+
+pub(crate) fn rank() -> Op {
+    Op::Rank {
+        kind: model(),
+        provider: 16,
+        tier: 1,
+    }
+}
+
+pub(crate) fn admission() -> Query {
+    Query::Admission {
+        kind: model(),
+        provider: 16,
+    }
+}
+
 pub(crate) fn passed_over() -> Query {
     Query::PassedOver {
         request: 7,

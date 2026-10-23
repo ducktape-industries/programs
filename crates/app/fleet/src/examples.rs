@@ -50,6 +50,61 @@ pub(crate) fn ask() -> Op {
     Op::Ask { spec }
 }
 
+pub(crate) fn ask_in() -> Op {
+    let Op::Ask { spec } = ask() else {
+        unreachable!("ask() answers an Ask")
+    };
+    Op::AskIn {
+        spec,
+        kind: Some("fleet.build".into()),
+        class: "review".into(),
+        limit: Some(1200),
+    }
+}
+
+pub(crate) fn ready_in() -> Op {
+    Op::ReadyIn {
+        name: "desktop".into(),
+        labels: vec!["heavy".into()],
+        slots: 2,
+        serves: Serves::Anyone,
+        kind: Some("fleet.build".into()),
+    }
+}
+
+pub(crate) fn promote() -> Op {
+    Op::Promote {
+        run: 7,
+        class: "front".into(),
+    }
+}
+
+pub(crate) fn walk() -> Op {
+    Op::Walk {
+        kind: "fleet.build".into(),
+    }
+}
+
+pub(crate) fn expire() -> Op {
+    Op::Expire { run: 7, attempt: 1 }
+}
+
+pub(crate) fn filed() -> Query {
+    Query::Filed { run: 7 }
+}
+
+pub(crate) fn kind_of() -> Query {
+    Query::KindOf { machine: desktop() }
+}
+
+pub(crate) fn ledger() -> Query {
+    Query::Ledger {
+        kind: "fleet.build".into(),
+        group: "tech".into(),
+        page: page(),
+    }
+}
+
 pub(crate) fn ready() -> Op {
     Op::Ready {
         name: "desktop".into(),

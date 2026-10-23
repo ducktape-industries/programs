@@ -7,16 +7,26 @@ use ::program::{
 };
 use abi::role::egress::{DEFAULT_WAIT, Delivery, Op as Egress};
 use abi::role::identity;
+use resources::ordering::{self, UNITS, WalkRow};
+use resources::{LedgerRow, Policy, Waiting};
 
 use crate::state::{
-    BEATS, CALLS, CLAIMS, Claim, DECLINED, HOLDS, LAST, MACHINES, PIECES, QUEUED, RUNS, TELLING,
-    TOLD, WORKLOADS,
+    BEATS, CALLS, CLAIMS, Claim, DECLINED, FILED, HOLDS, IDLE, LAST, LEDGER, MACHINE_KINDS,
+    MACHINES, PIECES, QUEUE, RUNS, TELLING, TOLD, WALK_AT, WALKS, WORKLOADS,
 };
 use crate::{
-    AccountNumber, Affinity, Event, Kind, MachineId, MachineRow, MachineView, Notify, OnLoss, Op,
-    Out, PageRequest, PageResponse, Piece, PieceRow, ProgramId, Request, RunEnd, RunRow, STAMPED,
-    Serves, Spec, State, Workload,
+    AccountNumber, Affinity, BLOCKS, Event, Filed, Kind, MachineId, MachineRow, MachineView,
+    Notify, OnLoss, Op, Out, PageRequest, PageResponse, Piece, PieceRow, ProgramId, Request,
+    RunEnd, RunRow, STAMPED, Serves, Spec, State, Workload,
 };
+
+const UNTYPED_WALK: u64 = 1;
+
+struct Ruling {
+    policy: Policy,
+    since: u64,
+    walk: u64,
+}
 
 type Key = (AccountNumber, String);
 
@@ -36,7 +46,22 @@ fn height(ctx: &QueryCtx) -> u64 {
 }
 
 pub(crate) fn ask(ctx: &ExecCtx, spec: Spec) -> Result<(), Error> {
+    ask_in(ctx, spec, None, String::new(), None)
+}
+
+pub(crate) fn ask_in(
+    ctx: &ExecCtx,
+    spec: Spec,
+    kind: Option<String>,
+    class: String,
+    limit: Option<u64>,
+) -> Result<(), Error> {
     let by = ctx.sender_account()?;
+    let kind = kind.filter(|name| !name.is_empty());
+    let group = match class_of(ctx, kind.as_deref(), &class, by)? {
+        Some(ruling) => ordering::group_of(ctx, &ruling.policy, by)?,
+        None => String::new(),
+    };
     let id = LAST
         .get(ctx)?
         .unwrap_or(0)
@@ -63,20 +88,286 @@ pub(crate) fn ask(ctx: &ExecCtx, spec: Spec) -> Result<(), Error> {
     };
     RUNS.put(ctx, &id, &run);
     CLAIMS.put(ctx, &id, &Claim::default());
-    QUEUED.insert(ctx, &id);
-    // placed the block after: the guard records the claim row's owner and policy only once this
-    // run returns, and placement reads that policy
-    schedule(ctx, height(ctx).saturating_add(1), &Op::Place { run: id })?;
+    let filed = Filed {
+        kind,
+        class,
+        group,
+        limit,
+    };
+    FILED.put(ctx, &id, &filed);
+    enqueue(ctx, id)?;
     ctx.set_return_data(abi::encode(&id));
     Ok(())
 }
 
-// A run still queued, placed. Open: it acts only on what the chain shows.
+fn class_of(
+    ctx: &QueryCtx,
+    kind: Option<&str>,
+    class: &str,
+    account: AccountNumber,
+) -> Result<Option<Ruling>, Error> {
+    let Some(kind) = kind else {
+        return match class.is_empty() {
+            true => Ok(None),
+            false => Err(invalid(format!(
+                "class {class:?} needs a kind: a run with no kind has no class"
+            ))),
+        };
+    };
+    let ruling = ruling(ctx, kind)?
+        .ok_or_else(|| not_found(format!("no kind {kind} in resources: register it there")))?;
+    let named = ordering::classes(&ruling.policy)
+        .into_iter()
+        .find(|named| named.name == class)
+        .ok_or_else(|| invalid(format!("kind {kind} has no class {class:?}")))?;
+    let refused = match &named.may_use {
+        Some(may_use) => !ordering::admits(ctx, may_use, account)?,
+        None => false,
+    };
+    if refused {
+        return Err(unauthorized(format!(
+            "class {class:?} of kind {kind} doesn't admit account {account}"
+        )));
+    }
+    Ok(Some(ruling))
+}
+
+fn ruling(ctx: &QueryCtx, kind: &str) -> Result<Option<Ruling>, Error> {
+    if kind.is_empty() {
+        return Ok(Some(Ruling {
+            policy: Policy::default(),
+            since: 0,
+            walk: UNTYPED_WALK,
+        }));
+    }
+    let controller = ProgramId::from(resources::PROGRAM);
+    let asked = resources::Query::InForce {
+        kind: kind.to_owned(),
+    };
+    match ctx.query::<resources::Query, resources::Reply>(controller.clone(), &asked)? {
+        resources::Reply::InForce(found) => Ok(found.map(|in_force| Ruling {
+            policy: in_force.policy,
+            since: in_force.since,
+            walk: in_force.kind.spec.walk,
+        })),
+        other => Err(unexpected_reply(&controller, "InForce", &other)),
+    }
+}
+
+fn tier_of(ctx: &QueryCtx, kind: &str, account: AccountNumber) -> Result<Option<u32>, Error> {
+    if kind.is_empty() {
+        return Ok(Some(0));
+    }
+    let controller = ProgramId::from(resources::PROGRAM);
+    let asked = resources::Query::Admission {
+        kind: kind.to_owned(),
+        provider: account,
+    };
+    match ctx.query::<resources::Query, resources::Reply>(controller.clone(), &asked)? {
+        resources::Reply::Admission(found) => Ok(found.map(|admission| admission.tier)),
+        other => Err(unexpected_reply(&controller, "Admission", &other)),
+    }
+}
+
+fn filed(ctx: &QueryCtx, id: u64) -> Result<Filed, Error> {
+    Ok(FILED.get(ctx, &id)?.unwrap_or_default())
+}
+
+fn queue_key(id: u64, filed: &Filed) -> (String, String, String, u64) {
+    let kind = filed.kind.clone().unwrap_or_default();
+    (kind, filed.class.clone(), filed.group.clone(), id)
+}
+
+fn enqueue(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+    let filed = filed(ctx, id)?;
+    let kind = filed.kind.clone().unwrap_or_default();
+    QUEUE.insert(ctx, &queue_key(id, &filed));
+    if let Some(mut walk) = WALKS.get(ctx, &kind)? {
+        walk.behind = true;
+        WALKS.put(ctx, &kind, &walk);
+    }
+    book_step(ctx, &kind, height(ctx) + 1)
+}
+
+fn dequeue(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+    let filed = filed(ctx, id)?;
+    QUEUE.remove(ctx, &queue_key(id, &filed));
+    Ok(())
+}
+
+fn book_step(ctx: &ExecCtx, kind: &str, at: u64) -> Result<(), Error> {
+    let booked = (kind.to_owned(), at);
+    if WALK_AT.has(ctx, &booked) {
+        return Ok(());
+    }
+    WALK_AT.insert(ctx, &booked);
+    schedule(ctx, at, &Op::Walk { kind: kind.into() })
+}
+
+fn kind_of(ctx: &QueryCtx, machine: &MachineId) -> Result<String, Error> {
+    Ok(MACHINE_KINDS.get(ctx, &key(machine))?.unwrap_or_default())
+}
+
+fn capacity_changed(ctx: &ExecCtx, machine: &MachineId) -> Result<(), Error> {
+    let kind = kind_of(ctx, machine)?;
+    book_step(ctx, &kind, height(ctx) + 1)
+}
+
+fn charge(ctx: &ExecCtx, id: u64, meter: &str, amount: u64) -> Result<(), Error> {
+    let filed = filed(ctx, id)?;
+    let kind = filed.kind.unwrap_or_default();
+    let Some(ruling) = ruling(ctx, &kind)? else {
+        return Ok(());
+    };
+    let in_force = (&ruling.policy, ruling.since);
+    ordering::charge(ctx, &LEDGER, &kind, &filed.group, meter, amount, in_force)
+}
+
+fn ran(ctx: &ExecCtx, run: &RunRow) -> Result<(), Error> {
+    let Some(started) = run.started else {
+        return Ok(());
+    };
+    let blocks = height(ctx).saturating_sub(started);
+    charge(ctx, run.id, BLOCKS, blocks)
+}
+
 pub(crate) fn place_queued(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     if load(ctx, id)?.state != State::Queued {
         return Ok(());
     }
-    place(ctx, id)
+    let filed = filed(ctx, id)?;
+    QUEUE.insert(ctx, &queue_key(id, &filed));
+    walk(ctx, filed.kind.unwrap_or_default())
+}
+
+pub(crate) fn walk(ctx: &ExecCtx, kind: String) -> Result<(), Error> {
+    let now = height(ctx);
+    WALK_AT.remove(ctx, &(kind.clone(), now));
+    let Some(ruling) = ruling(ctx, &kind)? else {
+        return Ok(());
+    };
+    let mut walk = match WALKS.get(ctx, &kind)? {
+        Some(walk) => walk,
+        None => WalkRow {
+            order: ordering::order(ctx, &LEDGER, &kind, &ruling.policy, ruling.since),
+            at: 0,
+            after: None,
+            behind: false,
+        },
+    };
+    let mut examined = 0;
+    loop {
+        if !any_free(ctx, &kind) {
+            WALKS.remove(ctx, &kind);
+            return Ok(());
+        }
+        let Some((class, group, id)) = ordering::next_queued(ctx, &QUEUE, &kind, &mut walk)? else {
+            WALKS.remove(ctx, &kind);
+            if walk.behind {
+                book_step(ctx, &kind, now + 1)?;
+            }
+            return Ok(());
+        };
+        examined += 1;
+        walk.after = Some((class.clone(), group.clone(), id));
+        match ordering::over_quota(ctx, &LEDGER, &kind, &group, &ruling.policy)? {
+            Some(Waiting::OverQuota { until, .. }) => {
+                book_step(ctx, &kind, until)?;
+                walk.after = Some((class, group, u64::MAX));
+            }
+            _ => {
+                if let Some(row) = choose(ctx, &kind, id)? {
+                    assign(ctx, id, row)?;
+                }
+            }
+        }
+        if examined >= ruling.walk {
+            if any_free(ctx, &kind) {
+                WALKS.put(ctx, &kind, &walk);
+                book_step(ctx, &kind, now + 1)?;
+            } else {
+                WALKS.remove(ctx, &kind);
+            }
+            return Ok(());
+        }
+    }
+}
+
+fn any_free(ctx: &QueryCtx, kind: &str) -> bool {
+    !ctx.scan(IDLE.prefix_of(&kind.to_owned()).limit(1))
+        .is_empty()
+}
+
+fn choose(ctx: &ExecCtx, kind: &str, id: u64) -> Result<Option<MachineRow>, Error> {
+    let workload = workload(ctx, id)?;
+    let mut best: Option<(u32, MachineRow)> = None;
+    for (_, since, account, name) in IDLE.scan(ctx, IDLE.prefix_of(&kind.to_owned()))? {
+        let machine = MachineId { account, name };
+        let row = machine_row(ctx, &machine)?;
+        let current = row.idle_since == Some(since);
+        if !current {
+            IDLE.remove(ctx, &(kind.to_owned(), since, account, machine.name));
+            continue;
+        }
+        if !takes(ctx, &row, &workload)? {
+            continue;
+        }
+        let Some(tier) = tier_of(ctx, kind, account)? else {
+            continue;
+        };
+        let lower = best.as_ref().is_none_or(|(held, _)| tier < *held);
+        if lower {
+            best = Some((tier, row));
+        }
+        if tier == 0 {
+            break;
+        }
+    }
+    Ok(best.map(|(_, row)| row))
+}
+
+pub(crate) fn promote(ctx: &ExecCtx, id: u64, class: String) -> Result<(), Error> {
+    let run = load(ctx, id)?;
+    if run.state.ended() {
+        return Err(wrong_state(format!(
+            "run {id} already ended {}: a class rules only a run still to be placed or run again",
+            run.state.word()
+        )));
+    }
+    let sender = ctx.sender_account()?;
+    let mut filed = filed(ctx, id)?;
+    class_of(ctx, filed.kind.as_deref(), &class, sender)?;
+    let claim = CLAIMS.get(ctx, &id)?.unwrap_or_default();
+    CLAIMS.put(ctx, &id, &claim);
+    let queued = QUEUE.has(ctx, &queue_key(id, &filed));
+    if queued {
+        QUEUE.remove(ctx, &queue_key(id, &filed));
+    }
+    filed.class = class;
+    FILED.put(ctx, &id, &filed);
+    match queued {
+        true => enqueue(ctx, id),
+        false => Ok(()),
+    }
+}
+
+pub(crate) fn expire(ctx: &ExecCtx, id: u64, attempt: u32) -> Result<(), Error> {
+    let mut run = load(ctx, id)?;
+    let Some(limit) = filed(ctx, id)?.limit else {
+        return Ok(());
+    };
+    let due = run
+        .started
+        .is_some_and(|at| at.saturating_add(limit) <= height(ctx));
+    let current = run.state == State::Running && run.attempt == attempt;
+    let expired = current && due;
+    if !expired {
+        return Ok(());
+    }
+    run.state = State::Stopping;
+    run.summary = format!("past its limit of {limit} blocks");
+    RUNS.put(ctx, &id, &run);
+    Ok(())
 }
 
 pub(crate) fn ready(
@@ -86,6 +377,24 @@ pub(crate) fn ready(
     slots: u64,
     serves: Serves,
 ) -> Result<(), Error> {
+    let kind = MACHINE_KINDS.get(ctx, &key(&mine(ctx, name.clone())?))?;
+    ready_in(ctx, name, labels, slots, serves, kind)
+}
+
+pub(crate) fn ready_in(
+    ctx: &ExecCtx,
+    name: String,
+    labels: Vec<String>,
+    slots: u64,
+    serves: Serves,
+    kind: Option<String>,
+) -> Result<(), Error> {
+    let kind = kind.unwrap_or_default();
+    if ruling(ctx, &kind)?.is_none() {
+        return Err(not_found(format!(
+            "no kind {kind} in resources: register it there"
+        )));
+    }
     let id = mine(ctx, name)?;
     let mut row = MACHINES.get(ctx, &key(&id))?.unwrap_or(MachineRow {
         id: id.clone(),
@@ -97,13 +406,18 @@ pub(crate) fn ready(
         gone: false,
         check_at: None,
     });
+    unindex(ctx, &row)?;
+    match kind.is_empty() {
+        true => MACHINE_KINDS.remove(ctx, &key(&id)),
+        false => MACHINE_KINDS.put(ctx, &key(&id), &kind),
+    }
     row.labels = labels;
     row.slots = slots;
     row.serves = serves;
     row.gone = false;
-    settle_idle(ctx, &mut row);
+    settle_idle(ctx, &mut row)?;
     MACHINES.put(ctx, &key(&id), &row);
-    fill(ctx, &id)
+    capacity_changed(ctx, &id)
 }
 
 pub(crate) fn claim(ctx: &ExecCtx, id: u64, attempt: u32) -> Result<(), Error> {
@@ -133,6 +447,10 @@ pub(crate) fn claim(ctx: &ExecCtx, id: u64, attempt: u32) -> Result<(), Error> {
     run.started = Some(height(ctx));
     RUNS.put(ctx, &id, &run);
     BEATS.put(ctx, &key(&machine), &height(ctx));
+    if let Some(limit) = filed(ctx, id)?.limit {
+        let at = height(ctx).saturating_add(limit).max(height(ctx) + 1);
+        schedule(ctx, at, &Op::Expire { run: id, attempt })?;
+    }
     book_check(ctx, &machine)
 }
 
@@ -140,11 +458,14 @@ pub(crate) fn beat(ctx: &ExecCtx, name: String) -> Result<(), Error> {
     let id = mine(ctx, name)?;
     let mut row = machine_row(ctx, &id)?;
     BEATS.put(ctx, &key(&id), &height(ctx));
-    if row.gone {
-        row.gone = false;
-        settle_idle(ctx, &mut row);
+    let back = row.gone;
+    let unindexed = index_missing(ctx, &row)?;
+    row.gone = false;
+    let settle = back || unindexed;
+    if settle {
+        settle_idle(ctx, &mut row)?;
         MACHINES.put(ctx, &key(&id), &row);
-        fill(ctx, &id)?;
+        capacity_changed(ctx, &id)?;
     }
     book_check(ctx, &id)
 }
@@ -178,6 +499,7 @@ pub(crate) fn report(
     };
     let stopped = run.state == State::Stopping;
     if held_now(&run) {
+        ran(ctx, &run)?;
         release(ctx, id, &machine)?;
         BEATS.put(ctx, &key(&machine), &height(ctx));
     }
@@ -192,7 +514,7 @@ pub(crate) fn report(
         RUNS.put(ctx, &id, &run);
         tell(ctx, &workload, &run)?;
     }
-    fill(ctx, &machine)
+    capacity_changed(ctx, &machine)
 }
 
 pub(crate) fn decline(ctx: &ExecCtx, id: u64, attempt: u32, why: String) -> Result<(), Error> {
@@ -216,7 +538,7 @@ pub(crate) fn decline(ctx: &ExecCtx, id: u64, attempt: u32, why: String) -> Resu
     release(ctx, id, &machine)?;
     run.summary = format!("{} declined it: {why}", machine.name);
     requeued(ctx, &mut run)?;
-    fill(ctx, &machine)
+    capacity_changed(ctx, &machine)
 }
 
 pub(crate) fn cancel(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
@@ -239,7 +561,7 @@ pub(crate) fn cancel(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
         }
         (State::Stopping, _) => Ok(()),
         (state, machine) => {
-            QUEUED.remove(ctx, &id);
+            dequeue(ctx, id)?;
             let assigned = state == State::Assigned;
             run.state = State::Cancelled;
             run.finished = Some(height(ctx));
@@ -248,7 +570,7 @@ pub(crate) fn cancel(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
             match machine.filter(|_| assigned) {
                 Some(machine) => {
                     release(ctx, id, &machine)?;
-                    fill(ctx, &machine)
+                    capacity_changed(ctx, &machine)
                 }
                 None => Ok(()),
             }
@@ -284,9 +606,20 @@ pub(crate) fn lapse(ctx: &ExecCtx, machine: MachineId) -> Result<(), Error> {
         .filter(|run| matches!(run.state, State::Running | State::Stopping))
         .collect();
     if running.is_empty() {
-        if row.check_at.is_some_and(|at| at <= now) {
+        let checked = row.check_at.is_some_and(|at| at <= now);
+        if checked {
             row.check_at = None;
+        }
+        let unindexed = index_missing(ctx, &row)?;
+        if unindexed {
+            settle_idle(ctx, &mut row)?;
+        }
+        let changed = checked || unindexed;
+        if changed {
             MACHINES.put(ctx, &key(&machine), &row);
+        }
+        if unindexed {
+            capacity_changed(ctx, &machine)?;
         }
         return Ok(());
     }
@@ -294,6 +627,7 @@ pub(crate) fn lapse(ctx: &ExecCtx, machine: MachineId) -> Result<(), Error> {
     if beat.saturating_add(DEFAULT_WAIT) > now {
         return book_check(ctx, &machine);
     }
+    unindex(ctx, &row)?;
     row.gone = true;
     row.idle_since = None;
     row.check_at = None;
@@ -321,6 +655,7 @@ pub(crate) fn unclaimed(ctx: &ExecCtx, id: u64, attempt: u32) -> Result<(), Erro
     }
     release(ctx, id, &machine)?;
     let mut row = machine_row(ctx, &machine)?;
+    unindex(ctx, &row)?;
     row.gone = true;
     row.idle_since = None;
     MACHINES.put(ctx, &key(&machine), &row);
@@ -486,14 +821,14 @@ fn requeued(ctx: &ExecCtx, run: &mut RunRow) -> Result<(), Error> {
     run.assigned = None;
     run.started = None;
     RUNS.put(ctx, &run.id, run);
-    QUEUED.insert(ctx, &run.id);
-    place(ctx, run.id)
+    enqueue(ctx, run.id)
 }
 
 // A run its silent machine held: a job that must never run twice is parked as lost, a run someone
 // was stopping ends cancelled, and any other is queued again.
 fn lose(ctx: &ExecCtx, mut run: RunRow, machine: &MachineId, why: &str) -> Result<(), Error> {
     HOLDS.remove(ctx, &(machine.account, machine.name.clone(), run.id));
+    ran(ctx, &run)?;
     let workload = workload(ctx, run.id)?;
     run.summary = why.to_owned();
     let park = workload.spec.kind == Kind::Job && workload.spec.on_loss == OnLoss::Park;
@@ -515,54 +850,47 @@ fn release(ctx: &ExecCtx, id: u64, machine: &MachineId) -> Result<(), Error> {
     HOLDS.remove(ctx, &(machine.account, machine.name.clone(), id));
     let mut row = machine_row(ctx, machine)?;
     row.busy = row.busy.saturating_sub(1);
-    settle_idle(ctx, &mut row);
+    settle_idle(ctx, &mut row)?;
     MACHINES.put(ctx, &key(machine), &row);
     Ok(())
 }
 
 // A machine with a free slot has been free since the first block it was; one with none is not.
-fn settle_idle(ctx: &QueryCtx, row: &mut MachineRow) {
+fn settle_idle(ctx: &ExecCtx, row: &mut MachineRow) -> Result<(), Error> {
+    let kind = kind_of(ctx, &row.id)?;
+    unindex_as(ctx, row, &kind);
     let free = !row.gone && row.busy < row.slots;
     row.idle_since = match (free, row.idle_since) {
         (true, Some(since)) => Some(since),
         (true, None) => Some(height(ctx)),
         (false, _) => None,
     };
-}
-
-// The queued run, to the ready machine free longest that may take it.
-fn place(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
-    let workload = workload(ctx, id)?;
-    let mut best: Option<MachineRow> = None;
-    for (_, row) in MACHINES.all(ctx)? {
-        if !takes(ctx, &row, &workload)? {
-            continue;
-        }
-        let earlier = best
-            .as_ref()
-            .is_none_or(|best| (row.idle_since, &row.id) < (best.idle_since, &best.id));
-        if earlier {
-            best = Some(row);
-        }
-    }
-    match best {
-        Some(row) => assign(ctx, id, row),
-        None => Ok(()),
-    }
-}
-
-// The queued runs the machine may take, oldest first, while it has a free slot.
-fn fill(ctx: &ExecCtx, machine: &MachineId) -> Result<(), Error> {
-    for id in QUEUED.all(ctx)? {
-        let row = machine_row(ctx, machine)?;
-        if row.gone || row.busy >= row.slots {
-            return Ok(());
-        }
-        if takes(ctx, &row, &workload(ctx, id)?)? {
-            assign(ctx, id, row)?;
-        }
+    if let Some(since) = row.idle_since {
+        IDLE.insert(ctx, &(kind, since, row.id.account, row.id.name.clone()));
     }
     Ok(())
+}
+
+fn unindex(ctx: &ExecCtx, row: &MachineRow) -> Result<(), Error> {
+    let kind = kind_of(ctx, &row.id)?;
+    unindex_as(ctx, row, &kind);
+    Ok(())
+}
+
+fn unindex_as(ctx: &ExecCtx, row: &MachineRow, kind: &str) {
+    if let Some(since) = row.idle_since {
+        let entry = (kind.to_owned(), since, row.id.account, row.id.name.clone());
+        IDLE.remove(ctx, &entry);
+    }
+}
+
+fn index_missing(ctx: &QueryCtx, row: &MachineRow) -> Result<bool, Error> {
+    let Some(since) = row.idle_since else {
+        return Ok(false);
+    };
+    let kind = kind_of(ctx, &row.id)?;
+    let entry = (kind, since, row.id.account, row.id.name.clone());
+    Ok(!IDLE.has(ctx, &entry))
 }
 
 fn takes(ctx: &QueryCtx, row: &MachineRow, workload: &Workload) -> Result<bool, Error> {
@@ -655,11 +983,12 @@ fn assign(ctx: &ExecCtx, id: u64, mut row: MachineRow) -> Result<(), Error> {
     run.assigned = Some(height(ctx));
     run.started = None;
     RUNS.put(ctx, &id, &run);
-    QUEUED.remove(ctx, &id);
+    dequeue(ctx, id)?;
     HOLDS.insert(ctx, &(row.id.account, row.id.name.clone(), id));
     row.busy += 1;
-    settle_idle(ctx, &mut row);
+    settle_idle(ctx, &mut row)?;
     MACHINES.put(ctx, &key(&row.id), &row);
+    charge(ctx, id, UNITS, 1)?;
     let check = Op::Unclaimed {
         run: id,
         attempt: run.attempt,
@@ -821,7 +1150,32 @@ pub(crate) fn run_row(ctx: &QueryCtx, id: u64) -> Result<Option<RunRow>, Error> 
 }
 
 pub(crate) fn queued(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<RunRow>, Error> {
-    QUEUED.range(ctx, page)?.try_map(|id| load(ctx, id))
+    QUEUE
+        .range(ctx, page)?
+        .try_map(|(_, _, _, id)| load(ctx, id))
+}
+
+pub(crate) fn filed_row(ctx: &QueryCtx, id: u64) -> Result<Option<Filed>, Error> {
+    FILED.get(ctx, &id)
+}
+
+pub(crate) fn machine_kind(ctx: &QueryCtx, id: &MachineId) -> Result<Option<String>, Error> {
+    MACHINE_KINDS.get(ctx, &key(id))
+}
+
+pub(crate) fn ledger(
+    ctx: &QueryCtx,
+    kind: String,
+    group: String,
+    page: &PageRequest,
+) -> Result<PageResponse<LedgerRow>, Error> {
+    Ok(LEDGER
+        .range_of(ctx, &(kind, group), page)?
+        .map(|((_, _, meter, window_start), used)| LedgerRow {
+            meter,
+            window_start,
+            used,
+        }))
 }
 
 fn view(ctx: &QueryCtx, machine: MachineRow) -> Result<MachineView, Error> {

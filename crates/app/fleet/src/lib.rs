@@ -17,9 +17,11 @@ pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{HOLDS, MACHINES, PIECES, QUEUED, RUNS, WORKLOADS};
+use crate::state::{FILED, HOLDS, LEDGER, MACHINE_KINDS, MACHINES, PIECES, QUEUE, RUNS, WORKLOADS};
 
 pub const PROGRAM: &str = "ducktape-industries/fleet";
+
+pub const BLOCKS: &str = "blocks";
 
 // A machine: the account whose key runs it, and its name among that account's machines.
 #[derive(
@@ -109,6 +111,14 @@ pub struct Spec {
     pub out: Option<String>,
     pub on_loss: OnLoss,
     pub notify: Option<Notify>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Filed {
+    pub kind: Option<String>,
+    pub class: String,
+    pub group: String,
+    pub limit: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -233,7 +243,7 @@ pub struct PieceRow {
 pub enum Op {
     #[tool_op(description = "Ask for a workload to run. Left without `on`, it runs on whichever ready machine has been free longest; `on` pins it to one machine or to machines holding every label named. It is placed the block after. Returns the run's id.", returns = u64, example = crate::examples::ask)]
     Ask { spec: Spec },
-    #[tool_op(description = "As a machine of your account, named `name`: say which labels you hold, how many runs you take at once (0 takes none) and whose runs you serve. Queued runs you cover are assigned to you at once.", example = crate::examples::ready)]
+    #[tool_op(description = "As a machine of your account, named `name`: say which labels you hold, how many runs you take at once (0 takes none) and whose runs you serve. Queued runs you cover are assigned to you from the next block.", example = crate::examples::ready)]
     Ready {
         name: String,
         labels: Vec<String>,
@@ -262,7 +272,7 @@ pub enum Op {
     Lapse { machine: MachineId },
     #[tool_op(description = "Check whether an assignment went unclaimed for the egress wait: its machine is taken as gone and the run goes elsewhere. fleet books this itself; anyone may send it.", example = crate::examples::unclaimed)]
     Unclaimed { run: u64, attempt: u32 },
-    #[tool_op(description = "Place a queued run on the machine free longest that may take it. fleet books this for the block after an Ask, once the run's claim row has its owner's policy; anyone may send it.", example = crate::examples::place)]
+    #[tool_op(description = "Queue a run that is queued but in no kind's queue, and take a step of its kind's walk (Walk). Anyone may send it, and it acts only on what the chain shows.", example = crate::examples::place)]
     Place { run: u64 },
     #[tool_op(description = "As the machine running a run at this attempt, have fleet send one egress request for it, as fleet, under a call number of your own for that attempt: a backend's way to a service only a program reaches, such as the pods service. fleet sets the headers fleet-run, fleet-attempt, fleet-asker and fleet-machine on it, replacing any you sent under those names, so the service knows which run the call is for. Every piece of the answer lands as a row under the run (read them with Pieces): each event of a streamed answer in order, then the answer or why it failed.", example = crate::examples::call)]
     Call {
@@ -280,6 +290,27 @@ pub enum Op {
         call: u64,
         event: Event,
     },
+    #[tool_op(description = "Ask for a workload to run as a kind of resources. Only machines of that kind whose account the kind's owner admitted take it, in the order its policy gives: class, then fair share among groups, then oldest. The class must be one of the policy's, and its may_use must admit you. A run with no kind has no class and places as Ask does. `limit` bounds each attempt's run time in blocks from its claim, after which its machine is asked to stop it. It is placed from the block after. Returns the run's id.", returns = u64, example = crate::examples::ask_in)]
+    AskIn {
+        spec: Spec,
+        kind: Option<String>,
+        class: String,
+        limit: Option<u64>,
+    },
+    #[tool_op(description = "As Ready, also saying which kind of resources your machine is. A machine of a kind takes only that kind's runs, and only while the kind admits your account; one with no kind takes the runs asked with none.", example = crate::examples::ready_in)]
+    ReadyIn {
+        name: String,
+        labels: Vec<String>,
+        slots: u64,
+        serves: Serves,
+        kind: Option<String>,
+    },
+    #[tool_op(description = "Move a run to another class of its kind's policy. A queued run is placed in that class's order from the next step; otherwise its next attempts are. Whoever the run's claim policy admits (its asker always) may move it, into a class whose may_use admits them.", example = crate::examples::promote)]
+    Promote { run: u64, class: String },
+    #[tool_op(description = "Take the next step of a walk of a kind's queue (\"\" for runs with no kind). It examines up to the kind's walk runs (1 with no kind) in its policy's order, from where the last step stopped, and gives each one the free machine longest idle that takes it. fleet books a step for the next block whenever a run is queued or capacity frees or appears, and that step reads the policy then in force. A kind's owner may send one after Admit or SetPolicy, to have it read sooner. Anyone may send it, and it acts only on what the chain shows.", example = crate::examples::walk)]
+    Walk { kind: String },
+    #[tool_op(description = "Check whether a running attempt passed its limit: if it has, its machine is asked to stop it, as Cancel does. fleet books this at the claim; anyone may send it, and it acts only on what the chain shows.", example = crate::examples::expire)]
+    Expire { run: u64, attempt: u32 },
 }
 
 #[derive(
@@ -304,8 +335,8 @@ pub enum Query {
     #[tool_query(description = "A run: its attempt, state, machine, heights and result.", example = crate::examples::run)]
     Run { id: u64 },
     #[ask(Reply::Runs(PageResponse<RunRow>))]
-    #[reads(QUEUED, RUNS)]
-    #[tool_query(description = "The runs no machine holds yet, oldest first.", example = crate::examples::queued)]
+    #[reads(QUEUE, RUNS)]
+    #[tool_query(description = "The runs no machine holds yet, by kind, class and group, each oldest first.", example = crate::examples::queued)]
     Queued { page: PageRequest },
     #[ask(Reply::Machine(Option<MachineView>))]
     #[reads(MACHINES)]
@@ -331,6 +362,22 @@ pub enum Query {
         call: u64,
         page: PageRequest,
     },
+    #[ask(Reply::Filed(Option<Filed>))]
+    #[reads(FILED)]
+    #[tool_query(description = "Where a run is queued: its kind, class and group, and its limit.", example = crate::examples::filed)]
+    Filed { run: u64 },
+    #[ask(Reply::Kind(Option<String>))]
+    #[reads(MACHINE_KINDS)]
+    #[tool_query(description = "The kind of resources a machine is; none takes the runs asked with no kind.", example = crate::examples::kind_of)]
+    KindOf { machine: MachineId },
+    #[ask(Reply::Ledger(PageResponse<resources::LedgerRow>))]
+    #[reads(LEDGER)]
+    #[tool_query(description = "A group's use of a kind through fleet, per meter and window: \"\" counts runs assigned, blocks counts blocks run from claim to end. Fair share and quotas read it.", example = crate::examples::ledger)]
+    Ledger {
+        kind: String,
+        group: String,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -341,6 +388,9 @@ pub enum Reply {
     Machine(Option<MachineView>),
     Machines(PageResponse<MachineView>),
     Pieces(PageResponse<PieceRow>),
+    Filed(Option<Filed>),
+    Kind(Option<String>),
+    Ledger(PageResponse<resources::LedgerRow>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {
@@ -410,6 +460,40 @@ pub fn describe(op: &Op) -> describe::Description {
                 field("data", Value::count(event.data.len() as u64)),
             ],
         ),
+        Op::AskIn {
+            spec, kind, class, ..
+        } => (
+            format!("Ask for a run of {}", kind.clone().unwrap_or_default()),
+            vec![
+                field("command", Value::text(spec.command.join(" "))),
+                field("class", Value::text(class)),
+            ],
+        ),
+        Op::ReadyIn { name, slots, .. } if *slots == 0 => {
+            (format!("Machine {name} takes no runs"), Vec::new())
+        }
+        Op::ReadyIn {
+            name,
+            labels,
+            slots,
+            kind,
+            ..
+        } => (
+            format!("Machine {name} is ready"),
+            vec![
+                field(
+                    "labels",
+                    Value::List(labels.iter().map(Value::text).collect()),
+                ),
+                field("slots", Value::count(*slots)),
+                field("kind", Value::text(kind.clone().unwrap_or_default())),
+            ],
+        ),
+        Op::Promote { run: id, class } => {
+            (format!("Move run {id} to class {class}"), vec![run(id)])
+        }
+        Op::Walk { kind } => (format!("Walk the queue of kind {kind:?}"), Vec::new()),
+        Op::Expire { run: id, .. } => (format!("Check run {id} against its limit"), vec![run(id)]),
     };
     describe::Description { title, fields }
 }
@@ -433,7 +517,12 @@ fn op_variants_only_append() {
             "Unclaimed",
             "Place",
             "Call",
-            "Heard"
+            "Heard",
+            "AskIn",
+            "ReadyIn",
+            "Promote",
+            "Walk",
+            "Expire"
         ]
     );
 }

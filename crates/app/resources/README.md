@@ -2,7 +2,7 @@
 
 The network's resource controller: what each provider offers, who asked for what, which provider each request was placed on and why, and what each placement used. A **kind** names a resource (`model.anthropic`, `service.jev-rank`, `compute.linux-x86_64`, `build`). Its owner sets its **policy** and its **admitted** providers. A provider **offers** slots of a kind and **beats** while they're there. Anyone **requests** a use. The program alone writes the **assignment** between them, with its reason. Use is counted by whoever can count it (the provider, the requester, the chain) and kept per assignment. Placement follows the kind's policy and nothing else: no agent picks a provider.
 
-**Status:** the rules are in `src/rules.rs`, and `src/contract.rs` runs each liveness claim below on a MockChain. Nothing runs it on a network yet.
+**Status:** the rules are in `src/rules.rs`, and `src/contract.rs` runs each liveness claim below on a MockChain. fleet places its runs of a kind by that kind's policy (fleet README, Placement): it reads `InForce` and `Admission`, and runs `src/ordering.rs`, the classes, groups, fair share, quotas and queue-walk order both placers share, over its own ledger and queue.
 
 ## Rows
 | table | key | what |
@@ -10,6 +10,7 @@ The network's resource controller: what each provider offers, who asked for what
 | `kind/` | name | `KindRow`: owner, `KindSpec` (meters, slot, lapse, notary kind, `walk`: requests one queue-walk step examines), height. **Owned by its registrant** (kind `resources.kind`) |
 | `policy/` | kind | `Policy`, written by `SetPolicy` |
 | `admitted/` | (kind, provider) | `AdmittedRow`: who admitted the provider, and when |
+| `rank/` | (kind, provider) | the tier the kind's owner ranked the provider in, when not 0 |
 | `offer/` | (provider, name) | `OfferRow`: the offer as declared (labels, capacity in slots, `Reach`: an egress service and node, a fleet machine, or the provider directly; `Terms`; `Isolation`), its state, slots held, free since |
 | `kind-offer/` | (kind, provider, name) | index: a kind's offers, admitted or not |
 | `idle/` | (kind, free since, provider, name) | index: a kind's `Ready` offers with a free slot, the one free longest first |
@@ -34,6 +35,7 @@ The network's resource controller: what each provider offers, who asked for what
 ## Ops
 - `RegisterKind { name, spec }`: anyone, for a name nobody holds; the sender owns the kind from then. On a held name, the kind row's ownership policy decides (its owner always), and the spec is replaced. A meter whose `checked_by` is its own `reported_by` is refused `invalid_input`: a count can't check itself. Notarizing someone's kind is an obligation, so it needs consent, and consent bounds the list: a spec that names a notary kind it didn't name before is sent by whom that kind's row ownership policy admits (its owner always), else refused `unauthorized`.
 - `SetPolicy { kind, policy }`, `Admit { kind, provider }`, `Evict { kind, provider }`: whom the kind row's ownership policy admits (its owner always). This is the ownership record of `kind/<name>`, not the `Policy` struct, which lists no one who may administer the kind. A new policy rules placements from the next block. `Admit` takes effect in its frame. `Evict` stops placement on the provider's offers of that kind in its frame and books a `Lapse` of each at the next block, which loses what they hold.
+- `Rank { kind, provider, tier }`: whom the kind row's ownership policy admits (its owner always). Ranks the provider's capacity of the kind in a tier, 0 (every provider's until ranked) first. fleet places on a free machine in the lowest tier that takes a run before the one free longest; resources' own placement (retired at J-568 step 8) doesn't read it.
 - `Offer { offer }`: anyone, as a provider of its own offers (the sender is the provider). Declares or replaces the sender's offer `offer.name`. An offer is visible at once and takes work only while its kind admits its provider. It books a step of the kind's queue walk (Queue walks, below).
 - `Withdraw { name }`: the sender's offer. It becomes `Draining`, and `Gone` once it holds nothing.
 - `Beat { name, free, readings }`: the sender's offer. A `Missed` or `Lapsed` offer is `Ready` again.
@@ -110,7 +112,7 @@ Nothing here proves that an upstream behind a provider did the work. A provider 
 - `Chat { channel }` gets one chat notice for each, concerning only the account the request is for.
 
 ## Queries
-`Kind { name }`, `Kinds { page }`, `Policy { kind }`, `Admitted { kind, page }`, `Offer { offer }`, `Offers { kind, page }` (over `kind-offer/`), `Request { id }`, `Queued { kind, page }` (by class, group and id), `Assignment { request, attempt }`, `Holds { offer, page }`, `Usage { request, attempt }`, `Ledger { kind, group, page }`, `Record { offer }`, `Why { request }`, `PassedOver { request, page }` (over `kind-offer/`). Each page walks one table or index in its key order and stops at its limit.
+`Kind { name }`, `Kinds { page }`, `Policy { kind }`, `Admitted { kind, page }`, `Offer { offer }`, `Offers { kind, page }` (over `kind-offer/`), `Request { id }`, `Queued { kind, page }` (by class, group and id), `Assignment { request, attempt }`, `Holds { offer, page }`, `Usage { request, attempt }`, `Ledger { kind, group, page }`, `Record { offer }`, `Why { request }`, `PassedOver { request, page }` (over `kind-offer/`), `InForce { kind }` (the kind row, the policy in force at this height and the height it rules since), `Admission { kind, provider }` (one provider's admitted row and tier). Each page walks one table or index in its key order and stops at its limit.
 
 ## Interface
 `Op`, `Query`, `Reply` and every stored type only grow at their end. `Spec` rides in `Request` and `Pick`, and `Policy` in `SetPolicy`, so a new field means a new op variant and a new row, not a changed type.

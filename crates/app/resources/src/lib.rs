@@ -4,6 +4,7 @@
 #[cfg(test)]
 mod contract;
 mod examples;
+pub mod ordering;
 mod program;
 mod rules;
 mod state;
@@ -328,6 +329,19 @@ pub struct Policy {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Admission {
+    pub admitted: AdmittedRow,
+    pub tier: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct InForce {
+    pub kind: KindRow,
+    pub policy: Policy,
+    pub since: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct LedgerRow {
     pub meter: String,
     pub window_start: u64,
@@ -466,6 +480,12 @@ pub enum Op {
     Unclaimed { request: u64, attempt: u32 },
     #[tool_op(description = "Take the next step of a walk of a kind's queue: examine up to the kind's `walk` queued requests in the policy's order, from where the last step stopped, place each one a free admitted offer takes, and book the next step for the next block only when it examined that many with free slots left (a walk out of free slots or at the queue's end ends). resources books it for the next block whenever capacity frees or appears, a policy takes effect or a quota window ends; anyone may send it, and it acts only on what the chain shows.", example = crate::examples::place)]
     Place { kind: String },
+    #[tool_op(description = "Rank a provider of a kind in a tier: a placer reading the kind gives a use to a free provider in the lowest tier that takes it before any in a higher one, then the one free longest. 0, every provider's tier until ranked, clears the rank. The kind's owner, or whom the kind row's ownership policy lists.", example = crate::examples::rank)]
+    Rank {
+        kind: String,
+        provider: AccountNumber,
+        tier: u32,
+    },
 }
 
 #[derive(
@@ -521,6 +541,15 @@ pub enum Query {
     #[ask(Reply::PassedOver(PageResponse<PassedOverRow>))]
     #[tool_query(description = "Each offer of a request's kind that would not take it now, and why.", example = crate::examples::passed_over)]
     PassedOver { request: u64, page: PageRequest },
+    #[ask(Reply::InForce(Option<InForce>))]
+    #[tool_query(description = "A kind as another placer reads it at this height: its row, the policy in force (one set in this block rules from the next) and the height it has ruled since, which a share window with no length counts from.", example = crate::examples::in_force)]
+    InForce { kind: String },
+    #[ask(Reply::Admission(Option<Admission>))]
+    #[tool_query(description = "Whether a kind admits one provider: its admitted row and the tier its owner ranked it in (0 unless ranked), or none.", example = crate::examples::admission)]
+    Admission {
+        kind: String,
+        provider: AccountNumber,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -540,6 +569,8 @@ pub enum Reply {
     Record(Option<Record>),
     Why(Option<WhyView>),
     PassedOver(PageResponse<PassedOverRow>),
+    InForce(Option<InForce>),
+    Admission(Option<Admission>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {
@@ -634,6 +665,14 @@ pub fn describe(op: &Op) -> describe::Description {
             (format!("Check request {id} was claimed"), vec![request(id)])
         }
         Op::Place { kind: name } => (format!("Walk the queue of {name}"), vec![kind(name)]),
+        Op::Rank {
+            kind: name,
+            provider,
+            tier,
+        } => (
+            format!("Rank account {provider} of {name} in tier {tier}"),
+            vec![kind(name)],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -669,7 +708,8 @@ mod tests {
                 "Confirm",
                 "Lapse",
                 "Unclaimed",
-                "Place"
+                "Place",
+                "Rank"
             ]
         );
     }
@@ -693,7 +733,9 @@ mod tests {
                 "Ledger",
                 "Record",
                 "Why",
-                "PassedOver"
+                "PassedOver",
+                "InForce",
+                "Admission"
             ]
         );
         assert_eq!(
@@ -713,7 +755,9 @@ mod tests {
                 "Ledger",
                 "Record",
                 "Why",
-                "PassedOver"
+                "PassedOver",
+                "InForce",
+                "Admission"
             ]
         );
     }

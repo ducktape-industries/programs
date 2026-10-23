@@ -30,6 +30,25 @@
       }
     ],
     [
+      "Admission",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "admitted",
+                "AdmittedRow"
+              ],
+              [
+                "tier",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "AdmittedRow",
       {
         "struct": {
@@ -352,6 +371,29 @@
               [
                 "weight",
                 "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "InForce",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "KindRow"
+              ],
+              [
+                "policy",
+                "Policy"
+              ],
+              [
+                "since",
+                "u64"
               ]
             ]
           }
@@ -1023,6 +1065,11 @@
               18,
               "Place",
               "Op__Place"
+            ],
+            [
+              19,
+              "Rank",
+              "Op__Rank"
             ]
           ]
         }
@@ -1276,6 +1323,29 @@
       }
     ],
     [
+      "Op__Rank",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "provider",
+                "u64"
+              ],
+              [
+                "tier",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Op__RegisterKind",
       {
         "struct": {
@@ -1394,6 +1464,26 @@
       }
     ],
     [
+      "Option<Admission>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Admission"
+            ]
+          ]
+        }
+      }
+    ],
+    [
       "Option<Assignment>",
       {
         "enum": {
@@ -1468,6 +1558,26 @@
               1,
               "Some",
               "Counter"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<InForce>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "InForce"
             ]
           ]
         }
@@ -2344,8 +2454,37 @@
               14,
               "PassedOver",
               "Query__PassedOver"
+            ],
+            [
+              15,
+              "InForce",
+              "Query__InForce"
+            ],
+            [
+              16,
+              "Admission",
+              "Query__Admission"
             ]
           ]
+        }
+      }
+    ],
+    [
+      "Query__Admission",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "provider",
+                "u64"
+              ]
+            ]
+          }
         }
       }
     ],
@@ -2400,6 +2539,21 @@
               [
                 "page",
                 "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__InForce",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
               ]
             ]
           }
@@ -2854,8 +3008,30 @@
               14,
               "PassedOver",
               "Reply__PassedOver"
+            ],
+            [
+              15,
+              "InForce",
+              "Reply__InForce"
+            ],
+            [
+              16,
+              "Admission",
+              "Reply__Admission"
             ]
           ]
+        }
+      }
+    ],
+    [
+      "Reply__Admission",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<Admission>"
+            ]
+          }
         }
       }
     ],
@@ -2890,6 +3066,18 @@
           "fields": {
             "unnamed_fields": [
               "PageResponse<Assignment>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__InForce",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<InForce>"
             ]
           }
         }

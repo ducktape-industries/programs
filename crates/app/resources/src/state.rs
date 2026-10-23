@@ -35,17 +35,12 @@ pub struct StateRow {
     pub group: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct WalkRow {
-    pub order: Vec<(String, String)>,
-    pub at: u64,
-    pub after: Option<(String, String, u64)>,
-    pub behind: bool,
-}
+pub use crate::ordering::WalkRow;
 
 pub const KINDS: Map<String, Owned<KindRow, KindOwned>> = Map::new("kind/");
 pub const POLICIES: Map<String, PolicyRow> = Map::new("policy/");
 pub const ADMITTED: Map<(String, AccountNumber), AdmittedRow> = Map::new("admitted/");
+pub const RANKS: Map<(String, AccountNumber), u32> = Map::new("rank/");
 pub const OFFERS: Map<(AccountNumber, String), OfferRow> = Map::new("offer/");
 pub const KIND_OFFERS: Set<(String, AccountNumber, String)> = Set::new("kind-offer/");
 pub const IDLE: Set<(String, u64, AccountNumber, String)> = Set::new("idle/");

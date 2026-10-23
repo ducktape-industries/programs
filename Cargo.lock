@@ -2423,6 +2423,7 @@ dependencies = [
  "egress",
  "ownership",
  "program",
+ "resources",
  "scheduler",
  "store",
  "valset",

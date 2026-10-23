@@ -3,25 +3,23 @@
 //! that end, decline, miss or lapse, with each side's count and what it rests on.
 use ::program::{
     Error, ExecCtx, MessageId, Origin, Outcome as Answered, QueryCtx, Reply as Wanted, code,
-    invalid, not_found, unauthorized, unexpected_reply, wrong_state,
+    invalid, not_found, unauthorized, wrong_state,
 };
 use abi::role::egress::DEFAULT_WAIT;
-use abi::role::identity;
 
+use crate::ordering::{self, UNITS, admits, classes, group_of, weight_of};
 use crate::state::{
     ADMITTED, ASSIGNED, BEATS, CHARGED, CHECKS, DECLINED, DISPUTED, HOLDS, IDLE, KIND_OFFERS,
-    KINDS, LAST, LEDGER, NOTARY_OF, OFFERS, POLICIES, PolicyRow, QUEUE, RECORDS, REQUESTS, STATES,
-    StateRow, USED, WALK_AT, WALKS, WalkRow,
+    KINDS, LAST, LEDGER, NOTARY_OF, OFFERS, POLICIES, PolicyRow, QUEUE, RANKS, RECORDS, REQUESTS,
+    STATES, StateRow, USED, WALK_AT, WALKS, WalkRow,
 };
 use crate::{
-    AccountNumber, AdmittedRow, AssignState, Assignment, BeatRow, BlobId, Class, Counter, Event,
-    Isolation, KindRow, KindSpec, LedgerRow, Notify, Offer, OfferId, OfferRow, OfferRule,
-    OfferState, OfferView, Op, Outcome, PageRequest, PageResponse, Passed, PassedOverRow, Pin,
-    Placement, Policy, PolicyId, ProgramId, Reason, Record, RequestRow, RequestState, RequestView,
+    AccountNumber, Admission, AdmittedRow, AssignState, Assignment, BeatRow, BlobId, Class,
+    Counter, Event, InForce, Isolation, KindRow, KindSpec, LedgerRow, Notify, Offer, OfferId,
+    OfferRow, OfferRule, OfferState, OfferView, Op, Outcome, PageRequest, PageResponse, Passed,
+    PassedOverRow, Pin, Placement, Policy, Reason, Record, RequestRow, RequestState, RequestView,
     Selector, Spec, Standing, Usage, Waiting, WhyView,
 };
-
-const UNITS: &str = "";
 
 fn now(ctx: &QueryCtx) -> u64 {
     ctx.env().height
@@ -86,17 +84,6 @@ fn effective(ctx: &QueryCtx, kind: &str, height: u64) -> Result<(Policy, u64), E
     })
 }
 
-fn classes(policy: &Policy) -> Vec<Class> {
-    match policy.classes.is_empty() {
-        true => vec![Class {
-            name: String::new(),
-            may_use: None,
-            notarized: false,
-        }],
-        false => policy.classes.clone(),
-    }
-}
-
 fn schedule(ctx: &ExecCtx, at: u64, op: &Op) -> Result<(), Error> {
     let scheduler = ctx.env().role(abi::role::SCHEDULER)?.clone();
     let schedule = abi::role::scheduler::Op::Schedule {
@@ -144,113 +131,13 @@ fn queued_takes(ctx: &QueryCtx, kind: &KindRow, offer: &OfferRow) -> Result<bool
     Ok(false)
 }
 
-fn admits(ctx: &QueryCtx, policy: &PolicyId, account: AccountNumber) -> Result<bool, Error> {
-    let guardian = ctx.env().role(abi::role::OWNERSHIP)?.clone();
-    let mut asked = *policy;
-    loop {
-        let query = ownership::Query::Policy { id: asked };
-        let row = match ctx.query::<ownership::Query, ownership::Reply>(guardian.clone(), &query)? {
-            ownership::Reply::Policy(row) => row,
-            other => return Err(unexpected_reply(&guardian, "Policy", &other)),
-        };
-        let Some(row) = row else {
-            return Ok(false);
-        };
-        if let Some(next) = row.switched_to {
-            asked = next;
-            continue;
-        }
-        if is(ctx, &row.owner, account)? {
-            return Ok(true);
-        }
-        return match row.write {
-            ownership::Writers::Anyone => Ok(true),
-            ownership::Writers::Owner => Ok(false),
-            ownership::Writers::Listed(parties) => {
-                for party in &parties {
-                    if is(ctx, party, account)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-        };
-    }
-}
-
-fn is(ctx: &QueryCtx, party: &ownership::Party, account: AccountNumber) -> Result<bool, Error> {
-    match party {
-        ownership::Party::Account(number) => Ok(*number == account),
-        ownership::Party::Program(program) => Ok(account_of(ctx, program)? == Some(account)),
-        ownership::Party::Foreign(_) => Ok(false),
-    }
-}
-
-fn account_of(ctx: &QueryCtx, program: &ProgramId) -> Result<Option<AccountNumber>, Error> {
-    let registry = ctx.env().role(abi::role::IDENTITY)?.clone();
-    let asked = identity::Query::OfProgram(program.clone());
-    match ctx.query::<identity::Query, identity::Reply>(registry.clone(), &asked)? {
-        identity::Reply::Account(account) => Ok(account),
-        other => Err(unexpected_reply(&registry, "OfProgram", &other)),
-    }
-}
-
-fn group_of(ctx: &QueryCtx, policy: &Policy, account: AccountNumber) -> Result<String, Error> {
-    for group in &policy.groups {
-        if admits(ctx, &group.members, account)? {
-            return Ok(group.name.clone());
-        }
-    }
-    Ok(String::new())
-}
-
-fn window_start(height: u64, window: Option<u64>, since: u64) -> u64 {
-    match window {
-        Some(window) => height - height % window,
-        None => since,
-    }
-}
-
 fn share_used(ctx: &QueryCtx, kind: &str, group: &str, policy: &Policy, since: u64) -> u64 {
-    let meter = policy.share.meter.clone().unwrap_or_default();
-    let start = window_start(now(ctx), policy.share.window, since);
-    let at = (kind.to_owned(), group.to_owned(), meter, start);
-    LEDGER.get(ctx, &at).ok().flatten().unwrap_or(0)
-}
-
-fn weight_of(policy: &Policy, group: &str) -> u32 {
-    policy
-        .groups
-        .iter()
-        .find(|named| named.name == group)
-        .map_or(1, |named| named.weight)
+    ordering::share_used(ctx, &LEDGER, kind, group, policy, since)
 }
 
 fn charge(ctx: &ExecCtx, kind: &str, group: &str, meter: &str, amount: u64) -> Result<(), Error> {
-    if amount == 0 {
-        return Ok(());
-    }
-    let height = now(ctx);
-    let (policy, since) = effective(ctx, kind, height)?;
-    let mut starts = Vec::new();
-    let shared = policy.share.meter.as_deref().unwrap_or(UNITS) == meter;
-    if shared {
-        starts.push(window_start(height, policy.share.window, since));
-    }
-    for quota in &policy.quotas {
-        let counts = quota.group == group && quota.meter == meter;
-        if counts {
-            starts.push(window_start(height, Some(quota.window), since));
-        }
-    }
-    starts.sort_unstable();
-    starts.dedup();
-    for start in starts {
-        let at = (kind.to_owned(), group.to_owned(), meter.to_owned(), start);
-        let used = LEDGER.get(ctx, &at)?.unwrap_or(0).saturating_add(amount);
-        LEDGER.put(ctx, &at, &used);
-    }
-    Ok(())
+    let (policy, since) = effective(ctx, kind, now(ctx))?;
+    ordering::charge(ctx, &LEDGER, kind, group, meter, amount, (&policy, since))
 }
 
 fn over_quota(
@@ -259,25 +146,7 @@ fn over_quota(
     group: &str,
     policy: &Policy,
 ) -> Result<Option<Waiting>, Error> {
-    let height = now(ctx);
-    for quota in policy.quotas.iter().filter(|quota| quota.group == group) {
-        let start = window_start(height, Some(quota.window), 0);
-        let at = (
-            kind.to_owned(),
-            group.to_owned(),
-            quota.meter.clone(),
-            start,
-        );
-        let used = LEDGER.get(ctx, &at)?.unwrap_or(0);
-        if used >= quota.most {
-            return Ok(Some(Waiting::OverQuota {
-                group: group.to_owned(),
-                meter: quota.meter.clone(),
-                until: start + quota.window,
-            }));
-        }
-    }
-    Ok(None)
+    ordering::over_quota(ctx, &LEDGER, kind, group, policy)
 }
 
 fn record(ctx: &ExecCtx, offer: &OfferId, count: impl FnOnce(&mut Record)) -> Result<(), Error> {
@@ -939,30 +808,7 @@ fn try_place(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
 }
 
 fn order(ctx: &QueryCtx, kind: &str, policy: &Policy, since: u64) -> Vec<(String, String)> {
-    let mut groups: Vec<(u64, u32, usize, String)> = policy
-        .groups
-        .iter()
-        .enumerate()
-        .map(|(at, group)| {
-            let used = share_used(ctx, kind, &group.name, policy, since);
-            (used, group.weight, at, group.name.clone())
-        })
-        .collect();
-    groups.sort_by(|a, b| {
-        let left = u128::from(a.0) * u128::from(b.1);
-        let right = u128::from(b.0) * u128::from(a.1);
-        left.cmp(&right).then(a.2.cmp(&b.2))
-    });
-    let mut names: Vec<String> = groups.into_iter().map(|group| group.3).collect();
-    names.push(String::new());
-    classes(policy)
-        .into_iter()
-        .flat_map(|class| {
-            names
-                .iter()
-                .map(move |group| (class.name.clone(), group.clone()))
-        })
-        .collect()
+    ordering::order(ctx, &LEDGER, kind, policy, since)
 }
 
 fn next_queued(
@@ -970,45 +816,7 @@ fn next_queued(
     kind: &str,
     walk: &mut WalkRow,
 ) -> Result<Option<(String, String, u64)>, Error> {
-    while let Some((class, group)) = walk.order.get(walk.at as usize).cloned() {
-        let mut range = QUEUE.prefix_of(&(kind.to_owned(), class.clone(), group.clone()));
-        if let Some((after_class, after_group, after)) = &walk.after {
-            range = range.after(QUEUE.key(&(
-                kind.to_owned(),
-                after_class.clone(),
-                after_group.clone(),
-                *after,
-            )));
-        }
-        if let Some((_, class, group, id)) = QUEUE.scan(ctx, range.limit(1))?.into_iter().next() {
-            return Ok(Some((class, group, id)));
-        }
-        walk.at += 1;
-        walk.after = None;
-    }
-    loop {
-        let mut range = QUEUE.prefix_of(&kind.to_owned());
-        if let Some((after_class, after_group, after)) = &walk.after {
-            range = range.after(QUEUE.key(&(
-                kind.to_owned(),
-                after_class.clone(),
-                after_group.clone(),
-                *after,
-            )));
-        }
-        let Some((_, class, group, id)) = QUEUE.scan(ctx, range.limit(1))?.into_iter().next()
-        else {
-            return Ok(None);
-        };
-        let named = walk
-            .order
-            .iter()
-            .any(|pair| pair.0 == class && pair.1 == group);
-        if !named {
-            return Ok(Some((class, group, id)));
-        }
-        walk.after = Some((class, group, u64::MAX));
-    }
+    ordering::next_queued(ctx, &QUEUE, kind, walk)
 }
 
 fn any_free(ctx: &QueryCtx, kind: &str) -> bool {
@@ -1692,6 +1500,45 @@ pub(crate) fn ledger(
             window_start,
             used,
         }))
+}
+
+pub(crate) fn rank(
+    ctx: &ExecCtx,
+    kind: String,
+    provider: AccountNumber,
+    tier: u32,
+) -> Result<(), Error> {
+    administer(ctx, &kind)?;
+    match tier {
+        0 => RANKS.remove(ctx, &(kind, provider)),
+        tier => RANKS.put(ctx, &(kind, provider), &tier),
+    }
+    Ok(())
+}
+
+pub(crate) fn admission(
+    ctx: &QueryCtx,
+    kind: String,
+    provider: AccountNumber,
+) -> Result<Option<Admission>, Error> {
+    let at = (kind, provider);
+    let Some(admitted) = ADMITTED.get(ctx, &at)? else {
+        return Ok(None);
+    };
+    let tier = RANKS.get(ctx, &at)?.unwrap_or(0);
+    Ok(Some(Admission { admitted, tier }))
+}
+
+pub(crate) fn in_force(ctx: &QueryCtx, kind: &str) -> Result<Option<InForce>, Error> {
+    let Some(row) = KINDS.get(ctx, &kind.to_owned())? else {
+        return Ok(None);
+    };
+    let (policy, since) = effective(ctx, kind, now(ctx))?;
+    Ok(Some(InForce {
+        kind: row,
+        policy,
+        since,
+    }))
 }
 
 pub(crate) fn why(ctx: &QueryCtx, id: u64) -> Result<Option<WhyView>, Error> {

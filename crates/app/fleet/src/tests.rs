@@ -11,6 +11,8 @@ use store::Item;
 use crate::state::CLAIMS;
 use crate::*;
 
+mod policy;
+
 const ADA: &[u8] = b"ada-key";
 const ADA_ACCOUNT: u64 = 11;
 const BO: &[u8] = b"bo-key";
@@ -351,6 +353,10 @@ impl World {
         self.height.set(height);
         self.chain.at(height, height * 1000);
     }
+
+    fn walked(&self) {
+        self.to(self.height.get() + 2);
+    }
 }
 
 #[test]
@@ -561,8 +567,10 @@ fn a_pinned_run_waits_for_its_machine_and_labels_must_all_be_held() {
     );
     world.claim(B, warm, 1).unwrap();
     world.report(B, warm, 1, State::Failed).unwrap();
+    world.walked();
     assert_eq!(world.placed(pinned).1, Some(machine(B_ACCOUNT, "b")));
     world.ready(A, "gpu-box", &["gpu"], 1);
+    world.walked();
     assert_eq!(world.placed(gpu).1, Some(machine(A_ACCOUNT, "gpu-box")));
     assert!(world.queued().is_empty());
 }
@@ -628,6 +636,7 @@ fn a_silent_machine_loses_its_runs_and_a_parked_run_waits_for_it() {
     let gone = world.machine(a.clone()).machine;
     assert!(gone.gone && gone.busy == 0);
     world.ready(B, "b", &[], 1);
+    world.walked();
     assert_eq!(
         world.placed(retry),
         (State::Assigned, Some(machine(B_ACCOUNT, "b")), 2)
@@ -655,6 +664,7 @@ fn a_cancel_ends_a_queued_run_and_stops_a_running_one_and_requeue_runs_it_again(
     let again = world.act(ADA, &Op::Cancel { run: running }).unwrap_err();
     assert_eq!(again.code, code::WRONG_STATE);
     world.act(ADA, &Op::Requeue { run: running }).unwrap();
+    world.walked();
     assert_eq!(
         world.placed(running),
         (State::Assigned, Some(machine(A_ACCOUNT, "a")), 2)
@@ -674,6 +684,7 @@ fn a_service_runs_again_after_an_end_nobody_asked_for_until_it_is_stopped() {
     });
     world.claim(A, service, 1).unwrap();
     world.report(A, service, 1, State::Failed).unwrap();
+    world.walked();
     assert_eq!(
         world.placed(service),
         (State::Assigned, Some(machine(A_ACCOUNT, "a")), 2)
@@ -700,6 +711,7 @@ fn a_declined_run_never_goes_back_to_that_machine() {
     assert_eq!(world.queued(), [run]);
     assert!(world.run(run).summary.contains("no such image here"));
     world.ready(B, "b", &[], 1);
+    world.walked();
     assert_eq!(
         world.placed(run),
         (State::Assigned, Some(machine(B_ACCOUNT, "b")), 2)

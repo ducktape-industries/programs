@@ -149,6 +149,33 @@
       }
     ],
     [
+      "Filed",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "Option<String>"
+              ],
+              [
+                "class",
+                "String"
+              ],
+              [
+                "group",
+                "String"
+              ],
+              [
+                "limit",
+                "Option<u64>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Head",
       {
         "struct": {
@@ -349,6 +376,29 @@
       {
         "struct": {
           "fields": "empty"
+        }
+      }
+    ],
+    [
+      "LedgerRow",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "meter",
+                "String"
+              ],
+              [
+                "window_start",
+                "u64"
+              ],
+              [
+                "used",
+                "u64"
+              ]
+            ]
+          }
         }
       }
     ],
@@ -668,6 +718,31 @@
               12,
               "Heard",
               "Op__Heard"
+            ],
+            [
+              13,
+              "AskIn",
+              "Op__AskIn"
+            ],
+            [
+              14,
+              "ReadyIn",
+              "Op__ReadyIn"
+            ],
+            [
+              15,
+              "Promote",
+              "Op__Promote"
+            ],
+            [
+              16,
+              "Walk",
+              "Op__Walk"
+            ],
+            [
+              17,
+              "Expire",
+              "Op__Expire"
             ]
           ]
         }
@@ -682,6 +757,33 @@
               [
                 "spec",
                 "Spec"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__AskIn",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "spec",
+                "Spec"
+              ],
+              [
+                "kind",
+                "Option<String>"
+              ],
+              [
+                "class",
+                "String"
+              ],
+              [
+                "limit",
+                "Option<u64>"
               ]
             ]
           }
@@ -796,6 +898,25 @@
       }
     ],
     [
+      "Op__Expire",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "run",
+                "u64"
+              ],
+              [
+                "attempt",
+                "u32"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Op__Heard",
       {
         "struct": {
@@ -853,6 +974,25 @@
       }
     ],
     [
+      "Op__Promote",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "run",
+                "u64"
+              ],
+              [
+                "class",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Op__Ready",
       {
         "struct": {
@@ -873,6 +1013,37 @@
               [
                 "serves",
                 "Serves"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__ReadyIn",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "name",
+                "String"
+              ],
+              [
+                "labels",
+                "Vec<String>"
+              ],
+              [
+                "slots",
+                "u64"
+              ],
+              [
+                "serves",
+                "Serves"
+              ],
+              [
+                "kind",
+                "Option<String>"
               ]
             ]
           }
@@ -945,6 +1116,21 @@
       }
     ],
     [
+      "Op__Walk",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "Option<Affinity>",
       {
         "enum": {
@@ -979,6 +1165,26 @@
               1,
               "Some",
               "BlobId"
+            ]
+          ]
+        }
+      }
+    ],
+    [
+      "Option<Filed>",
+      {
+        "enum": {
+          "tag_width": 1,
+          "variants": [
+            [
+              0,
+              "None",
+              "()"
+            ],
+            [
+              1,
+              "Some",
+              "Filed"
             ]
           ]
         }
@@ -1203,6 +1409,29 @@
       }
     ],
     [
+      "PageResponse<LedgerRow>",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "height",
+                "u64"
+              ],
+              [
+                "items",
+                "Vec<LedgerRow>"
+              ],
+              [
+                "next",
+                "Option<Vec<u8>>"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
       "PageResponse<MachineView>",
       {
         "struct": {
@@ -1398,8 +1627,38 @@
               6,
               "Pieces",
               "Query__Pieces"
+            ],
+            [
+              7,
+              "Filed",
+              "Query__Filed"
+            ],
+            [
+              8,
+              "KindOf",
+              "Query__KindOf"
+            ],
+            [
+              9,
+              "Ledger",
+              "Query__Ledger"
             ]
           ]
+        }
+      }
+    ],
+    [
+      "Query__Filed",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "run",
+                "u64"
+              ]
+            ]
+          }
         }
       }
     ],
@@ -1412,6 +1671,44 @@
               [
                 "machine",
                 "MachineId"
+              ],
+              [
+                "page",
+                "PageRequest"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__KindOf",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "machine",
+                "MachineId"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__Ledger",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "kind",
+                "String"
+              ],
+              [
+                "group",
+                "String"
               ],
               [
                 "page",
@@ -1559,8 +1856,59 @@
               5,
               "Pieces",
               "Reply__Pieces"
+            ],
+            [
+              6,
+              "Filed",
+              "Reply__Filed"
+            ],
+            [
+              7,
+              "Kind",
+              "Reply__Kind"
+            ],
+            [
+              8,
+              "Ledger",
+              "Reply__Ledger"
             ]
           ]
+        }
+      }
+    ],
+    [
+      "Reply__Filed",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<Filed>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Kind",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<String>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__Ledger",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "PageResponse<LedgerRow>"
+            ]
+          }
         }
       }
     ],
@@ -1722,6 +2070,10 @@
             "named_fields": [
               [
                 "Ask",
+                "u64"
+              ],
+              [
+                "AskIn",
                 "u64"
               ]
             ]
@@ -2042,6 +2394,19 @@
       {
         "sequence": {
           "elements": "Input",
+          "length_range": {
+            "end": 4294967295,
+            "start": 0
+          },
+          "length_width": 4
+        }
+      }
+    ],
+    [
+      "Vec<LedgerRow>",
+      {
+        "sequence": {
+          "elements": "LedgerRow",
           "length_range": {
             "end": 4294967295,
             "start": 0

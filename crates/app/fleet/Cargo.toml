@@ -27,6 +27,8 @@ chat = { path = "../chat" }
 ducklink = { path = "../../sdk/ducklink" }
 # a run's claim policy, read before a run is assigned
 ownership = { path = "../../system/ownership" }
+# a kind's policy and admitted machines, and the ordering and quota code both placers share
+resources = { path = "../resources" }
 
 [dev-dependencies]
 access = { path = "../../system/access" }
