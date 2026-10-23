@@ -33,6 +33,10 @@ pub fn change_of_room(channel: &str) -> Option<(&str, u64)> {
     Some((repo, n.parse().ok()?))
 }
 
+pub fn room_of(repo: &str, n: u64) -> String {
+    crate::state::channel_id(repo, n)
+}
+
 pub enum Event {
     Opened,
     Closed,

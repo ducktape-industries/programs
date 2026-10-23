@@ -28,6 +28,7 @@ pub const BOUND: Map<(AccountNumber, String), Binding> = Map::new("bound/");
 pub const CURRENT: Map<AccountNumber, u64> = Map::new("current/");
 pub const HEIRS: Map<u64, u64> = Map::new("heir/");
 pub const VACATED: Map<(AccountNumber, String), u64> = Map::new("vacated/");
+pub const OPENERS: Map<(AccountNumber, String), u64> = Map::new("opener/");
 pub const FRAMES: Map<(u64, u64), Frame> = Map::new("frame/");
 pub const HELD: Map<(u64, u64), Body> = Map::new("held/");
 pub const HELD_AT: Map<(u64, u64), String> = Map::new("held-at/");
@@ -419,6 +420,7 @@ pub fn written(key: &[u8]) -> Option<Written> {
         OPEN_BY_AGENT.key(&()),
         PLACES.key(&()),
         BOUND.key(&()),
+        OPENERS.key(&()),
     ];
     for prefix in agents {
         if let Some(agent) = under::<AccountNumber>(&prefix, key) {

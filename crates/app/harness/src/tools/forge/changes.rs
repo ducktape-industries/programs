@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use store::PageRequest;
 
 use super::{ask, reference, repo_schema, revision};
-use crate::tools::{Run, Seat, Tool, Write, object, unexpected};
+use crate::tools::{Following, Run, Seat, Tool, Write, object, unexpected};
 
 fn number_schema() -> Value {
     json!({ "type": "integer", "minimum": 1, "description": "the change's number, as forge_changes lists them" })
@@ -60,7 +60,8 @@ impl Tool for ChangeOpen {
         )
     }
 
-    fn run(_: &ExecCtx, _: &Seat, args: OpenArgs) -> Result<Run, Error> {
+    fn run(_: &ExecCtx, seat: &Seat, args: OpenArgs) -> Result<Run, Error> {
+        let (agent, thread, repo) = (seat.agent, seat.thread, args.repo.clone());
         let op = forge::Op::ChangeOpen {
             repo: args.repo,
             from: revision(&args.from),
@@ -73,10 +74,20 @@ impl Tool for ChangeOpen {
                 .map(::program::Principal::Account)
                 .collect(),
         };
-        Ok(sent(op, |reply| match reply {
-            OpReply::Change { n, .. } => Ok(json!({ "ok": true, "number": n })),
-            other => Err(unexpected(forge::PROGRAM, "Change", &other)),
-        }))
+        let writes = vec![Write {
+            target: forge::PROGRAM.into(),
+            payload: abi::encode(&op),
+        }];
+        let then: Following = Box::new(move |ctx, output| {
+            let reply = abi::decode::<OpReply>(output)
+                .map_err(|_| unexpected(forge::PROGRAM, "OpReply", &abi::hex(output)))?;
+            let OpReply::Change { n, .. } = reply else {
+                return Err(unexpected(forge::PROGRAM, "Change", &reply));
+            };
+            crate::conversations::opened_change(ctx, agent, thread, &repo, n);
+            Ok(Run::Done(json!({ "ok": true, "number": n })))
+        });
+        Ok(Run::Then { writes, then })
     }
 }
 

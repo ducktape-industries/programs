@@ -79,8 +79,9 @@ allows; a user of a linked network as its `Answers` allows `Party::Foreign` of t
 With no current thread, the first input opens one. A conversation opened bound to a
 chat channel or thread (`OpenThread`) hears what reaches the agent there instead. An
 input in a forge change's own room (`forge:<repo>:<n>`, `forge::change_of_room`) where
-no conversation of the agent is bound goes to the agent's open conversation bound to
-the room forge-review-chat mirrors that change into (`forge_review_chat::Query::Room`),
+no conversation of the agent is bound goes to the conversation that opened the change
+with `forge_change_open`, or to that one's heir once it has closed; with neither open,
+to the agent's open conversation bound to the room forge-review-chat mirrors that change into (`forge_review_chat::Query::Room`),
 and to the current thread when there is none, the change is mirrored nowhere or
 forge-review-chat does not answer. The agent itself, its manager, or
 whoever its list at `harness::conversation_key(agent)` in the access program allows,

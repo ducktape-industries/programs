@@ -1,6 +1,6 @@
-//! A review forge asks of an agent reaches it through harness: once the agent answers forge, the
-//! change's notices reach the agent, before that harness drops them, and a change mirrored into a
-//! room where the agent has a conversation bound reaches that conversation.
+//! A review forge asks of an agent reaches it through harness once the agent answers forge. A
+//! change's notices reach the conversation that opened it or that one's heir, else the agent's
+//! conversation bound to the room the change is mirrored into, else its current one.
 use ::program::{HashKind, Ownership, Party};
 use gitcore::wire::pktline;
 use gitcore::{
@@ -8,6 +8,7 @@ use gitcore::{
 };
 
 use super::forge_commit::forged;
+use super::forge_tools::{answered, seeded, turn, world as tooled};
 use super::*;
 
 const REPO: &str = "notes";
@@ -110,7 +111,7 @@ fn founded(world: &World) -> Oid {
     main
 }
 
-fn mirroring(world: &mut World, rooms: &[&str]) {
+fn ruled(world: &mut World, branch: &str, room: &str) {
     world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
     world
         .chain
@@ -118,14 +119,18 @@ fn mirroring(world: &mut World, rooms: &[&str]) {
     registered(world, forge_review_chat::PROGRAM);
     world.chain.init(forge_review_chat::PROGRAM, &()).unwrap();
     let rule = forge_review_chat::Rule {
-        branch: "j-{}/".into(),
-        room: "j-{}".into(),
+        branch: branch.into(),
+        room: room.into(),
     };
     let rules = forge_review_chat::Op::SetRules { rules: vec![rule] };
     world
         .chain
         .submit(signed(ADA), forge_review_chat::PROGRAM, &rules)
         .unwrap();
+}
+
+fn mirroring(world: &mut World, rooms: &[&str]) {
+    ruled(world, "j-{}/", "j-{}");
     for room in rooms {
         let create = chat::Op::CreateChannel {
             channel_id: (*room).into(),
@@ -173,6 +178,71 @@ fn posts(world: &World) -> Vec<String> {
             Body::Post { text, .. } => Some(text),
             _ => None,
         })
+        .collect()
+}
+
+fn job_room(world: &World, channel: &str) -> u64 {
+    let create = chat::Op::CreateChannel {
+        channel_id: channel.into(),
+        name: channel.into(),
+        post_policy: chat::PostPolicy::Open,
+    };
+    world
+        .chain
+        .submit(signed(ADA), chat::PROGRAM, &create)
+        .unwrap();
+    bound_to(world, channel.into())
+}
+
+fn bound_to(world: &World, channel: String) -> u64 {
+    let open = Op::OpenThread {
+        agent: world.agent,
+        place: Place::Channel { channel },
+    };
+    let made = world.chain.submit(signed(ADA), PROGRAM, &open).unwrap();
+    abi::decode(&made).unwrap()
+}
+
+fn opened_by_tool(world: &World, thread: u64) -> (u64, String) {
+    let chain = &world.chain;
+    world.post(
+        ADA,
+        "j-9",
+        "m1",
+        &format!("<@{}> open a change", world.agent),
+    );
+    chain.at(2, 0);
+    learn(chain, Some(WINDOW));
+    let dev = seeded(world, thread);
+    let open = json!({ "repo": REPO, "from": "dev", "into": "main", "title": "dev's own" });
+    turn(chain, 7, &[("o1", "forge_change_open", open)]);
+    let n = answered(chain, thread, "o1")["number"].as_u64().unwrap();
+    (n, dev)
+}
+
+fn commented(world: &World, n: u64, head: &str, body: &str) {
+    let review = forge::Op::ReviewSubmit {
+        repo: REPO.into(),
+        n,
+        review: forge::ReviewDraft {
+            commit_oid: head.into(),
+            base_oid: None,
+            verdict: forge::Verdict::Comment,
+            body: body.into(),
+            comments: Vec::new(),
+        },
+    };
+    world
+        .chain
+        .submit(signed(ADA), forge::PROGRAM, &review)
+        .unwrap();
+}
+
+fn notices_outside(world: &World, threads: &[u64]) -> Vec<String> {
+    let others = world.threads().into_iter();
+    others
+        .filter(|row| !threads.contains(&row.id))
+        .flat_map(|row| notices_in(world, row.id))
         .collect()
 }
 
@@ -356,5 +426,80 @@ fn a_conversation_bound_to_the_changes_own_room_hears_it_before_the_room_it_is_m
         ],
         [1, 0, 1],
         "{in_own:#?}\n{in_job:#?}"
+    );
+}
+
+#[test]
+fn a_change_is_heard_in_the_conversation_that_opened_it_unless_its_own_room_is_bound() {
+    let mut world = tooled();
+    ruled(&mut world, "dev", "j-mirror");
+    answering(
+        &world,
+        Ownership::Listed(vec![Party::Program(forge::PROGRAM.into())]),
+    );
+    let mirror = job_room(&world, "j-mirror");
+    let job = job_room(&world, "j-9");
+    let (n, dev) = opened_by_tool(&world, job);
+    commented(&world, n, &dev, "Reads right.");
+    let own = bound_to(
+        &world,
+        chat::namespace::id(forge::PROGRAM, &format!("{REPO}:{n}")),
+    );
+    commented(&world, n, &dev, "One more look.");
+    let (in_job, in_own) = (notices_in(&world, job), notices_in(&world, own));
+    let elsewhere = notices_outside(&world, &[job, own]);
+    assert_eq!(
+        [
+            told(&in_job, n, "commented"),
+            in_job.len(),
+            told(&in_own, n, "commented"),
+            in_own.len(),
+            notices_in(&world, mirror).len(),
+            elsewhere.len(),
+        ],
+        [1, 1, 1, 1, 0, 0],
+        "{in_job:#?}\n{in_own:#?}\n{elsewhere:#?}"
+    );
+}
+
+#[test]
+fn a_change_whose_opener_ended_is_heard_by_its_heir_then_where_it_was_before() {
+    let mut world = tooled();
+    ruled(&mut world, "dev", "j-mirror");
+    answering(
+        &world,
+        Ownership::Listed(vec![Party::Program(forge::PROGRAM.into())]),
+    );
+    let mirror = job_room(&world, "j-mirror");
+    let job = job_room(&world, "j-9");
+    let (n, dev) = opened_by_tool(&world, job);
+    let close = |thread: u64| {
+        world
+            .chain
+            .submit(signed(ADA), PROGRAM, &Op::Close { thread })
+            .unwrap();
+    };
+    close(job);
+    let heir = bound_to(&world, "j-9".into());
+    commented(&world, n, &dev, "For the heir.");
+    close(heir);
+    commented(&world, n, &dev, "For the mirror.");
+    close(mirror);
+    commented(&world, n, &dev, "For the current one.");
+    let (in_job, in_heir) = (notices_in(&world, job), notices_in(&world, heir));
+    let in_mirror = notices_in(&world, mirror);
+    let elsewhere = notices_outside(&world, &[job, heir, mirror]);
+    assert_eq!(
+        [
+            in_job.len(),
+            told(&in_heir, n, "commented"),
+            in_heir.len(),
+            told(&in_mirror, n, "commented"),
+            in_mirror.len(),
+            told(&elsewhere, n, "commented"),
+            elsewhere.len(),
+        ],
+        [0, 1, 1, 1, 1, 1, 1],
+        "{in_job:#?}\n{in_heir:#?}\n{in_mirror:#?}\n{elsewhere:#?}"
     );
 }

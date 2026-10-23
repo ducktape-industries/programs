@@ -46,7 +46,7 @@ mod queue;
 
 pub use contract::*;
 pub use description::describe;
-pub use discussion::{NOTICE, change_of_room, notice_link};
+pub use discussion::{NOTICE, change_of_room, notice_link, room_of};
 pub use objects::{blob_id_of, hash_of};
 pub use ops::PROGRAM;
 pub use program::Forge;

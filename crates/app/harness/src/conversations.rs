@@ -10,8 +10,8 @@ use store::PageRequest;
 
 use crate::agents::{Agent, agent_named, managed, thread};
 use crate::state::{
-    BOUND, BY_AGENT, Binding, CONVERSATIONS, COUNT, CURRENT, Conversations, FRAMES, HEIRS, PLACES,
-    THREADS, TOPICS, VACATED, WITHHELD, newest_first,
+    BOUND, BY_AGENT, Binding, CONVERSATIONS, COUNT, CURRENT, Conversations, FRAMES, HEIRS, OPENERS,
+    PLACES, THREADS, TOPICS, VACATED, WITHHELD, newest_first,
 };
 use crate::{Asking, Body, Context, Frame, Place, Said, ThreadRow};
 
@@ -65,11 +65,37 @@ pub(crate) fn route(
     if let Some(found) = bound_at(ctx, agent.number, places)? {
         return Ok(found);
     }
+    if let Some(found) = opener(ctx, agent.number, places)? {
+        return Ok(found);
+    }
     if let Some((row, _)) = bound_at(ctx, agent.number, &mirrored(ctx, &place)?)? {
         return Ok((row, place));
     }
     let row = conversation(ctx, agent, &place)?;
     Ok((row, place))
+}
+
+pub(crate) fn opened_change(ctx: &ExecCtx, agent: AccountNumber, thread: u64, repo: &str, n: u64) {
+    let room = Place::Channel {
+        channel: forge::room_of(repo, n),
+    };
+    OPENERS.put(ctx, &(agent, room.key()), &thread);
+}
+
+fn opener(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+    places: &[String],
+) -> Result<Option<(ThreadRow, String)>, Error> {
+    for key in places {
+        let Some(id) = OPENERS.get(ctx, &(agent, key.clone()))? else {
+            continue;
+        };
+        if let Some(row) = reaching(ctx, id)? {
+            return Ok(Some((row, key.clone())));
+        }
+    }
+    Ok(None)
 }
 
 fn mirrored(ctx: &QueryCtx, place: &str) -> Result<Vec<String>, Error> {
