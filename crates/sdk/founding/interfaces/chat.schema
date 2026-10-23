@@ -365,6 +365,10 @@
               [
                 "sig",
                 "Vec<u8>"
+              ],
+              [
+                "framed_under",
+                "String"
               ]
             ]
           }

@@ -190,7 +190,8 @@ pub(crate) fn publish(ctx: &ExecCtx, key: DeviceId, sig: Vec<u8>) -> Result<(), 
     }
     person(ctx, account)?;
     let scheme = scheme_of(ctx, account, &signer)?;
-    let statement = crate::device_statement(&ctx.env().chain_id, account, &key);
+    let program = &ctx.env().program;
+    let statement = crate::device_statement(program, &ctx.env().chain_id, account, &key);
     if !ctx.verify(
         scheme,
         signer.clone(),
@@ -202,7 +203,7 @@ pub(crate) fn publish(ctx: &ExecCtx, key: DeviceId, sig: Vec<u8>) -> Result<(), 
             "sig does not sign device key {} for account {account} on this network with this frame's key, under {} as {}'s {}",
             hex(&key),
             crate::VIEW_SIGN,
-            crate::DEVICE_VIEW,
+            program,
             crate::DEVICE_PURPOSE
         )));
     }
@@ -228,6 +229,7 @@ pub(crate) fn publish(ctx: &ExecCtx, key: DeviceId, sig: Vec<u8>) -> Result<(), 
         sig,
         height: ctx.env().height,
         retired: false,
+        framed_under: program.clone(),
     };
     DEVICES.put(ctx, &key, &device);
     ACCOUNT_DEVICES.insert(ctx, &(account, key));
@@ -627,6 +629,7 @@ pub(crate) fn device_keys(
                 signer: row.signer,
                 scheme: row.scheme,
                 sig: row.sig,
+                framed_under: row.framed_under,
             });
         }
     }

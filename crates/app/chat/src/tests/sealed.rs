@@ -43,7 +43,7 @@ fn signature(scheme: Scheme, key: &[u8], namespace: &[u8], message: &[u8]) -> Ve
 
 fn statement(chain: &[u8], account: u64, device: [u8; 32]) -> Vec<u8> {
     let message = borsh::to_vec(&(chain.to_vec(), account, device)).unwrap();
-    let framed = ("chat-view".to_owned(), "seal-device/v1".to_owned(), message);
+    let framed = ("chat".to_owned(), "seal-device/v1".to_owned(), message);
     borsh::to_vec(&framed).unwrap()
 }
 
@@ -921,7 +921,19 @@ fn a_device_key_is_taken_only_under_its_publishers_signature_over_this_account_n
                 &laptop(1),
                 &borsh::to_vec(&(b"net".to_vec(), 1u64, A1)).unwrap(),
             ),
-            "the bare message, not as chat-view's seal-device/v1",
+            "the bare message, not as chat's seal-device/v1",
+        ),
+        (
+            signed_by(
+                &laptop(1),
+                &borsh::to_vec(&(
+                    "chat-view".to_owned(),
+                    "seal-device/v1".to_owned(),
+                    borsh::to_vec(&(b"net".to_vec(), 1u64, A1)).unwrap(),
+                ))
+                .unwrap(),
+            ),
+            "framed under a view id that is not chat's program id",
         ),
         (
             signature(Scheme::Ed25519, &laptop(1), b"net", &good),
@@ -950,6 +962,7 @@ fn a_device_key_is_taken_only_under_its_publishers_signature_over_this_account_n
         signer: laptop(1),
         scheme: Scheme::Ed25519,
         sig,
+        framed_under: "chat".into(),
     };
     assert_eq!(device_rows(&chat, vec![1]), vec![row]);
 }
@@ -992,16 +1005,40 @@ fn only_a_person_publishes_a_device_key() {
 }
 
 #[test]
-fn the_device_statement_is_chat_views_seal_device_message_as_key_sign_frames_it() {
+fn the_device_statement_is_the_programs_own_seal_device_message_as_key_sign_frames_it() {
     assert_eq!(crate::VIEW_SIGN, "ducktape/view-sign/v1");
-    assert_eq!(
-        (crate::DEVICE_VIEW, crate::DEVICE_PURPOSE),
-        ("chat-view", "seal-device/v1")
-    );
+    assert_eq!(crate::DEVICE_PURPOSE, "seal-device/v1");
     let message = borsh::to_vec(&(b"net".to_vec(), 1u64, A1)).unwrap();
     assert_eq!(crate::device_message(b"net", 1, &A1), message);
     assert_eq!(
-        crate::device_statement(b"net", 1, &A1),
+        crate::device_statement("chat", b"net", 1, &A1),
         statement(b"net", 1, A1)
     );
+}
+
+#[test]
+fn a_renamed_chat_takes_a_device_sig_framed_under_its_own_id_and_answers_that_id() {
+    let mut chat = dm();
+    let framed = |program: &str| {
+        let message = borsh::to_vec(&(b"net".to_vec(), 1u64, A1)).unwrap();
+        borsh::to_vec(&(program.to_owned(), "seal-device/v1".to_owned(), message)).unwrap()
+    };
+    let mut publish = |program: &str| {
+        let op = Op::PublishDeviceKey {
+            key: A1,
+            sig: signed_by(&laptop(1), &framed(program)),
+        };
+        chat.height += 1;
+        let env = ::program::Env {
+            program: "acct/chat".into(),
+            ..chat.env(Origin::Signed(laptop(1)), Some(ADA.clone()))
+        };
+        let ctx = chat.store.exec(env);
+        chat.store.attempt(|| crate::Chat::execute(&ctx, op))
+    };
+    assert_eq!(code_of(publish("chat")), code::INVALID_INPUT);
+    publish("acct/chat").unwrap();
+    let rows = device_rows(&chat, vec![1]);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].framed_under, "acct/chat");
 }

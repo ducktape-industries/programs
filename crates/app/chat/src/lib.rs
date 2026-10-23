@@ -97,17 +97,20 @@ pub const SEALED: &str = "🔒 Sealed message";
 
 pub use ::program::view_sign::VIEW_SIGN;
 
-pub const DEVICE_VIEW: &str = "chat-view";
-
 pub const DEVICE_PURPOSE: &str = "seal-device/v1";
 
 pub fn device_message(chain_id: &[u8], account: AccountNumber, key: &[u8; 32]) -> Vec<u8> {
     abi::encode(&(chain_id.to_vec(), account, *key))
 }
 
-pub fn device_statement(chain_id: &[u8], account: AccountNumber, key: &[u8; 32]) -> Vec<u8> {
+pub fn device_statement(
+    program: &str,
+    chain_id: &[u8],
+    account: AccountNumber,
+    key: &[u8; 32],
+) -> Vec<u8> {
     let message = device_message(chain_id, account, key);
-    ::program::view_sign::statement(DEVICE_VIEW, DEVICE_PURPOSE, &message)
+    ::program::view_sign::statement(program, DEVICE_PURPOSE, &message)
 }
 
 /// A write. The enum only grows at its end (see `op_variants_only_append`).
@@ -286,7 +289,7 @@ pub enum Op {
         by: Option<Principal>,
         text: Option<String>,
     } = 35,
-    #[tool_op(description = "Publish a device's X25519 public key for sealed rooms, under the key that signs this frame, which must act as your account in identity; only a person publishes. sig is that key's signature, in the scheme identity holds for it, under VIEW_SIGN (ducktape/view-sign/v1) over device_statement: borsh of chat-view, seal-device/v1 and borsh(chain id, account, key). One that signs another account, network or key is refused. A key names one device: one already published is refused. It stays live while identity maps its signing key to your account.", example = examples::publish_device_key)]
+    #[tool_op(description = "Publish a device's X25519 public key for sealed rooms, under the key that signs this frame, which must act as your account in identity; only a person publishes. sig is that key's signature, in the scheme identity holds for it, under VIEW_SIGN (ducktape/view-sign/v1) over device_statement: borsh of chat's own program id (the id its view's key.sign names), seal-device/v1 and borsh(chain id, account, key). One that signs another account, network or key is refused. A key names one device: one already published is refused. It stays live while identity maps its signing key to your account.", example = examples::publish_device_key)]
     PublishDeviceKey { key: [u8; 32], sig: Vec<u8> },
     #[tool_op(description = "Retire one of your device keys: it takes no more wraps, and a sealed room it holds the key of rekeys before its next post.", example = examples::retire_device_key)]
     RetireDeviceKey { key: [u8; 32] },
@@ -1106,6 +1109,7 @@ pub struct DeviceKey {
     pub signer: Vec<u8>,
     pub scheme: ::program::Scheme,
     pub sig: Vec<u8>,
+    pub framed_under: String,
 }
 
 #[derive(

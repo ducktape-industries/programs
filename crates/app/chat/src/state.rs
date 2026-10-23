@@ -282,6 +282,7 @@ pub struct Device {
     pub(crate) sig: Vec<u8>,
     pub(crate) height: u64,
     pub(crate) retired: bool,
+    pub(crate) framed_under: String,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
