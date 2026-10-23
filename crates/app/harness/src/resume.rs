@@ -140,7 +140,7 @@ fn deadline(flight: &Flight) -> u64 {
     flight.made.max(flight.moved).saturating_add(flight.wait)
 }
 
-fn wake(id: u64) -> Op {
+pub(crate) fn wake(id: u64) -> Op {
     Op::Resume { thread: id }
 }
 
@@ -389,7 +389,7 @@ pub(crate) async fn room(ctx: &Ctx, service: &str, providers: &[String]) {
         return;
     };
     let next = ctx.env().height.saturating_add(1);
-    let mut wakes = Vec::new();
+    let mut pulled = Vec::new();
     for (id, retry) in retries {
         let on = PICKS
             .get(ctx, &id)
@@ -399,25 +399,29 @@ pub(crate) async fn room(ctx: &Ctx, service: &str, providers: &[String]) {
         let lane = ASKED.get(ctx, &id).ok().flatten();
         let spoken = lane.is_some_and(|lane| providers.contains(&lane.provider));
         let later = retry.until.is_some() || retry.at > next;
-        let pulled = later && on && spoken;
-        if pulled {
+        let due = later || retry.entry.is_none();
+        let pulled_in = due && on && spoken;
+        if pulled_in {
             let until = None;
-            RETRIES.put(
-                ctx,
-                &id,
-                &Retry {
+            pulled.push((
+                id,
+                Retry {
                     at: next,
                     until,
                     ..retry
                 },
-            );
-            wakes.push(wake(id));
+            ));
         }
     }
-    all(wakes
+    let wakes: Vec<Op> = pulled.iter().map(|(id, _)| wake(*id)).collect();
+    let booked = all(wakes
         .iter()
         .map(|op| ctx.schedule(next, ctx.env().program.clone(), op)))
     .await;
+    for ((id, retry), booked) in pulled.into_iter().zip(booked) {
+        let entry = retry.entry.or(booked.ok());
+        RETRIES.put(ctx, &id, &Retry { entry, ..retry });
+    }
 }
 
 pub(crate) async fn answered_on(ctx: &Ctx, service: &str, id: u64) {
@@ -454,26 +458,14 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
             .map_or(DEFAULT_WAIT, |gap| gap.min(DEFAULT_WAIT)),
     };
     let at = height.saturating_add(gap);
-    let entry = match ctx.schedule(at, &ctx.env().program, &wake(id)).await {
-        Ok(entry) => entry,
-        Err(error) => {
-            let text = format!(
-                "{}; asking the model again needs the scheduler, which refused ({}), so the next input asks",
-                failure.text,
-                refusal(&error)
-            );
-            give_up(ctx, &mut row, text)?;
-            THREADS.put(ctx, &id, &row);
-            return Ok(());
-        }
-    };
+    let booked = ctx.schedule(at, &ctx.env().program, &wake(id)).await;
     let retry = Retry {
         attempt,
         at,
         until,
         since: height,
         since_time: now,
-        entry: Some(entry),
+        entry: booked.as_ref().ok().copied(),
     };
     RETRIES.put(ctx, &id, &retry);
     let when = match until {
@@ -484,15 +476,20 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
         None if moved => format!("at block {at} with no account named, so its service picks one"),
         None => format!("at block {at}"),
     };
-    let text = format!(
-        "{}; harness asks the model again {when} (attempt {attempt})",
-        failure.text
-    );
+    let said = match &booked {
+        Ok(_) => format!("harness asks the model again {when}"),
+        Err(error) => format!(
+            "asking the model again needs the scheduler, which refused ({}), so {}",
+            refusal(error),
+            crate::sweep::words(ctx, height)?
+        ),
+    };
+    let text = format!("{}; {said} (attempt {attempt})", failure.text);
     append(ctx, &mut row, Body::Notice { text: text.clone() });
     let ceiling = until.is_some() || gap == DEFAULT_WAIT;
     crate::failures::retrying(ctx, &row, text, attempt, ceiling)?;
     THREADS.put(ctx, &id, &row);
-    let first_lost = why == Again::Lost && attempt == 1;
+    let first_lost = why == Again::Lost && attempt == 1 && booked.is_ok();
     if first_lost {
         let line = format!("{}; it asks the model again {when}", failure.text);
         tell(ctx, &row, line, "egress failed").await?;

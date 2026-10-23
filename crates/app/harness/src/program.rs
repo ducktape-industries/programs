@@ -168,6 +168,7 @@ impl Awaiting for Harness {
                 crate::promises::keep(&ctx, promise, kept, how).await
             }
             Op::PromiseDue { promise } => crate::promises::due(ctx, promise).await,
+            Op::Sweep => crate::sweep::sweep(&ctx).await,
         }
     }
 }

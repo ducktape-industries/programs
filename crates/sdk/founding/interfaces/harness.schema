@@ -2100,6 +2100,11 @@
               37,
               "PromiseDue",
               "Op__PromiseDue"
+            ],
+            [
+              38,
+              "Sweep",
+              "Op__Sweep"
             ]
           ]
         }
@@ -2487,6 +2492,14 @@
               ]
             ]
           }
+        }
+      }
+    ],
+    [
+      "Op__Sweep",
+      {
+        "struct": {
+          "fields": "empty"
         }
       }
     ],

@@ -59,6 +59,7 @@ pub const WAKE_WAITS: Map<u64, u64> = Map::new("wake-wait/");
 pub const FLIGHTS: Map<u64, Flight> = Map::new("flight/");
 pub const RETRIES: Map<u64, Retry> = Map::new("retry/");
 pub const RETRY_SINCE: Map<u64, u64> = Map::new("retry-since/");
+pub const SWEEP_AT: Item<u64> = Item::new("sweep-at");
 pub const REPORTS: Map<(AccountNumber, u64), String> = Map::new("report/");
 pub const REPORTING: Set<AccountNumber> = Set::new("reporting/");
 // a thread whose general input waits out its agent's `settle`, and the wake-up that ends it

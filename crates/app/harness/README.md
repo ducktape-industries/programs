@@ -46,7 +46,10 @@ a service egress could not reach is asked again at the next block on the next ac
 that call has not tried, until none is left, when the retry waits and tries them all
 again; only that call moves and nothing remembers the refusal, so the conversation's
 next call tries its own account first again, and a window that reset is used at once. A
-call a harness update or a node restart cut off stays where it was. A server tool's
+call a harness update or a node restart cut off stays where it was. A retry whose
+booking the scheduler refused (a frame at the kernel's nesting cap) keeps its row, and
+the next answer on its service books it, or `Op::Sweep`, a standing run every
+`DEFAULT_WAIT` (64) blocks that anyone may start, does. A server tool's
 blocks (a search's or a fetch's use and result, and a cited run) carry content only the
 account that answered them reads, so a call on another account sends them as plain text
 (each page's title and address, a fetched page's text), and a move writes the sealed

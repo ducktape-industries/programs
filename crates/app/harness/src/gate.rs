@@ -58,7 +58,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::RunEnded { .. }
         | Op::Promise { .. }
         | Op::Keep { .. }
-        | Op::PromiseDue { .. } => Vec::new(),
+        | Op::PromiseDue { .. }
+        | Op::Sweep => Vec::new(),
     })
 }
 

@@ -43,7 +43,7 @@ pub(super) fn model_read_on(chain: &MockChain, service: &str, name: &str, provid
     answer(chain, request.id, Answer::Output(response(200, body)));
 }
 
-fn turns_open(chain: &MockChain, thread: u64) -> Vec<RequestRow> {
+pub(super) fn turns_open(chain: &MockChain, thread: u64) -> Vec<RequestRow> {
     turns_open_on(chain, SERVICE, thread)
 }
 
@@ -151,7 +151,7 @@ pub(super) fn says_as(chain: &MockChain, thread: u64, account: &str, used: &str)
     says_on(chain, SERVICE, thread, account, used);
 }
 
-fn says_on(chain: &MockChain, service: &str, thread: u64, account: &str, used: &str) {
+pub(super) fn says_on(chain: &MockChain, service: &str, thread: u64, account: &str, used: &str) {
     let (request, _) = turn_open_on(chain, service, thread);
     let said = vec![Block::Text {
         text: "hello back".into(),
@@ -310,7 +310,7 @@ pub(super) fn configured_as(
     commit(chain, ADA, path, &config.write(&pin));
 }
 
-fn agent_on(
+pub(super) fn agent_on(
     world: &World,
     name: &str,
     model: &str,
@@ -326,7 +326,7 @@ fn agent_on(
     agent
 }
 
-fn mention_of(world: &World, agent: AccountNumber, id: &str, text: &str) -> u64 {
+pub(super) fn mention_of(world: &World, agent: AccountNumber, id: &str, text: &str) -> u64 {
     world.post(BO, "general", id, &format!("<@{agent}> {text}"));
     let asked = Query::Threads {
         agent,

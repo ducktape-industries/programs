@@ -268,6 +268,10 @@ pub(crate) fn hold_sealed() -> Op {
     Op::HoldSealed
 }
 
+pub(crate) fn sweep() -> Op {
+    Op::Sweep
+}
+
 pub(crate) fn promise() -> Op {
     Op::Promise {
         thread: 504,

@@ -32,6 +32,7 @@ mod runs;
 mod schema;
 mod state;
 mod streams;
+mod sweep;
 mod tallies;
 #[cfg(test)]
 mod tests;
@@ -165,6 +166,8 @@ pub enum Op {
         description = "Harness's own scheduled entry only: an open promise comes due, wakes its conversation and books its next wake."
     )]
     PromiseDue { promise: u64 },
+    #[tool_op(description = "Book every model retry no booking holds (the scheduler refused it in a frame at the kernel's nesting cap), each at its block or the next, then book the next Sweep DEFAULT_WAIT (64) blocks on unless one is booked already. Anyone may.", example = examples::sweep)]
+    Sweep,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1466,6 +1469,10 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Wake promise {promise}'s conversation at its block"),
             vec![field("promise", Value::count(*promise))],
         ),
+        Op::Sweep => (
+            "Book the model retries no booking holds".to_owned(),
+            Vec::new(),
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1515,6 +1522,7 @@ fn op_variants_only_append() {
             "Promise",
             "Keep",
             "PromiseDue",
+            "Sweep",
         ]
     );
 }
