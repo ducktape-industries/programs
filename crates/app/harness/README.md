@@ -214,7 +214,10 @@ listening run a harness update cut off is still heard through its events; once e
 longer holds its stream (checked on new code's first run and at the stream's deadline,
 never by the deadline alone), harness ends it with a notice that its end went unheard
 and how to read its result. A wait (`wait_for`, `Op::Wait`) keeps its own number and row
-(`Query::Wait`, `Waits` and `Armed` read it, and `Wakes` lists it), and for every event
+(`Query::Wait`, `Waits` and `Armed` read it, and `Wakes` lists it). `wait_list` lists
+this conversation's open waits, or with `all` the agent's waits across conversations,
+ended ones included. Both views are oldest first, take `limit` (20 if omitted), and
+answer `next` to pass as `cursor` for the following page. For every event
 but a chat message harness arms it as a wake for the agent (wake's `WakeOn`, sent as the
 agent, and `Unwait` sends `Cancel`): a height, a pod's end, a forge change (its source
 moving, a review filed on it, its close, its merge or its leaving a merge queue; `until`

@@ -1,11 +1,11 @@
 //! Tools over waits: the agent names one event (a height, a chat message, a forge ref
 //! or change, a files path, a chat place clearing), and this turn ends immediately; the
 //! event wakes the conversation once, as a message. The agent lists its waits and cancels one.
-use ::program::{Error, ExecCtx, unexpected_reply};
+use ::program::{Error, ExecCtx, invalid, unexpected_reply};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Run, Seat, Tool, ahead, cursor_schema, next, object, page, write};
+use super::{LISTED, Run, Seat, Tool, ahead, cursor_schema, next, object, page, write};
 use crate::waits::{armed, waits, what};
 use crate::{Op, PROGRAM, Until, WaitFor, WaitRow};
 
@@ -190,6 +190,7 @@ impl Tool for For {
 
 #[derive(Deserialize)]
 pub(crate) struct ListArgs {
+    limit: Option<u64>,
     cursor: Option<String>,
     all: Option<bool>,
 }
@@ -212,12 +213,13 @@ fn listed(row: &WaitRow) -> Value {
 
 impl Tool for List {
     const NAME: &'static str = "wait_list";
-    const DESCRIPTION: &'static str = "This conversation's waits that are not over yet, in the order you made them: each one's number, the conversation it wakes, the block it was made at and what it waits for. With all, every wait you made in any conversation instead, over or not, and once one is over, when and what happened (`ended`), or null while it waits.";
+    const DESCRIPTION: &'static str = "This conversation's waits that are not over yet, oldest first, a limit of them (20 if omitted): each one's number, the conversation it wakes, the block it was made at and what it waits for. With all, your waits in any conversation instead, over or not, and once one is over, when and what happened (`ended`), or null while it waits. `next` reads the following page.";
     type Args = ListArgs;
 
     fn schema() -> Value {
         object(
             json!({
+                "limit": { "type": "integer", "minimum": 1, "description": "how many waits; 20 if omitted" },
                 "cursor": cursor_schema(),
                 "all": { "type": "boolean", "description": "every wait you made, in every conversation, over ones included; this conversation's open waits if omitted" },
             }),
@@ -226,7 +228,12 @@ impl Tool for List {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: ListArgs) -> Result<Run, Error> {
-        let page = page(&args.cursor)?;
+        let limit = args.limit.unwrap_or(LISTED);
+        if limit == 0 {
+            return Err(invalid("a limit is a number of waits from 1"));
+        }
+        let mut page = page(&args.cursor)?;
+        page.limit = Some(limit);
         let found = match args.all.unwrap_or(false) {
             true => waits(ctx, seat.agent, &page)?,
             false => armed(ctx, seat.thread, &page)?,

@@ -351,6 +351,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
                 json!({}),
                 json!({ "cursor": null }),
                 json!({ "all": true, "cursor": null }),
+                json!({ "all": true, "limit": 7 }),
             ],
         ),
         ("wait_cancel", vec![json!({ "wait": 3 })]),
