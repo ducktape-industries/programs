@@ -669,7 +669,11 @@ fn a_booked_run_reports_to_the_conversation_new_thread_started_in_place_of_the_o
     said(chain, 6, "It landed.");
     let heir = super::wait::renewed(&world);
     assert!(thread_row(chain, thread).closed);
+    let pending = Wake::Booking { entry };
+    assert!(super::wakes::wakes_of(chain, heir).contains(&pending));
+    assert!(!super::wakes::wakes_of(chain, thread).contains(&pending));
     chain.at(11, 0);
+    assert!(!super::wakes::wakes_of(chain, heir).contains(&pending));
     assert!(booking(chain, entry).unwrap().ran.is_some(), "the run ran");
     let ran_as_you = |thread: u64| {
         reports(chain, thread)
@@ -704,7 +708,12 @@ fn a_booked_run_reports_past_a_closed_heir_to_the_conversation_open_now() {
         thread_row(chain, second).closed,
         "the second closes once its turn ends"
     );
+    let pending = Wake::Booking { entry };
+    assert!(super::wakes::wakes_of(chain, third).contains(&pending));
+    assert!(!super::wakes::wakes_of(chain, second).contains(&pending));
+    assert!(!super::wakes::wakes_of(chain, first).contains(&pending));
     chain.at(11, 0);
+    assert!(!super::wakes::wakes_of(chain, third).contains(&pending));
     assert!(booking(chain, entry).unwrap().ran.is_some(), "the run ran");
     let ran_as_you = |thread: u64| {
         frames(chain, thread)

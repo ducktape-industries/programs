@@ -230,7 +230,9 @@ before it ran `MoveWaits` until it answered null. A conversation that takes a cl
 place is its heir: for a canonical one, the next canonical (`NewThread`, `ForkThread`, or the
 fresh one an input opens after a `Close`); for a bound one, the next `OpenThread` at its place.
 A wait, a wake or a booked run's report for a conversation that has closed reaches its heir,
-whose `Armed` lists the waits it took over; with no heir it is a notice on the closed one,
+whose `Armed` lists the waits it took over. `Wakes` lists a pending booked run under the
+open conversation its report will reach, following closed predecessors through their heirs,
+not under the closed predecessors. With no heir the report is a notice on the closed one,
 never delivered to another. A promise whose conversation closed reaches its heir, else the
 agent's current conversation. A mention, a direct message or a
 thread reply that reaches a conversation stays the agent's until the agent posts or

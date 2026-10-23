@@ -3,7 +3,7 @@
 use super::schedule::{answered, schemed, turn};
 use super::*;
 
-fn wakes_of(chain: &MockChain, thread: u64) -> Vec<Wake> {
+pub(super) fn wakes_of(chain: &MockChain, thread: u64) -> Vec<Wake> {
     let Reply::Wakes(wakes) = chain.query(PROGRAM, &Query::Wakes { thread }).unwrap() else {
         panic!("harness answers wakes")
     };
@@ -49,4 +49,62 @@ fn wakes_for_no_conversation_is_not_found() {
         .query::<_, Reply>(PROGRAM, &Query::Wakes { thread: 404 })
         .unwrap_err();
     assert_eq!(error.code, code::NOT_FOUND, "{error:?}");
+}
+
+#[test]
+fn a_pending_booking_wakes_the_bound_heir_but_not_an_unrelated_conversation() {
+    let world = schemed();
+    let chain = &world.chain;
+    let canonical = world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Ready." }]),
+        "end_turn",
+    );
+    let open = Op::OpenThread {
+        agent: world.agent,
+        place: Place::Channel {
+            channel: "general".into(),
+        },
+    };
+    let predecessor: u64 =
+        abi::decode(&chain.submit(signed(ADA), PROGRAM, &open).unwrap()).unwrap();
+    chain.at(5, 0);
+    world.mention("m2", "book a run");
+    let post = json!({ "post_message": {
+        "channel_id": "general", "message_id": "booked-post",
+        "blocks": [{ "paragraph": [{ "text": "ready", "marks": [] }] }],
+        "thread": null
+    } });
+    let book = json!({ "height": 30, "program": "chat", "op": post });
+    turn(&world, 6, &[("b1", "schedule_run", book)]);
+    let entry = answered(chain, predecessor, "b1")["entry"]
+        .as_u64()
+        .unwrap();
+    let pending = Wake::Booking { entry };
+    assert!(wakes_of(chain, predecessor).contains(&pending));
+    assert!(!wakes_of(chain, canonical).contains(&pending));
+    chain.at(8, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Booked." }]),
+        "end_turn",
+    );
+    chain
+        .submit(
+            signed(ADA),
+            PROGRAM,
+            &Op::Close {
+                thread: predecessor,
+            },
+        )
+        .unwrap();
+    assert!(!wakes_of(chain, predecessor).contains(&pending));
+    let heir: u64 = abi::decode(&chain.submit(signed(ADA), PROGRAM, &open).unwrap()).unwrap();
+    assert!(wakes_of(chain, heir).contains(&pending));
+    assert!(!wakes_of(chain, predecessor).contains(&pending));
+    assert!(!wakes_of(chain, canonical).contains(&pending));
+    chain.at(31, 0);
+    assert!(!wakes_of(chain, heir).contains(&pending));
 }

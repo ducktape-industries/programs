@@ -46,10 +46,17 @@ pub(crate) fn wakes(ctx: &QueryCtx, id: u64) -> Result<Vec<Wake>, Error> {
         wakes.push(Wake::Run { run });
     }
     for (_, entry) in BOOKED.scan(ctx, BOOKED.prefix_of(&row.agent))? {
-        let pending = BOOKINGS
-            .get(ctx, &entry)?
-            .is_some_and(|booking| booking.thread == Some(id) && booking.ran.is_none());
-        if pending {
+        let Some(booking) = BOOKINGS.get(ctx, &entry)? else {
+            continue;
+        };
+        if booking.ran.is_some() {
+            continue;
+        }
+        let Some(booked_for) = booking.thread else {
+            continue;
+        };
+        let reaches = crate::conversations::reaching(ctx, booked_for)?;
+        if reaches.is_some_and(|reached| reached.id == id) {
             wakes.push(Wake::Booking { entry });
         }
     }
