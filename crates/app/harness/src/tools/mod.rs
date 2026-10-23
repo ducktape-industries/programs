@@ -173,6 +173,7 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<files::SetList>(),
     entry::<files::Remove>(),
     entry::<files::Move>(),
+    entry::<files::Diff>(),
     entry::<image::View>(),
     entry::<chat::Channels>(),
     entry::<chat::Messages>(),

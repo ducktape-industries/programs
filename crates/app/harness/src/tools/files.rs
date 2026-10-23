@@ -1,8 +1,10 @@
 //! Tools over `files`, the network's filesystem: reads at the head or at a snapshot, and
 //! commits the agent makes, which files allows where it allows the agent's account or harness.
 //! `edit.rs` is `files_edit`. `stat`, `read_all` and `beneath` serve it, `forge_commit` and pictures.
+mod diff;
 mod edit;
 
+pub(crate) use diff::Diff;
 pub(crate) use edit::Edit;
 
 use std::collections::BTreeMap;
@@ -18,14 +20,15 @@ use super::{
     Run, Seat, Tool, blob, cursor_schema, lines, next, object, page, principal, unexpected,
 };
 
-pub(super) fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
-    let Some(text) = text else {
-        return Ok(None);
-    };
+fn named_snapshot(text: &str) -> Result<BlobId, Error> {
     let digest: [u8; 32] = design::unhex(text)
         .and_then(|bytes| bytes.try_into().ok())
         .ok_or_else(|| invalid("a snapshot is 64 hex digits"))?;
-    Ok(Some(BlobId::Sha256(digest)))
+    Ok(BlobId::Sha256(digest))
+}
+
+pub(super) fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
+    text.as_deref().map(named_snapshot).transpose()
 }
 
 pub(super) fn snapshot_schema() -> Value {

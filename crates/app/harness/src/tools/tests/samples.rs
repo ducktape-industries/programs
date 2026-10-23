@@ -29,6 +29,14 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         (
+            "files_diff",
+            vec![
+                json!({ "path": "/shared/it's a \"diff\" 🦆.md", "from": SNAPSHOT, "to": SNAPSHOT }),
+                json!({ "path": "/a", "from": SNAPSHOT, "to": SNAPSHOT, "lines": [1, 4], "whole": null }),
+                json!({ "path": "/a", "from": SNAPSHOT, "to": SNAPSHOT, "lines": null, "whole": true }),
+            ],
+        ),
+        (
             "files_find",
             vec![json!({ "prefix": "/shared/jobs/J-066", "snapshot": null })],
         ),

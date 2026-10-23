@@ -16,6 +16,7 @@ mod continued;
 mod conversations;
 mod depth;
 mod file_tools;
+mod files_diff;
 mod final_errors;
 mod fleet_run;
 mod forge_commit;
