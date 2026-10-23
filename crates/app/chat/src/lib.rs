@@ -95,7 +95,7 @@ pub const INVOLVED: &str = "involved";
 
 pub const SEALED: &str = "🔒 Sealed message";
 
-pub const VIEW_SIGN: &str = "ducktape/view-sign/v1";
+pub use ::program::view_sign::VIEW_SIGN;
 
 pub const DEVICE_VIEW: &str = "chat-view";
 
@@ -107,7 +107,7 @@ pub fn device_message(chain_id: &[u8], account: AccountNumber, key: &[u8; 32]) -
 
 pub fn device_statement(chain_id: &[u8], account: AccountNumber, key: &[u8; 32]) -> Vec<u8> {
     let message = device_message(chain_id, account, key);
-    abi::encode(&(DEVICE_VIEW.to_owned(), DEVICE_PURPOSE.to_owned(), message))
+    ::program::view_sign::statement(DEVICE_VIEW, DEVICE_PURPOSE, &message)
 }
 
 /// A write. The enum only grows at its end (see `op_variants_only_append`).

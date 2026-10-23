@@ -373,8 +373,11 @@ The host picks the namespace and the view id, so a view can't make the key
 sign a frame, a consent or another view's statement, and a program checks
 the signature with `ctx.verify` over the same bytes. Only a person's press
 or key in the view asks it (`needs_gesture` otherwise). With no key unlocked
-it is refused `session_locked`, and on a network whose id and `VIEW_SIGN`
-are prefix-related (`view_sign::prefix_related`) `host_fault`. A host from
+it is refused `session_locked`. No other namespace a person's key signs
+under is a prefix of `VIEW_SIGN` or has it as a prefix
+(`view_sign::prefix_related` is false for each), so not even a passkey's
+plain `namespace ‖ message` concatenation makes one namespace's bytes another's.
+A network's id is a field of a frame's body, never a namespace. A host from
 before it refuses `unknown_request`: a view reads that as "this app can't
 sign yet".
 
