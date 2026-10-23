@@ -368,6 +368,91 @@ fn a_base_is_stale_only_for_the_paths_that_changed_since() {
 }
 
 #[test]
+fn a_stale_refusal_names_the_commit_that_moved_the_path_or_a_folder_above_it() {
+    let host = host();
+    let first = commit(&host, ada(), None, vec![put(&host, "/shared/d/x", "1")]).unwrap();
+    let rewrite = Op::Commit {
+        base: Some(first),
+        message: "bo rewrote x".into(),
+        changes: vec![put(&host, "/shared/d/x", "2")],
+    };
+    host.attempt(|| Files::execute(&host.exec(bo()), rewrite))
+        .unwrap();
+    let rewrote: BlobId = abi::decode(&host.take_output()).unwrap();
+    let late = Op::Commit {
+        base: Some(first),
+        message: String::new(),
+        changes: vec![put(&host, "/shared/d/x", "3")],
+    };
+    let refusal = refused(&host, ada(), late);
+    assert_eq!(refusal.code, code::STALE);
+    let named = abi::hex(rewrote.digest());
+    for said in [
+        "/shared/d/x changed since the base snapshot",
+        named.as_str(),
+        "seq 2",
+        "by account 2",
+        "\"bo rewrote x\"",
+        ") changed it;",
+    ] {
+        assert!(
+            refusal.message.contains(said),
+            "{said}: {}",
+            refusal.message
+        );
+    }
+    let moved = commit(
+        &host,
+        bo(),
+        Some(rewrote),
+        vec![Change::Move {
+            from: "/shared/d".into(),
+            to: "/shared/e".into(),
+        }],
+    )
+    .unwrap();
+    let named = abi::hex(moved.digest());
+    for base in [rewrote, first] {
+        let under = Op::Commit {
+            base: Some(base),
+            message: String::new(),
+            changes: vec![put(&host, "/shared/d/x", "4")],
+        };
+        let refusal = refused(&host, ada(), under);
+        assert_eq!(refusal.code, code::STALE);
+        for said in [named.as_str(), "seq 3", "changed /shared/d above it;"] {
+            assert!(
+                refusal.message.contains(said),
+                "{said}: {}",
+                refusal.message
+            );
+        }
+    }
+    let again = commit(
+        &host,
+        bo(),
+        Some(moved),
+        vec![put(&host, "/shared/d/x", "5")],
+    )
+    .unwrap();
+    let late = Op::Commit {
+        base: Some(first),
+        message: String::new(),
+        changes: vec![put(&host, "/shared/d/x", "6")],
+    };
+    let refusal = refused(&host, ada(), late);
+    assert_eq!(refusal.code, code::STALE);
+    let named = abi::hex(again.digest());
+    for said in [named.as_str(), "seq 4", ") changed it;"] {
+        assert!(
+            refusal.message.contains(said),
+            "{said}: {}",
+            refusal.message
+        );
+    }
+}
+
+#[test]
 fn directories_are_made_moved_and_removed_and_each_rule_refuses_alone() {
     let host = host();
     commit(

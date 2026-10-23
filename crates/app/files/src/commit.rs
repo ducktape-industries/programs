@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::program::{
-    AccountNumber, BlobId, Error, ExecCtx, Need, Principal, QueryCtx, Reply, invalid, stale,
+    AccountNumber, BlobId, Error, ExecCtx, Need, Principal, QueryCtx, Reply, corrupt, invalid,
+    stale,
 };
 
 use crate::objects::{
@@ -196,6 +197,38 @@ fn changed_since(segments: &[String]) -> Error {
     ))
 }
 
+fn moved_since(
+    ctx: &QueryCtx,
+    segments: &[String],
+    moved: &[String],
+    seq: u64,
+) -> Result<Error, Error> {
+    let row = HISTORY.get(ctx, &newest_first(seq))?.ok_or_else(|| {
+        corrupt(
+            "history/",
+            &newest_first(seq).to_be_bytes(),
+            "files recorded a change by a commit it keeps no row of",
+        )
+    })?;
+    let what = match moved.len() == segments.len() {
+        true => "it".to_owned(),
+        false => format!("{} above it", join(moved)),
+    };
+    let by = match &row.author {
+        Principal::Account(number) => format!("account {number}"),
+        Principal::Root => "the network".to_owned(),
+        Principal::Foreign(foreign) => foreign.to_string(),
+    };
+    Ok(stale(format!(
+        "{} changed since the base snapshot: snapshot {} (seq {}, by {by} at block {}, {:?}) changed {what}; read it at the head and retry",
+        join(segments),
+        abi::hex(row.id.digest()),
+        row.seq,
+        row.height,
+        row.message
+    )))
+}
+
 fn unchanged_since_base(
     ctx: &QueryCtx,
     base: Option<u64>,
@@ -224,15 +257,15 @@ fn unchanged_since_base(
             "the base snapshot is older than the changes files records: read again and retry",
         ));
     }
-    let after = |seq: Option<u64>| seq.is_some_and(|seq| seq > base);
+    let after = |seq: Option<u64>| seq.filter(|seq| *seq > base);
     for segments in touched {
-        if after(CHANGED.get(ctx, &join(segments))?) {
-            return Err(changed_since(segments));
-        }
+        let mut newest = after(CHANGED.get(ctx, &join(segments))?).map(|seq| (seq, segments.len()));
         for len in 1..segments.len() {
-            if after(TOUCHED.get(ctx, &join(&segments[..len]))?) {
-                return Err(changed_since(segments));
-            }
+            let folder = after(TOUCHED.get(ctx, &join(&segments[..len]))?).map(|seq| (seq, len));
+            newest = newest.max(folder);
+        }
+        if let Some((seq, len)) = newest {
+            return Err(moved_since(ctx, segments, &segments[..len], seq)?);
         }
     }
     Ok(())

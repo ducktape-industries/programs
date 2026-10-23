@@ -163,7 +163,11 @@ makes, and then gives the list `Owner`, its manager's account number alone).
 (`access::Op::Set`, which the access program takes only from the path's owner; `write`:
 its owner alone, its owner and the accounts and programs listed, or anyone, and none
 clears it). A call whose thread closed, or whose agent no longer runs here (its script
-was taken back, or it is not active), does not run. Once the turn is recorded and every
+was taken back, or it is not active), does not run. `files_history`, `files_list` and
+`files_find` each answer one page: `limit` (at least 1) chooses its number of snapshots
+or entries, 20 when omitted or null, and `cursor` takes the previous answer's `next` to
+continue. This is a tool default, not a bound on files queries: a files `PageRequest`
+with no limit still means every row. Once the turn is recorded and every
 result is back, harness asks the model again. Input that arrives while the loop runs is
 held and follows the results; behind a turn the model paused (`pause_turn`, mid server
 tool), it waits until the continuation is answered, as the continuation goes on from the

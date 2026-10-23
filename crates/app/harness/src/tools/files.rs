@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use store::PageRequest;
 
 use super::{
-    Run, Seat, Tool, blob, cursor_schema, lines, next, object, page, principal, unexpected,
+    LISTED, Run, Seat, Tool, blob, cursor_schema, lines, next, object, page, principal, unexpected,
 };
 
 fn named_snapshot(text: &str) -> Result<BlobId, Error> {
@@ -33,6 +33,21 @@ pub(super) fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
 
 pub(super) fn snapshot_schema() -> Value {
     json!({ "type": "string", "description": "a snapshot id (64 hex digits) to read at; omitted, the newest" })
+}
+
+fn limited(cursor: &Option<String>, limit: Option<u64>) -> Result<PageRequest, Error> {
+    let limit = limit.unwrap_or(LISTED);
+    if limit == 0 {
+        return Err(invalid("a limit is a number of entries from 1"));
+    }
+    Ok(PageRequest {
+        limit: Some(limit),
+        ..page(cursor)?
+    })
+}
+
+fn limit_schema(what: &str) -> Value {
+    json!({ "type": "integer", "minimum": 1, "description": format!("at most this many {what}; {LISTED} if omitted") })
 }
 
 fn ask(ctx: &ExecCtx, query: Query) -> Result<Reply, Error> {
@@ -154,13 +169,14 @@ pub(crate) struct ListArgs {
     path: String,
     snapshot: Option<String>,
     cursor: Option<String>,
+    limit: Option<u64>,
 }
 
 pub(crate) struct List;
 
 impl Tool for List {
     const NAME: &'static str = "files_list";
-    const DESCRIPTION: &'static str = "List a directory of the network's shared filesystem: each entry's path, kind and size. Paths are absolute: / holds /home and /shared.";
+    const DESCRIPTION: &'static str = "List a directory of the network's shared filesystem: each entry's path, kind and size. Paths are absolute: / holds /home and /shared. A page holds limit entries (20 if omitted), and `next` reads on.";
     type Args = ListArgs;
 
     fn schema() -> Value {
@@ -169,6 +185,7 @@ impl Tool for List {
                 "path": { "type": "string", "description": "an absolute directory path, like /shared" },
                 "snapshot": snapshot_schema(),
                 "cursor": cursor_schema(),
+                "limit": limit_schema("entries"),
             }),
             &["path"],
         )
@@ -178,7 +195,7 @@ impl Tool for List {
         let query = Query::List {
             path: args.path,
             at: snapshot(&args.snapshot)?,
-            page: page(&args.cursor)?,
+            page: limited(&args.cursor, args.limit)?,
         };
         match ask(ctx, query)? {
             Reply::Listing { snapshot, entries } => Ok(Run::Done(listing(snapshot, &entries))),
@@ -308,13 +325,14 @@ pub(crate) struct FindArgs {
     prefix: String,
     snapshot: Option<String>,
     cursor: Option<String>,
+    limit: Option<u64>,
 }
 
 pub(crate) struct Find;
 
 impl Tool for Find {
     const NAME: &'static str = "files_find";
-    const DESCRIPTION: &'static str = "Find every file and directory of the network's filesystem whose path starts with a prefix, in path order.";
+    const DESCRIPTION: &'static str = "Find every file and directory of the network's filesystem whose path starts with a prefix, in path order. A page holds limit entries (20 if omitted), and `next` reads on.";
     type Args = FindArgs;
 
     fn schema() -> Value {
@@ -323,6 +341,7 @@ impl Tool for Find {
                 "prefix": { "type": "string", "description": "a path prefix, like /shared/notes/" },
                 "snapshot": snapshot_schema(),
                 "cursor": cursor_schema(),
+                "limit": limit_schema("entries"),
             }),
             &["prefix"],
         )
@@ -332,7 +351,7 @@ impl Tool for Find {
         let query = Query::Find {
             prefix: args.prefix,
             at: snapshot(&args.snapshot)?,
-            page: page(&args.cursor)?,
+            page: limited(&args.cursor, args.limit)?,
         };
         match ask(ctx, query)? {
             Reply::Listing { snapshot, entries } => Ok(Run::Done(listing(snapshot, &entries))),
@@ -461,25 +480,28 @@ impl Tool for Grep {
 #[derive(Deserialize)]
 pub(crate) struct HistoryArgs {
     cursor: Option<String>,
+    limit: Option<u64>,
 }
 
 pub(crate) struct History;
 
 impl Tool for History {
     const NAME: &'static str = "files_history";
-    const DESCRIPTION: &'static str =
-        "The filesystem's snapshots, newest first: who committed each, when, and its message.";
+    const DESCRIPTION: &'static str = "The filesystem's snapshots, newest first: who committed each, when, and its message. A page holds limit snapshots (20 if omitted), and `next` reads on.";
     type Args = HistoryArgs;
 
     fn schema() -> Value {
-        object(json!({ "cursor": cursor_schema() }), &[])
+        object(
+            json!({ "cursor": cursor_schema(), "limit": limit_schema("snapshots") }),
+            &[],
+        )
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: HistoryArgs) -> Result<Run, Error> {
         let Reply::History(rows) = ask(
             ctx,
             Query::History {
-                page: page(&args.cursor)?,
+                page: limited(&args.cursor, args.limit)?,
             },
         )?
         else {

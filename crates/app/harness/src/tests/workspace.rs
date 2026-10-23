@@ -1,6 +1,6 @@
 //! An agent's workspace in files: `forge_commit` takes a files file or a whole directory, read
-//! at one snapshot; `files_edit` and `files_write` keep the mode and meta a file carries; and
-//! `files_read` reads a file by its lines or by the section under one of its headings.
+//! at one snapshot; `files_edit` and `files_write` keep the mode and meta; `files_read` reads a
+//! file by its lines or by a heading's section; history, list and find answer a page.
 use forge::EntryKind::{Directory, Executable, File};
 
 use super::forge_commit::{forged, log, names};
@@ -383,11 +383,74 @@ fn an_edit_reads_the_head_and_is_refused_once_the_file_moved_on_since_its_base()
     turn(chain, 3, &[("c1", "files_edit", append(&old))]);
     let (moved, failed) = result_of(chain, thread, "c1");
     assert!(failed && moved.starts_with(code::STALE), "{moved}");
+    assert!(
+        moved.contains(&abi::hex(new.digest())),
+        "the refusal names the snapshot that moved the file: {moved}"
+    );
     assert_eq!(read_at(chain, "/shared/notes.md"), "one\ntwo\n");
     turn(chain, 5, &[("c2", "files_edit", append(&new))]);
     let (text, failed) = result_of(chain, thread, "c2");
     assert!(!failed, "{text}");
     assert_eq!(read_at(chain, "/shared/notes.md"), "one\ntwo\nthree\n");
+}
+
+#[test]
+fn history_list_and_find_answer_one_bounded_page_unless_given_a_limit() {
+    let world = world();
+    let chain = &world.chain;
+    let listed = crate::tools::LISTED;
+    for n in 0..=listed {
+        put(chain, &format!("/shared/many/{n:02}"), "x", false, &[]);
+    }
+    let thread = world.opened("m1", "look around", Some(WINDOW));
+    let tools = [
+        ("files_history", "snapshots", json!({})),
+        ("files_list", "entries", json!({ "path": "/shared/many" })),
+        (
+            "files_find",
+            "entries",
+            json!({ "prefix": "/shared/many/" }),
+        ),
+    ];
+    let mut height = 3;
+    let mut calls = 0;
+    let mut next_call = || {
+        calls += 1;
+        format!("c{calls}")
+    };
+    for (tool, key, args) in tools {
+        for limit in [None, Some(3)] {
+            let mut input = args.clone();
+            input["limit"] = limit.into();
+            let call = next_call();
+            turn(chain, height, &[(&call, tool, input.clone())]);
+            height += 2;
+            let first = said_by(chain, thread, &call);
+            let first_items = first[key].as_array().unwrap();
+            assert_eq!(first_items.len() as u64, limit.unwrap_or(listed));
+            assert!(first["next"].is_string(), "{first}");
+            input["cursor"] = first["next"].clone();
+            let call = next_call();
+            turn(chain, height, &[(&call, tool, input)]);
+            height += 2;
+            let second = said_by(chain, thread, &call);
+            let second_items = second[key].as_array().unwrap();
+            assert!(!second_items.is_empty(), "{second}");
+            for item in second_items {
+                assert!(!first_items.contains(item), "no repeated entry: {item}");
+            }
+            if limit.is_none() {
+                assert!(second["next"].is_null(), "the last page: {second}");
+            }
+        }
+        let mut input = args;
+        input["limit"] = json!(0);
+        let call = next_call();
+        turn(chain, height, &[(&call, tool, input)]);
+        height += 2;
+        let (text, failed) = result_of(chain, thread, &call);
+        assert!(failed && text.starts_with(code::INVALID_INPUT), "{text}");
+    }
 }
 
 #[test]

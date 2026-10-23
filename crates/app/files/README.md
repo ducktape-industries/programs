@@ -38,7 +38,11 @@ commit the paths it changed (`changed/`: each path it names and their ancestors)
 paths it names (`touched/`) and its own diff (`diff/<seq>`). A commit on a base is stale
 when a path it touches changed since, or a folder above that path was itself written
 since, read from those rows with no tree read; a base older than the first commit that
-wrote them is stale. `HoldHead { after }` puts one folder of the head (the first after
+wrote them is stale. A stale refusal on a base files records names the newest commit
+since that base that changed the path or wrote a folder above it: its snapshot,
+sequence, author, block and message, read from those rows and never from old file
+bytes. A commit with no base that finds the path already there, and a commit on a base
+older than the records, are refused naming no commit. `HoldHead { after }` puts one folder of the head (the first after
 `after` in path order; the root and the snapshot when none) and each file object in it
 on their lines, then books the next call a block later, so the one-time step for objects
 put before files held them there runs as a chain of bounded calls. Reads (stat, list,

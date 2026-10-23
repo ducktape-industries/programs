@@ -16,7 +16,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             vec![
                 json!({ "path": "/shared/it's a dir/" }),
                 json!({ "path": "/", "snapshot": SNAPSHOT, "cursor": "00ff" }),
-                json!({ "path": "/home", "snapshot": null, "cursor": null }),
+                json!({ "path": "/home", "snapshot": null, "cursor": null, "limit": 50 }),
             ],
         ),
         (
@@ -38,7 +38,10 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
         ),
         (
             "files_find",
-            vec![json!({ "prefix": "/shared/jobs/J-066", "snapshot": null })],
+            vec![
+                json!({ "prefix": "/shared/jobs/J-066", "snapshot": null }),
+                json!({ "prefix": "/", "limit": 5, "cursor": "00ff" }),
+            ],
         ),
         (
             "files_grep",
@@ -49,7 +52,15 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
                 json!({ "pattern": "x", "patterns": null, "ignore_case": null }),
             ],
         ),
-        ("files_history", vec![json!({}), json!({ "cursor": null })]),
+        (
+            "files_history",
+            vec![
+                json!({}),
+                json!({ "cursor": null }),
+                json!({ "limit": 5, "cursor": "00ff" }),
+                json!({ "limit": null }),
+            ],
+        ),
         (
             "files_write",
             vec![
