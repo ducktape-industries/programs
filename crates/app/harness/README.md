@@ -226,7 +226,9 @@ thread; a reaction answers where the message it is on sits): when the conversati
 closes before that, harness hands what it still holds to the agent's live conversation
 for each place (a closed bound one's place goes to the canonical one, a fresh one if
 none is open), as one input that opens `notice queue Note: N unanswered` and then quotes
-each message as the agent first heard it; an agent not running then gets them with its
+each message as the agent first heard it, each led by a line naming the conversation that
+heard it, who closed that and the block (`Heard in conversation N, which account M closed
+at block H before it answered:`); an agent not running then gets them with its
 next input, and a fork carries what its source held. A chat room's rules (its `rules`
 meta: the text, or the content of the file a files path names) reach a conversation as
 one input ahead of the first message it hears from the room, and again once they or the

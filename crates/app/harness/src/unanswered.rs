@@ -1,15 +1,18 @@
 //! Each agent's inputs said to it (a mention, a direct message, a thread reply) until it posts or
 //! reacts in their place: what a conversation still holds when it closes goes to the agent and reaches
-//! its live conversation for each place, in one input of the messages as first heard.
+//! its live conversation for each place, in one input naming the conversation, its closer and block.
 use std::collections::BTreeMap;
 
 use ::program::{Error, ExecCtx, Principal, unexpected_reply};
 use abi::role::identity::AccountNumber;
 
-use crate::agents::{chat_places, running, thread};
+use crate::agents::{chat_places, running, sender_words, thread};
 use crate::conversations::route;
 use crate::resume;
-use crate::state::{PLACES, THREADS, UNANSWERED, UNANSWERED_HELD, UNANSWERED_UNHEARD, Unanswered};
+use crate::state::{
+    Closing, PLACES, THREADS, UNANSWERED, UNANSWERED_CLOSED, UNANSWERED_HELD, UNANSWERED_UNHEARD,
+    Unanswered,
+};
 use crate::turns::say;
 use crate::{Body, Op, ThreadRow};
 
@@ -31,6 +34,20 @@ pub(crate) fn kept(
     UNANSWERED_HELD.insert(ctx, &(at, agent, seq));
 }
 
+pub(crate) fn closing(ctx: &ExecCtx, closed: u64) -> Result<(), Error> {
+    let by = sender_words(ctx);
+    let height = ctx.env().height;
+    for (_, agent, seq) in UNANSWERED_HELD.scan(ctx, UNANSWERED_HELD.prefix_of(&closed))? {
+        let closing = Closing {
+            thread: closed,
+            by: by.clone(),
+            height,
+        };
+        UNANSWERED_CLOSED.put(ctx, &(agent, seq), &closing);
+    }
+    Ok(())
+}
+
 pub(crate) fn answered(
     ctx: &ExecCtx,
     agent: AccountNumber,
@@ -46,6 +63,7 @@ pub(crate) fn answered(
         }
         UNANSWERED.remove(ctx, &(agent, seq));
         UNANSWERED_UNHEARD.remove(ctx, &(agent, seq));
+        UNANSWERED_CLOSED.remove(ctx, &(agent, seq));
         if let Some(at) = queued.held_by {
             UNANSWERED_HELD.remove(ctx, &(at, agent, seq));
         }
@@ -114,6 +132,7 @@ pub(crate) fn deliver(ctx: &ExecCtx, agent: AccountNumber) -> Result<(), Error> 
     for (_, seq) in unheard {
         let Some(queued) = UNANSWERED.get(ctx, &(agent, seq))? else {
             UNANSWERED_UNHEARD.remove(ctx, &(agent, seq));
+            UNANSWERED_CLOSED.remove(ctx, &(agent, seq));
             continue;
         };
         let places = chat_places(&queued.channel, queued.thread);
@@ -125,10 +144,17 @@ pub(crate) fn deliver(ctx: &ExecCtx, agent: AccountNumber) -> Result<(), Error> 
     }
     for (id, items) in reached {
         let mut row = thread(ctx, id)?;
-        let texts: Vec<&str> = items
-            .iter()
-            .map(|(_, queued)| queued.text.as_str())
-            .collect();
+        let mut texts = Vec::new();
+        for (seq, queued) in &items {
+            let text = match UNANSWERED_CLOSED.get(ctx, &(agent, *seq))? {
+                Some(closing) => format!(
+                    "Heard in conversation {}, which {} closed at block {} before it answered:\n{}",
+                    closing.thread, closing.by, closing.height, queued.text
+                ),
+                None => queued.text.clone(),
+            };
+            texts.push(text);
+        }
         let text = format!(
             "notice queue Note: {} unanswered\n\n{}",
             items.len(),
@@ -143,6 +169,7 @@ pub(crate) fn deliver(ctx: &ExecCtx, agent: AccountNumber) -> Result<(), Error> 
             UNANSWERED.put(ctx, &(agent, seq), &queued);
             UNANSWERED_HELD.insert(ctx, &(id, agent, seq));
             UNANSWERED_UNHEARD.remove(ctx, &(agent, seq));
+            UNANSWERED_CLOSED.remove(ctx, &(agent, seq));
         }
         let resume = Op::Resume { thread: id };
         ctx.emit(&ctx.env().program, &resume, ::program::Reply::None);

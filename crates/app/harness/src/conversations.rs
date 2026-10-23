@@ -221,6 +221,7 @@ pub(crate) fn retire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let idle = row.asking == Asking::Idle;
     if superseded && idle && !row.closed {
         row.closed = true;
+        crate::unanswered::closing(ctx, id)?;
         crate::turns::let_go(ctx, &mut row)?;
         THREADS.put(ctx, &id, &row);
     }

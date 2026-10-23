@@ -119,6 +119,7 @@ pub const FLEET_RUNS: Set<(u64, u64)> = Set::new("fleet-run/");
 pub const UNANSWERED: Map<(AccountNumber, u64), Unanswered> = Map::new("unanswered/");
 pub const UNANSWERED_HELD: Set<(u64, AccountNumber, u64)> = Set::new("unanswered-held/");
 pub const UNANSWERED_UNHEARD: Set<(AccountNumber, u64)> = Set::new("unanswered-unheard/");
+pub const UNANSWERED_CLOSED: Map<(AccountNumber, u64), Closing> = Map::new("unanswered-closed/");
 pub const MODEL_KEPT: Map<u64, crate::ModelKept> = Map::new("model-kept/");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -127,6 +128,13 @@ pub struct Unanswered {
     pub thread: Option<u64>,
     pub text: String,
     pub held_by: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Closing {
+    pub thread: u64,
+    pub by: String,
+    pub height: u64,
 }
 pub const SECTIONS: Map<(String, String), SectionRow> = Map::new("code-section/");
 

@@ -842,11 +842,7 @@ fn reask(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     if answered {
         return Ok(());
     }
-    let by = match &env.sender {
-        Some(Principal::Account(number)) => format!("account {number}"),
-        Some(Principal::Foreign(foreign)) => crate::agents::foreign_handle(ctx, *foreign),
-        Some(Principal::Root) | None => "the network".to_owned(),
-    };
+    let by = crate::agents::sender_words(ctx);
     row.seen = row.last_input - 1;
     let text = format!("re-asked by {by} after a turn that gave up");
     append(ctx, &mut row, Body::Notice { text });

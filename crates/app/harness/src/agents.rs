@@ -269,6 +269,7 @@ pub(crate) async fn close(ctx: &Ctx, id: u64) -> Result<(), Error> {
         VACATED.put(ctx, &place, &id);
     }
     thread.closed = true;
+    crate::unanswered::closing(ctx, id)?;
     if thread.asking == crate::Asking::Idle {
         crate::turns::let_go(ctx, &mut thread)?;
     }
@@ -374,6 +375,14 @@ pub(crate) fn foreign_handle(ctx: &QueryCtx, foreign: Foreign) -> String {
             name: None,
             network: None,
         }),
+    }
+}
+
+pub(crate) fn sender_words(ctx: &ExecCtx) -> String {
+    match &ctx.env().sender {
+        Some(Principal::Account(number)) => format!("account {number}"),
+        Some(Principal::Foreign(foreign)) => foreign_handle(ctx, *foreign),
+        Some(Principal::Root) | None => "the network".to_owned(),
     }
 }
 

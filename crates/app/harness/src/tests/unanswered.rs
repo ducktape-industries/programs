@@ -1,6 +1,6 @@
 //! What a conversation was told and never answered where it was said stays the agent's: its close
-//! hands it to the agent's live conversation for its place, in one input of the messages as first
-//! heard, and the agent's post in that place lets it go.
+//! hands it to the agent's live conversation for its place, in one input naming the conversation,
+//! who closed it and the block, and the agent's post in that place lets it go.
 use super::*;
 
 const CARRIED: &str = "notice queue Note: 1 unanswered\n\n";
@@ -55,6 +55,14 @@ fn refused_for_good() -> Vec<u8> {
     response(400, error)
 }
 
+fn carried(world: &World, from: u64, height: u64, said: &str) -> String {
+    let closed = format!(
+        "Heard in conversation {from}, which account {} closed at block {height} before it answered:",
+        world.ada
+    );
+    format!("{CARRIED}{closed}\n{said}")
+}
+
 #[test]
 fn a_mention_its_conversation_never_answered_reaches_the_next_one_once_it_closes() {
     let world = world();
@@ -68,7 +76,7 @@ fn a_mention_its_conversation_never_answered_reaches_the_next_one_once_it_closes
     };
     let second = renewed(chain, &Op::NewThread { agent: world.agent });
     assert!(thread_row(chain, first).closed);
-    assert_eq!(posts(chain, second), [format!("{CARRIED}{said}")]);
+    assert_eq!(posts(chain, second), [carried(&world, first, 3, said)]);
     let carried = frames(chain, second);
     assert!(
         matches!(
@@ -105,7 +113,7 @@ fn a_post_in_its_place_answers_it_and_one_elsewhere_does_not() {
         .find(|text| text.ends_with("answer me in general"))
         .unwrap();
     let second = renewed(chain, &Op::NewThread { agent: world.agent });
-    assert_eq!(posts(chain, second), [format!("{CARRIED}{general}")]);
+    assert_eq!(posts(chain, second), [carried(&world, first, 6, &general)]);
 }
 
 #[test]
@@ -143,7 +151,11 @@ fn closing_a_bound_conversation_hands_what_it_never_answered_to_the_canonical_on
         .unwrap();
     assert_eq!(current(chain, world.agent), Some(canonical));
     let told = posts(chain, canonical);
-    assert_eq!(told.last(), Some(&format!("{CARRIED}{said}")), "{told:?}");
+    assert_eq!(
+        told.last(),
+        Some(&carried(&world, bound, 4, said)),
+        "{told:?}"
+    );
     assert_eq!(told.len(), 2, "{told:?}");
 }
 
@@ -224,7 +236,7 @@ fn a_reaction_on_its_message_answers_it() {
         .find(|text| text.ends_with("answer me in general"))
         .unwrap();
     let second = renewed(chain, &Op::NewThread { agent: world.agent });
-    assert_eq!(posts(chain, second), [format!("{CARRIED}{general}")]);
+    assert_eq!(posts(chain, second), [carried(&world, first, 6, &general)]);
 }
 
 fn direct(world: &World, key: &[u8], from: AccountNumber, to: AccountNumber, text: &str) -> String {
@@ -278,7 +290,7 @@ fn a_reaction_in_its_direct_room_answers_what_was_said_there() {
         .find(|text| text.ends_with("answer me in general"))
         .unwrap();
     let second = renewed(chain, &Op::NewThread { agent: world.agent });
-    assert_eq!(posts(chain, second), [format!("{CARRIED}{general}")]);
+    assert_eq!(posts(chain, second), [carried(&world, first, 6, &general)]);
 }
 
 #[test]
