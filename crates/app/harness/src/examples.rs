@@ -319,3 +319,7 @@ pub(crate) fn conversation_models() -> Query {
         page: page(),
     }
 }
+
+pub(crate) fn last_turn() -> Query {
+    Query::LastTurn { thread: 144 }
+}

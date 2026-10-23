@@ -684,6 +684,7 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .collect(),
             ),
             harness::Query::Wait { .. } => harness::Reply::Wait(None),
+            harness::Query::LastTurn { .. } => harness::Reply::LastTurn(None),
             harness::Query::Wakes { .. } => harness::Reply::Wakes(Vec::new()),
             harness::Query::Route { .. } => harness::Reply::Route(None),
             harness::Query::Routes { .. } => harness::Reply::Routes(page(Vec::new())),

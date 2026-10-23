@@ -3807,6 +3807,11 @@
               43,
               "ConversationModels",
               "Query__ConversationModels"
+            ],
+            [
+              44,
+              "LastTurn",
+              "Query__LastTurn"
             ]
           ]
         }
@@ -4129,6 +4134,21 @@
     ],
     [
       "Query__Held",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "thread",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Query__LastTurn",
       {
         "struct": {
           "fields": {
@@ -4757,6 +4777,11 @@
               36,
               "ConversationModels",
               "Reply__ConversationModels"
+            ],
+            [
+              37,
+              "LastTurn",
+              "Reply__LastTurn"
             ]
           ]
         }
@@ -4925,6 +4950,18 @@
           "fields": {
             "unnamed_fields": [
               "Vec<Body>"
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Reply__LastTurn",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Option<u64>"
             ]
           }
         }

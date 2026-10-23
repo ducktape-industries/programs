@@ -26,7 +26,11 @@ reported none for, so each is asked once more), and `ForkThread` moves a convers
 onto the current front, as the fork is a new conversation; `Query::ThreadCard { thread
 }` answers `Card` as that conversation runs it, and `Query::ConversationModels { agent,
 page }` what each of an agent's conversations keeps with its model's window, which
-harness-view draws for each conversation's model, meter and window wait. A provider's
+harness-view draws for each conversation's model, meter and window wait.
+`Query::LastTurn { thread }` answers the block of a conversation's newest turn, its
+model's own output (a heard post, a tool result, a notice or a summary never moves it),
+or null for one with no turn since harness began keeping it, so board tells an owner's
+progress from what the owner was sent. A provider's
 route is a record harness keeps (`SetRoute { provider, services }`: every registered
 egress service that reaches the provider's models, in the order harness tries them, each
 with the wire it speaks; the first account to set a provider's route owns it, an owned

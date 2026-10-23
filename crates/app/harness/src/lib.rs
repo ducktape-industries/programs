@@ -1227,6 +1227,10 @@ pub enum Query {
         agent: AccountNumber,
         page: PageRequest,
     },
+    #[ask(Reply::LastTurn(Option<u64>))]
+    #[reads(state::LAST_TURNS)]
+    #[tool_query(description = "The block of a conversation's newest turn, its model's own output: a heard post, a tool result, a notice or a summary never moves it; null for one with no turn since harness began keeping it.", example = examples::last_turn)]
+    LastTurn { thread: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1265,6 +1269,7 @@ pub enum Reply {
     Promises(PageResponse<PromiseRow>),
     Promise(Option<PromiseRow>),
     ConversationModels(PageResponse<ConversationModel>),
+    LastTurn(Option<u64>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1575,7 +1580,8 @@ fn query_variants_only_append() {
             "Promise",
             "Asked",
             "ThreadCard",
-            "ConversationModels"
+            "ConversationModels",
+            "LastTurn"
         ]
     );
 }

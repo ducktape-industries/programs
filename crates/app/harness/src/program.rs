@@ -114,6 +114,7 @@ impl Program for Harness {
             Query::ConversationModels { agent, page } => Ok(Reply::ConversationModels(
                 crate::kept::models(ctx, agent, &page)?,
             )),
+            Query::LastTurn { thread } => Ok(Reply::LastTurn(queries::last_turn(ctx, thread)?)),
         }
     }
 }

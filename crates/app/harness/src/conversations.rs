@@ -411,6 +411,13 @@ fn copied(ctx: &ExecCtx, from: &ThreadRow, row: &mut ThreadRow) -> Result<(), Er
     if let Some(topic) = TOPICS.get(ctx, &from.id)? {
         TOPICS.put(ctx, &row.id, &topic);
     }
+    let turned = frames
+        .iter()
+        .rev()
+        .find(|frame| matches!(frame.body, Body::Turn { .. }));
+    if let Some(turn) = turned {
+        crate::state::LAST_TURNS.put(ctx, &row.id, &turn.height);
+    }
     let summary = from.summary.filter(|seq| *seq <= cut);
     row.frames = cut;
     row.last_input = inputs.map(|frame| frame.seq).next_back().unwrap_or(0);

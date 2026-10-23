@@ -71,6 +71,9 @@ pub(crate) fn append(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
     };
     thread.last_height = frame.height;
     thread.last_time = frame.time;
+    if matches!(frame.body, Body::Turn { .. }) {
+        crate::state::LAST_TURNS.put(ctx, &thread.id, &frame.height);
+    }
     FRAMES.put(ctx, &(thread.id, seq), &frame);
 }
 

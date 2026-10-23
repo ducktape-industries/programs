@@ -50,6 +50,7 @@ pub const CALL_PICTURES: Map<(u64, String), Vec<Picture>> = Map::new("call-pictu
 pub const HIDDEN: Map<u64, Hidden> = Map::new("hidden/");
 /// a thread's topic: the one line its agent last set with `thread_topic`
 pub const TOPICS: Map<u64, String> = Map::new("topic/");
+pub const LAST_TURNS: Map<u64, u64> = Map::new("last-turn/");
 pub const TALLIES: Map<u64, Tally> = Map::new("tally/");
 pub const BOOKINGS: Map<u64, Booking> = Map::new("booking/");
 pub const BOOKED: Set<(AccountNumber, u64)> = Set::new("booked/");
@@ -383,13 +384,14 @@ pub fn written(key: &[u8]) -> Option<Written> {
     if let Some((agent, thread)) = under::<(AccountNumber, u64)>(&FINAL_ERRORS.key(&()), key) {
         return Some(Written::FinalError { agent, thread });
     }
-    let threads: [(Vec<u8>, OfThread); 9] = [
+    let threads: [(Vec<u8>, OfThread); 10] = [
         (THREADS.key(&()), Written::Thread),
         (HELD.key(&()), Written::Held),
         (WITHHELD.key(&()), Written::Withheld),
         (PARTIALS.key(&()), Written::Partial),
         (PIECES.key(&()), Written::Partial),
         (TOPICS.key(&()), Written::Topic),
+        (LAST_TURNS.key(&()), Written::Thread),
         (TALLIES.key(&()), Written::Tally),
         (SETTLING.key(&()), Written::Settling),
         (ARMED.key(&()), Written::Armed),

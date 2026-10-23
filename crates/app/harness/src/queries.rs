@@ -1,12 +1,13 @@
 //! Every read: an agent, a thread, an agent's threads (alone or with topic and tally) and bound
 //! ones, a transcript or a span of it from a frame on, held input, tool calls or one call, the tool
-//! catalog, a place's last thread, withheld frames with their size, a streaming reply and a topic.
+//! catalog, a place's last thread, withheld frames by size, a streaming reply, a topic, last turn.
 use ::program::{Error, QueryCtx, corrupt};
 use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    BOUND, BY_AGENT, CALLS, FRAMES, HELD, PLACES, SETTLING, TALLIES, THREADS, TOPICS, WITHHELD,
+    BOUND, BY_AGENT, CALLS, FRAMES, HELD, LAST_TURNS, PLACES, SETTLING, TALLIES, THREADS, TOPICS,
+    WITHHELD,
 };
 use crate::{Body, CallRow, Conversation, Frame, Partial, SettleWindow, ThreadRow, WithheldFrame};
 
@@ -16,6 +17,10 @@ pub(crate) fn partial(ctx: &QueryCtx, thread: u64) -> Result<Option<Partial>, Er
 
 pub(crate) fn topic(ctx: &QueryCtx, thread: u64) -> Result<Option<String>, Error> {
     TOPICS.get(ctx, &thread)
+}
+
+pub(crate) fn last_turn(ctx: &QueryCtx, thread: u64) -> Result<Option<u64>, Error> {
+    LAST_TURNS.get(ctx, &thread)
 }
 
 pub(crate) fn settling(ctx: &QueryCtx, thread: u64) -> Result<Option<SettleWindow>, Error> {

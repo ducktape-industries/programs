@@ -16,6 +16,18 @@ fn added_up(chain: &MockChain, thread: u64) -> Tally {
     tally
 }
 
+fn last_turn(chain: &MockChain, thread: u64) -> Option<u64> {
+    let asked = Query::LastTurn { thread };
+    let Reply::LastTurn(height) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    height
+}
+
+fn newest(chain: &MockChain, thread: u64) -> Body {
+    frames(chain, thread).pop().expect("a frame")
+}
+
 fn topic_of(chain: &MockChain, thread: u64) -> Option<String> {
     let Reply::Topic(topic) = chain.query(PROGRAM, &Query::Topic { thread }).unwrap() else {
         panic!()
@@ -103,6 +115,56 @@ fn conversations_answers_each_row_with_its_topic_and_tally_in_the_order_threads_
     assert_eq!(first.topic.as_deref(), Some("the plan"));
     let kept = first.tally.expect("a conversation that turned is tallied");
     assert!(kept.usage.input > 0, "{kept:?}");
+}
+
+#[test]
+fn only_a_turn_moves_last_turn_never_a_heard_post_a_result_a_notice_or_a_summary() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "remember the plan", Some(2_000));
+    assert!(matches!(newest(chain, thread), Body::Post { .. }));
+    assert_eq!(last_turn(chain, thread), None, "a heard post is no turn");
+    chain.at(3, 0);
+    let call = tool_use("toolu_t", "thread_topic", json!({ "topic": "the plan" }));
+    model_says(chain, json!([call]), "tool_use");
+    assert!(matches!(newest(chain, thread), Body::Turn { .. }));
+    assert_eq!(last_turn(chain, thread), Some(3));
+    chain.at(4, 0);
+    relay_back(chain, "toolu_t");
+    assert!(matches!(newest(chain, thread), Body::Result { .. }));
+    assert_eq!(
+        last_turn(chain, thread),
+        Some(3),
+        "a tool result is no turn"
+    );
+    chain.at(5, 0);
+    let (request, _) = open_request(chain);
+    let overloaded = json!({ "type": "error", "error": { "type": "overloaded_error", "message": "Overloaded" } });
+    answer(chain, request.id, Answer::Output(response(529, overloaded)));
+    assert!(matches!(newest(chain, thread), Body::Notice { .. }));
+    assert_eq!(last_turn(chain, thread), Some(3), "a notice is no turn");
+    chain.at(6, 0);
+    world.mention("m2", "and now?");
+    assert!(matches!(newest(chain, thread), Body::Post { .. }));
+    assert_eq!(last_turn(chain, thread), Some(3), "a heard post is no turn");
+    chain.at(7, 0);
+    let noted = json!([{ "type": "text", "text": "Noted." }]);
+    model_says_after(chain, noted, "end_turn", 1000);
+    assert_eq!(last_turn(chain, thread), Some(7));
+    world.mention("m3", "what next?");
+    chain.at(8, 0);
+    summarized(chain, "Ada set out the plan.");
+    let summary = |body: &Body| matches!(body, Body::Compaction { .. });
+    assert!(frames(chain, thread).iter().any(summary));
+    assert_eq!(last_turn(chain, thread), Some(7), "a summary is no turn");
+    let fork = Op::ForkThread { agent: world.agent };
+    let output = chain.submit(signed(ADA), PROGRAM, &fork).unwrap();
+    let forked: u64 = abi::decode(&output).unwrap();
+    assert_eq!(
+        last_turn(chain, forked),
+        Some(7),
+        "a fork keeps the turn it copies"
+    );
 }
 
 fn adopt_tallies(chain: &MockChain, after: Option<Vec<u8>>, limit: u64) -> Option<Vec<u8>> {
