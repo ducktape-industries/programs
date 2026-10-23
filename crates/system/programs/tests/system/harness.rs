@@ -157,6 +157,30 @@ impl Net {
         };
         page.items.into_iter().map(|frame| frame.body).collect()
     }
+
+    async fn held(&self, thread: u64) -> Vec<Body> {
+        let Reply::Held(held) = self.ask(harness::PROGRAM, &Query::Held { thread }).await else {
+            panic!()
+        };
+        held
+    }
+
+    async fn results(&self, thread: u64) -> Vec<(String, String, bool)> {
+        let mut bodies = self.frames(thread).await;
+        bodies.extend(self.held(thread).await);
+        bodies
+            .into_iter()
+            .filter_map(|body| match body {
+                Body::Result {
+                    call, text, failed, ..
+                }
+                | Body::Arrived {
+                    call, text, failed, ..
+                } => Some((call, text, failed)),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 fn model_reply(content: Value, stop: &str) -> Vec<u8> {
@@ -433,13 +457,17 @@ fn a_mentioned_agent_answers_through_elected_nodes_and_writes_as_itself() {
         }]);
         net.answer(asked.id, model_reply(write, "tool_use")).await;
         let frames = net.frames(thread.id).await;
-        assert_eq!(frames.len(), 2);
+        assert_eq!(frames.len(), 3);
         assert!(
             matches!(&frames[1], Body::Turn { config, .. } if *config == snapshot),
             "the turn names the configuration snapshot its call read"
         );
+        assert!(
+            matches!(&frames[2], Body::Receipt { call, .. } if call == "toolu_1"),
+            "the call is acknowledged in the frame after its turn"
+        );
         let [relay] = net.assigned(RELAY).await.try_into().unwrap();
-        assert!(net.assigned(SERVICE).await.is_empty());
+        let [next] = net.assigned(SERVICE).await.try_into().unwrap();
         assert_eq!(net.parked(), 1, "the thread's loop waits parked");
 
         net.answer(relay.id, Vec::new()).await;
@@ -463,17 +491,25 @@ fn a_mentioned_agent_answers_through_elected_nodes_and_writes_as_itself() {
             "the agent is the writer"
         );
 
-        let [next] = net.assigned(SERVICE).await.try_into().unwrap();
+        let [asking] = net.assigned(SERVICE).await.try_into().unwrap();
+        assert_eq!(asking.id, next.id, "the result waits for the ask in flight");
+        let results = net.results(thread.id).await;
+        assert!(
+            matches!(&results[..], [(call, _, false)] if call == "toolu_1"),
+            "{results:?}"
+        );
         let messages = net.joined(&next).await["messages"]
             .as_array()
             .unwrap()
             .clone();
         assert_eq!(messages.len(), 3);
-        let result = &messages[2]["content"][0];
+        let receipt = &messages[2]["content"][0];
         assert_eq!(
-            (&result["type"], &result["tool_use_id"], &result["is_error"]),
-            (&json!("tool_result"), &json!("toolu_1"), &json!(false))
+            (&receipt["type"], &receipt["tool_use_id"]),
+            (&json!("tool_result"), &json!("toolu_1"))
         );
+        let receipt = receipt["content"].as_str().unwrap();
+        assert!(receipt.starts_with("Accepted as call toolu_1"), "{receipt}");
         assert_eq!(
             next.delivery,
             egress::Delivery::Events {
@@ -522,13 +558,33 @@ fn a_mentioned_agent_answers_through_elected_nodes_and_writes_as_itself() {
         net.stream(next.id, &events, 3..events.len()).await;
         assert_eq!(net.parked(), 1, "the loop waits until the stream ends");
         net.end_stream(next.id, events.len() as u64).await;
-        assert_eq!(net.partial(thread.id).await, None);
+        let partial = net.partial(thread.id).await;
+        assert!(
+            partial
+                .as_ref()
+                .is_none_or(|partial| partial.said.is_empty()),
+            "the finished reply leaves the partial: {partial:?}"
+        );
         let frames = net.frames(thread.id).await;
-        let Some(Body::Turn { said, usage, .. }) = frames.last() else {
+        let Some(Body::Turn { said, usage, .. }) = frames
+            .iter()
+            .rev()
+            .find(|body| matches!(body, Body::Turn { .. }))
+        else {
             panic!("the streamed reply is the thread's last turn: {frames:?}");
         };
         assert_eq!(said, &[Said::Text("Noted.".into())]);
         assert_eq!((usage.input, usage.output), (1, 2));
+
+        let [last] = net.assigned(SERVICE).await.try_into().unwrap();
+        let asked = net.joined(&last).await.to_string();
+        assert!(
+            asked.contains("Result of tool call toolu_1"),
+            "the held result rides the next ask: {asked}"
+        );
+        net.stream(last.id, &events, 0..events.len()).await;
+        net.end_stream(last.id, events.len() as u64).await;
+        assert_eq!(net.partial(thread.id).await, None);
         assert!(net.assigned(SERVICE).await.is_empty());
         assert_eq!(net.parked(), 0, "the loop finished");
     });
@@ -562,17 +618,7 @@ fn an_agent_queries_and_calls_a_program_through_the_schema_its_code_carries() {
         for relay in net.assigned(RELAY).await {
             net.answer(relay.id, Vec::new()).await;
         }
-        let results: Vec<(String, String, bool)> = net
-            .frames(thread.id)
-            .await
-            .into_iter()
-            .filter_map(|body| match body {
-                Body::Result {
-                    call, text, failed, ..
-                } => Some((call, text, failed)),
-                _ => None,
-            })
-            .collect();
+        let results = net.results(thread.id).await;
         let result = |id: &str| {
             results
                 .iter()
@@ -628,10 +674,11 @@ fn a_mentioned_agent_commits_files_to_forge_as_itself() {
         net.answer(asked.id, model_reply(commit, "tool_use")).await;
         let [relay] = net.assigned(RELAY).await.try_into().unwrap();
         net.answer(relay.id, Vec::new()).await;
-        let frames = net.frames(thread.id).await;
-        let Some(Body::Result { text, failed, .. }) = frames.last() else {
-            panic!("the call's result is the thread's last frame: {frames:?}");
+        let results = net.results(thread.id).await;
+        let [(call, text, failed)] = &results[..] else {
+            panic!("the call has one result: {results:?}");
         };
+        assert_eq!(call, "toolu_1");
         assert!(!failed, "{text}");
 
         let repo = forge::Query::Repo {
@@ -780,10 +827,15 @@ fn a_streamed_post_forms_in_the_draft_lands_whole_and_a_mention_in_it_is_heard_o
             chat::parse_message(&format!("<@{echo}> please check"))
         );
         let frames = net.frames(thread.id).await;
-        let [.., Body::Turn { .. }, Body::Result { call, failed, .. }] = &frames[..] else {
-            panic!("the turn, then its result: {frames:?}");
+        let [.., Body::Turn { .. }, Body::Receipt { call, .. }] = &frames[..] else {
+            panic!("the turn, then its receipt: {frames:?}");
         };
-        assert_eq!((call.as_str(), *failed), ("toolu_p", false));
+        assert_eq!(call, "toolu_p");
+        let results = net.results(thread.id).await;
+        assert!(
+            matches!(&results[..], [(call, _, false)] if call == "toolu_p"),
+            "{results:?}"
+        );
 
         let [heard] = net.threads(echo).await.try_into().unwrap();
         let posts: Vec<String> = net
