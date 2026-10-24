@@ -61,7 +61,16 @@ fn assistant_text(text: &str, citations: &[String]) -> Option<Value> {
         .iter()
         .filter_map(|citation| serde_json::from_str(citation).ok())
         .collect();
-    let content = vec![json!({ "type": "output_text", "text": text, "annotations": annotations })];
+    let mut content =
+        vec![json!({ "type": "output_text", "text": text, "annotations": annotations })];
+    let sources = cited_lines(text, citations)
+        .into_iter()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !sources.is_empty() {
+        content.push(json!({ "type": "output_text", "text": sources, "annotations": [] }));
+    }
     (!text.is_empty())
         .then(|| said("assistant", content))
         .flatten()
@@ -228,23 +237,25 @@ fn read_item(item: &Value) -> Option<Block> {
     }
 }
 
+fn cited_lines(text: &str, citations: &[String]) -> Vec<String> {
+    let mut lines = vec![text.to_owned()];
+    for citation in citations {
+        let Ok(value) = serde_json::from_str::<Value>(citation) else {
+            continue;
+        };
+        let (title, url) = (text_of(&value, "title"), text_of(&value, "url"));
+        let source = format!("{title} {url}").trim().to_owned();
+        let new_source = !url.is_empty() && !lines.contains(&source);
+        if new_source {
+            lines.push(source);
+        }
+    }
+    lines
+}
+
 pub fn plain(block: &Block) -> Option<String> {
     let text = match block {
-        Block::Text { text, citations } => {
-            let mut lines = vec![text.clone()];
-            for citation in citations {
-                let Ok(value) = serde_json::from_str::<Value>(citation) else {
-                    continue;
-                };
-                let (title, url) = (text_of(&value, "title"), text_of(&value, "url"));
-                let source = format!("{title} {url}").trim().to_owned();
-                let new_source = !url.is_empty() && !lines.contains(&source);
-                if new_source {
-                    lines.push(source);
-                }
-            }
-            lines.join("\n")
-        }
+        Block::Text { text, citations } => cited_lines(text, citations).join("\n"),
         Block::ServerToolResult { sealed } => {
             let item: Value = serde_json::from_str(sealed).ok()?;
             if item["type"] != "web_search_call" {

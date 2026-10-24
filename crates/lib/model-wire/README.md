@@ -69,8 +69,11 @@ outside the system prompt. `fit` preserves it. It is omitted from serialized req
 harness to execute a function. The adapter keeps complete `web_search_call` items in server
 results, including their actions and any encrypted content. Text annotations become citations;
 indices in multiple output-text parts are shifted into the joined text. Continuations to the
-same account replay those items and annotations. Other accounts/providers receive search
-actions and cited page titles/URLs as text, never encrypted content or native annotations.
+same account replay those items and annotations unchanged, with retained source titles/URLs
+also rendered in a separate uncited text part. The original cited text and annotation indices
+stay unchanged; the extra part contains source metadata, not fetched page content or snippets.
+Other accounts/providers keep their existing search-action and cited-title/URL text conversion,
+never encrypted content or native annotations.
 Provider entitlement and search availability are determined by the serving account, not by
 request serialization. Harness uses `fit::words` for foreign server blocks and citations
 before it sends history to an adapter, so both layers use the originating provider's conversion.

@@ -137,7 +137,14 @@ fn hosted_search_returns_citations_and_replays_whole_before_continuation() {
     ];
     let body = codex::body(&request);
     assert_eq!(body["input"][0], item);
-    assert_eq!(body["input"][1]["content"], message["content"]);
+    assert_eq!(body["input"][1]["content"][0], message["content"][0]);
+    assert_eq!(
+        body["input"][1]["content"],
+        json!([
+            message["content"][0],
+            {"type":"output_text", "text":"Source title https://example.org/source", "annotations":[]}
+        ])
+    );
     assert_eq!(
         body["input"][2]["content"][0]["text"],
         "Continue from the source"
@@ -207,6 +214,69 @@ fn citations_from_multiple_text_parts_follow_the_joined_text() {
     let citation: Value = serde_json::from_str(&citations[0]).unwrap();
     assert_eq!(citation["start_index"], 7);
     assert_eq!(citation["end_index"], 13);
+    let original = json!({"type":"output_text", "text":text, "annotations":[citation]});
+    let mut request = request();
+    request.messages = vec![Message::Assistant {
+        lane: lane(),
+        blocks: reply.said,
+    }];
+    let body = codex::body(&request);
+    assert_eq!(body["input"][0]["content"][0], original);
+    assert_eq!(body["input"][0]["content"][1]["annotations"], json!([]));
+}
+
+#[test]
+fn retained_sources_are_separate_deduplicated_text_without_changing_annotations() {
+    let mut item = cited();
+    let annotation = item["content"][0]["annotations"][0].clone();
+    item["content"][0]["annotations"] = json!([
+        annotation, annotation,
+        {"type":"url_citation", "title":"No address"},
+        {"type":"url_citation", "url":"https://example.org/other"}
+    ]);
+    let reply = reply(&[item.clone()]);
+    let mut request = request();
+    request.messages = vec![Message::Assistant {
+        lane: lane(),
+        blocks: reply.said,
+    }];
+    assert_eq!(
+        codex::body(&request)["input"][0]["content"],
+        json!([
+            item["content"][0],
+            {"type":"output_text", "text":"Source title https://example.org/source\nhttps://example.org/other", "annotations":[]}
+        ])
+    );
+}
+
+#[test]
+fn uncited_text_and_unpinned_portable_sources_keep_their_existing_wire_shape() {
+    let mut request = request();
+    request.messages = vec![Message::Assistant {
+        lane: lane(),
+        blocks: vec![Block::Text {
+            text: "Uncited".into(),
+            citations: vec![],
+        }],
+    }];
+    assert_eq!(
+        codex::body(&request)["input"],
+        json!([{"type":"message", "role":"assistant", "content":[
+            {"type":"output_text", "text":"Uncited", "annotations":[]}
+        ]}])
+    );
+    let reply = reply(&[cited()]);
+    request.messages = vec![Message::Assistant {
+        lane: lane(),
+        blocks: reply.said,
+    }];
+    request.target = Target::Unpinned;
+    assert_eq!(
+        codex::body(&request)["input"],
+        json!([{"type":"message", "role":"assistant", "content":[
+            {"type":"output_text", "text":"Result\nSource title https://example.org/source", "annotations":[]}
+        ]}])
+    );
 }
 
 #[test]
