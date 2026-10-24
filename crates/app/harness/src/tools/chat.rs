@@ -223,11 +223,37 @@ pub(crate) struct SearchArgs {
     cursor: Option<String>,
 }
 
+const SEARCH_RESULT_BYTES: usize = 32_768;
+const SEARCH_SNIPPET_BYTES: usize = 4096;
+
 fn hit(ctx: &QueryCtx, row: &MsgRow, terms: &[String], around: Option<usize>) -> Value {
-    let snippets = match around {
+    let mut snippets = match around {
         Some(bytes) => chat::around_matches(&row.text, terms, bytes),
         None => chat::sentences_holding(&row.text, terms),
     };
+    let snippets_truncated = json!(&snippets).to_string().len() > SEARCH_SNIPPET_BYTES;
+    if snippets_truncated {
+        let excerpts = chat::around_matches(&row.text, terms, around.unwrap_or(180).min(180));
+        snippets.clear();
+        for excerpt in excerpts {
+            snippets.push(excerpt);
+            if json!(&snippets).to_string().len() > SEARCH_SNIPPET_BYTES {
+                while json!(&snippets).to_string().len() > SEARCH_SNIPPET_BYTES {
+                    let last = snippets.last_mut().expect("the excerpt just added");
+                    let mut end = last.len() / 2;
+                    while !last.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    last.truncate(end);
+                    if last.is_empty() {
+                        snippets.pop();
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
     json!({
         "channel": row.channel_id,
         "seq": row.seq,
@@ -235,6 +261,7 @@ fn hit(ctx: &QueryCtx, row: &MsgRow, terms: &[String], around: Option<usize>) ->
         "time": row.time,
         "reply_to": row.thread,
         "snippets": snippets,
+        "snippets_truncated": snippets_truncated,
     })
 }
 
@@ -242,7 +269,7 @@ pub(crate) struct Search;
 
 impl Tool for Search {
     const NAME: &'static str = "chat_search";
-    const DESCRIPTION: &'static str = "Search chat messages for words, across every channel or in one: each hit's channel, seq, author and time, and the sentences of it that hold a word (with around, the bytes around each match instead). The newest limit hits (20 if omitted) and next for older hits; chat_thread or chat_messages reads a message whole.";
+    const DESCRIPTION: &'static str = "Search chat messages for words, across every channel or in one: each hit's channel, seq, author and time, and matching sentences (with around, bytes around matches instead). At most 20 hits and 32768 UTF-8 bytes of result JSON per call, even with a larger limit; next continues after the last returned hit. Each hit's snippets are at most 4096 JSON bytes; snippets_truncated marks omitted content, including narrowed context. chat_thread or chat_messages reads the original message at its channel and seq.";
     type Args = SearchArgs;
 
     fn schema() -> Value {
@@ -250,7 +277,7 @@ impl Tool for Search {
             json!({
                 "text": { "type": "string", "description": "the words to find" },
                 "channel": channel_schema(),
-                "limit": { "type": "integer", "minimum": 1, "description": "at most this many matching messages, the newest; 20 if omitted" },
+                "limit": { "type": "integer", "minimum": 1, "maximum": LISTED, "description": "at most this many matching messages, the newest; 20 if omitted or larger, and fewer when the result byte bound is reached" },
                 "around": { "type": "integer", "minimum": 0, "description": "instead of the sentences: this many bytes on each side of each match" },
                 "cursor": cursor_schema(),
             }),
@@ -259,28 +286,49 @@ impl Tool for Search {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: SearchArgs) -> Result<Run, Error> {
-        let limit = args.limit.unwrap_or(LISTED);
+        let limit = args.limit.unwrap_or(LISTED).min(LISTED);
         if limit == 0 {
             return Err(::program::invalid(
                 "a limit is a number of matching messages from 1",
             ));
         }
         let mut page = page(&args.cursor)?;
-        page.limit = Some(limit);
+        page.limit = Some(1);
         let terms = chat::search_terms(&args.text);
-        let asked = Query::TextSearch {
-            text: args.text,
-            viewer: vec![agent(seat)],
-            channel_id: args.channel,
-            page,
-        };
-        match ask(ctx, seat, asked)? {
-            Reply::TextHits(rows) => Ok(Run::Done(json!({
-                "hits": rows.items.iter().map(|row| hit(ctx, row, &terms, args.around)).collect::<Vec<_>>(),
-                "next": next(&rows.next),
-            }))),
-            other => Err(unexpected(chat::PROGRAM, "TextSearch", &other)),
+        let mut hits = Vec::new();
+        let mut answer = json!({ "hits": [], "next": null });
+        for _ in 0..limit {
+            let asked = Query::TextSearch {
+                text: args.text.clone(),
+                viewer: vec![agent(seat)],
+                channel_id: args.channel.clone(),
+                page: page.clone(),
+            };
+            let rows = match ask(ctx, seat, asked)? {
+                Reply::TextHits(rows) => rows,
+                other => return Err(unexpected(chat::PROGRAM, "TextSearch", &other)),
+            };
+            let Some(row) = rows.items.first() else {
+                break;
+            };
+            hits.push(hit(ctx, row, &terms, args.around));
+            let candidate = json!({ "hits": hits, "next": next(&rows.next) });
+            if candidate.to_string().len() > SEARCH_RESULT_BYTES {
+                hits.pop();
+                if hits.is_empty() {
+                    return Err(::program::invalid(
+                        "search result metadata exceeds 32768 bytes; narrow the search terms or channel",
+                    ));
+                }
+                break;
+            }
+            answer = candidate;
+            if rows.next.is_none() {
+                break;
+            }
+            page.after = rows.next;
         }
+        Ok(Run::Done(answer))
     }
 }
 

@@ -190,7 +190,14 @@ was taken back, or it is not active), does not run. `files_history`, `files_list
 `files_find` each answer one page: `limit` (at least 1) chooses its number of snapshots
 or entries, 20 when omitted or null, and `cursor` takes the previous answer's `next` to
 continue. This is a tool default, not a bound on files queries: a files `PageRequest`
-with no limit still means every row. By default, once the turn is recorded, harness can
+with no limit still means every row. `chat_search` enforces at most 20 hits and 32,768 UTF-8
+bytes of result JSON per call, including metadata and `next`; an explicit larger `limit`
+cannot raise either bound. A byte-limited page's `next` resumes after its last returned
+hit, never after a hit that did not fit. Each hit's snippets use at most 4,096 JSON bytes;
+`snippets_truncated` marks omitted content or narrowed context, while channel and seq
+locate the original message for `chat_messages` or `chat_thread`. Indivisible metadata
+or a cursor that cannot fit yields a short refusal without advancing. These bounds
+belong to the search tool, not to the underlying chat query. By default, once the turn is recorded, harness can
 ask the model again with call acknowledgements while results are still outstanding. With
 `tool_continuation = "sync"`, it waits for every outstanding call to finish, fail or be
 refused before another model request. Call acknowledgements remain in the transcript,
