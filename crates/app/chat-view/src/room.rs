@@ -31,8 +31,10 @@ fn place_rows(room: &Room, thread: Option<u64>) -> Option<&Vec<MsgRow>> {
 }
 
 impl Chat {
-    /// The composer's placeholder: who or where a message goes
-    /// (`Message #general`, `Message Priya Nair`).
+    pub(crate) fn message_focused(&self, pane: Pane, seq: u64) -> bool {
+        self.room.as_ref().and_then(|room| room.focused) == Some((pane, seq))
+    }
+
     pub(crate) fn composer_hint(&self, room: &Room) -> String {
         format!("Message {}", self.room_name(&room.id))
     }
@@ -269,13 +271,20 @@ impl Chat {
         );
     }
 
-    /// A pane's refused read, asked again: the open thread, or the room
-    /// from its newest message.
     pub(crate) fn retry_read(&mut self, pane: Pane, cx: &mut Context<Self>) {
         let Some(room) = &self.room else { return };
-        match (pane, room.thread.as_ref().map(|thread| thread.root)) {
-            (Pane::Thread, Some(root)) => self.open_thread(root, cx),
-            _ => self.open(room.id.clone(), cx),
+        cx.notify();
+        match (pane, room.thread.as_ref()) {
+            (Pane::Thread, Some(thread)) => self.load_thread(thread.root, false, thread.target, cx),
+            _ => {
+                let target = room
+                    .thread
+                    .as_ref()
+                    .map(|thread| thread.target)
+                    .filter(|target| *target > 0)
+                    .unwrap_or(room.target);
+                self.open_at(room.id.clone(), target, cx);
+            }
         }
     }
 
@@ -312,6 +321,7 @@ impl Chat {
             .ready()
             .and_then(|list| list.iter().find(|info| info.channel.id == id))
             .map(|info| info.head_seq);
+        room_of(self).focused = None;
         self.drawn(Pane::Timeline).borrow_mut().follow = true;
         cx.notify();
         if !landed {
@@ -397,6 +407,9 @@ impl Chat {
         if land > 0 {
             self.close_thread();
             self.details = None;
+            self.menu = None;
+            self.copy = None;
+            self.hovered = None;
         }
         // a room opened this session shows what it showed at once; a link
         // lands afresh
@@ -429,6 +442,10 @@ impl Chat {
         let reader = self.my_account();
         let room = self.room.get_or_insert_default();
         room.reader = reader;
+        room.focused = None;
+        if land > 0 {
+            room.filter = None;
+        }
         room.landed = land > 0;
         room.target = land;
         room.at_tail = land == 0;
@@ -458,6 +475,7 @@ impl Chat {
                     Some((root, false)) => {
                         chat.open_at(id, root, cx);
                         chat.load_thread(root, false, land, cx);
+                        room_of(chat).focused = Some((Pane::Thread, land));
                         return;
                     }
                     Some((root, true)) => chat.load_thread(root, false, land, cx),
@@ -466,6 +484,13 @@ impl Chat {
                 let room = room_of(chat);
                 if let Ok(rows) = &result {
                     room.has_older = rows.first().is_some_and(|row| row.seq > 1);
+                    let pane = match reply {
+                        Some(_) => Pane::Thread,
+                        None => Pane::Timeline,
+                    };
+                    if room.focused.is_none() {
+                        room.focused = Some((pane, land));
+                    }
                 }
                 room.messages = result.into();
                 room.settle();
@@ -644,8 +669,7 @@ impl Chat {
         if let Some((rows, thread)) = refused {
             if rows {
                 self.retry_read(Pane::Timeline, cx);
-            }
-            if thread {
+            } else if thread {
                 self.retry_read(Pane::Thread, cx);
             }
         }
@@ -1520,13 +1544,26 @@ impl Chat {
         let Some(thread) = self.room.as_ref().and_then(|room| room.thread.as_ref()) else {
             return;
         };
-        if thread.target == 0 {
+        let waiting = thread.target == 0 || thread.replies.ready().is_none();
+        if waiting {
             return;
         }
         if thread.reached() {
+            let target = thread.target;
+            room_of(self).focused = Some((Pane::Thread, target));
             *self.thread_drawn.borrow_mut() = Drawn::default();
-        } else if thread.has_more {
+            return;
+        }
+        if thread.has_more {
             self.load_more_replies(cx);
+            return;
+        }
+        let unavailable = Error::new("message_unavailable", "The linked message is unavailable.");
+        self.notice = design::sentence(&unavailable);
+        let room = room_of(self);
+        room.focused = None;
+        if let Some(thread) = &mut room.thread {
+            thread.replies = Loadable::Failed(unavailable);
         }
     }
 
@@ -1756,7 +1793,7 @@ impl Thread {
             || self
                 .replies
                 .ready()
-                .is_some_and(|rows| rows.iter().any(|row| row.seq >= target))
+                .is_some_and(|rows| rows.iter().any(|row| row.seq == target))
     }
 }
 

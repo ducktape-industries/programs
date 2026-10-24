@@ -62,8 +62,13 @@ pub(super) fn row(
             false => design::space::HAIR,
         })
         .pb(design::space::HAIR)
-        .when(chosen, |row| row.bg(theme.accent_soft))
+        .when(chosen || chat.message_focused(pane, seq), |row| {
+            row.bg(theme.accent_soft)
+        })
         .role(Role::Group)
+        .when(chat.message_focused(pane, seq), |row| {
+            row.aria_description("Linked message")
+        })
         .aria_label(format!("{}: {}", message.author, message.body))
         .aria_position_in_set(set.0)
         .aria_size_of_set(set.1)

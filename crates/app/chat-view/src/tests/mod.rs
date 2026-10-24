@@ -19,6 +19,7 @@ mod asks;
 mod attachments;
 mod context_menus;
 mod cost;
+mod deeplink;
 mod dms;
 mod faces;
 mod filters;

@@ -45,6 +45,7 @@ pub(crate) struct Seen {
     answering: Vec<String>,
     ask: Option<Shown>,
     current_find: bool,
+    focused: bool,
 }
 
 #[derive(PartialEq)]
@@ -97,6 +98,7 @@ impl Seen {
             answering: answering_under(chat, pane, seq),
             ask: chat.ask_shown(message),
             current_find: chat.find_current() == Some(seq),
+            focused: chat.message_focused(pane, seq),
         }
     }
 }
@@ -180,6 +182,8 @@ pub fn card(
             .as_ref()
             .is_some_and(|menu| menu.pane == pane && menu.seq == seq);
     let ranged = !message.deleted && chat.copy.is_some_and(|range| range.holds(pane, seq));
+    let focused = chat.message_focused(pane, seq);
+    let accented = chosen || focused;
     let key = (pane, seq);
     let message_cell = div()
         .id(format!("chat-message-{id}"))
@@ -209,7 +213,7 @@ pub fn card(
             design::space::HAIR
         })
         .pb(design::space::HAIR)
-        .bg(if chosen {
+        .bg(if accented {
             theme.accent_soft
         } else if raised {
             theme.surface_raised
@@ -236,6 +240,7 @@ pub fn card(
         .pt(gap(&message))
         .on_hover(row_hover)
         .role(view::Role::Row)
+        .when(focused, |row| row.aria_description("Linked message"))
         .aria_label(format!(
             "Select message, shows its actions: {}: {}",
             message.author, message.body

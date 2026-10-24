@@ -136,7 +136,11 @@ row), so a room opened with no `Visited` (a new run, or after a swap, whose
 snapshot keeps no `visited`) reads it beside its first page and opens on that
 row, landing on its seq when the page lacks it. A thread's place lasts the
 session only. Otherwise a room opens at its newest row and a thread
-at its newest reply. Every read of rows is a screenful, and a link lands on a
+at its newest reply. A message link leaves an active tag filter and stale message actions,
+opens a reply's thread when needed, and accents the exact linked row in both shells.
+The accent lasts until another room/message navigation replaces it, not a timer.
+A missing target says it is unavailable instead of selecting a neighboring message;
+a refused read retains its refusal. Every read of rows is a screenful, and a link lands on a
 screenful each side of its message; an open room keeps every page read in it
 (the reader's scroll bounds it), and its list draws only the rows in view. Rooms,
 members, and the rooms listened to and written in are read whole, one request

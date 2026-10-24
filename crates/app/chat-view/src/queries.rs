@@ -96,6 +96,13 @@ pub(crate) async fn around(
             page: page(None, 2 * screenful),
         })
         .await?;
+    let present = rows.iter().any(|row| row.seq == seq);
+    if !present {
+        return Err(Error::new(
+            "message_unavailable",
+            "The linked message is unavailable.",
+        ));
+    }
     Ok(sorted(rows))
 }
 

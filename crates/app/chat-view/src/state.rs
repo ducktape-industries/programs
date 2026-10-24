@@ -399,6 +399,8 @@ pub struct Room {
     pub(crate) landed: bool,
     #[serde(skip)]
     pub(crate) target: u64,
+    #[serde(skip)]
+    pub(crate) focused: Option<(Pane, u64)>,
     pub(crate) at_tail: bool,
     /// the rows read again while the ones on screen stay
     #[serde(skip)]

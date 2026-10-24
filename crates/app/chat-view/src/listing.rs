@@ -88,7 +88,7 @@ pub(crate) fn listing(
         .chain(busy.as_ref().map(|_| "busy".to_owned()))
         .collect::<Vec<_>>();
     let landing = || match shape {
-        Shape::Landed => Some(landing(chat, messages) + usize::from(lead)),
+        Shape::Landed => landing(chat, messages).map(|at| at + usize::from(lead)),
         Shape::Thread => thread_landing(chat, messages),
         Shape::Tail | Shape::Tagged => None,
     };
@@ -136,25 +136,20 @@ pub(crate) fn answering_key(draft: &chat::Draft) -> String {
     }
 }
 
-pub(crate) fn landing(chat: &Chat, messages: &[ChatMessage]) -> usize {
-    let Some(room) = chat.room.as_ref().filter(|room| room.landed) else {
-        return 0;
-    };
+pub(crate) fn landing(chat: &Chat, messages: &[ChatMessage]) -> Option<usize> {
+    let room = chat.room.as_ref().filter(|room| room.landed)?;
     let target = room
         .messages
         .ready()
         .and_then(|rows| rows.iter().find(|row| row.seq == room.target))
         .and_then(|row| row.thread)
         .unwrap_or(room.target);
-    messages
-        .iter()
-        .position(|message| message.seq >= target)
-        .unwrap_or(messages.len().saturating_sub(1))
+    messages.iter().position(|message| message.seq == target)
 }
 
 fn thread_landing(chat: &Chat, messages: &[ChatMessage]) -> Option<usize> {
     let target = chat.room.as_ref()?.thread.as_ref()?.target;
-    let at = messages.iter().position(|message| message.seq >= target);
+    let at = messages.iter().position(|message| message.seq == target);
     at.filter(|_| target > 0)
 }
 
