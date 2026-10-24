@@ -8,6 +8,7 @@ fn prompt(instruction: Option<&str>) -> PromptConfig {
             service: None,
         },
         compaction_instruction: instruction.map(str::to_owned),
+        tool_continuation: crate::config::ToolContinuation::default(),
     }
 }
 

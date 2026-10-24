@@ -70,8 +70,16 @@ pub(crate) fn configured_for(
     ctx: &ExecCtx,
     thread: &ThreadRow,
     path: &str,
-) -> Result<(Configured, Pin, Option<String>), Error> {
-    let (configured, pin, compaction_instruction) = configured_file(ctx, path)?;
+) -> Result<
+    (
+        Configured,
+        Pin,
+        Option<String>,
+        crate::config::ToolContinuation,
+    ),
+    Error,
+> {
+    let (configured, pin, compaction_instruction, tool_continuation) = configured_file(ctx, path)?;
     let now = of(&configured);
     let kept = match MODEL_KEPT.get(ctx, &thread.id)? {
         Some(kept) => kept,
@@ -79,17 +87,22 @@ pub(crate) fn configured_for(
             if let Some(now) = &now {
                 MODEL_KEPT.put(ctx, &thread.id, now);
             }
-            return Ok((configured, pin, compaction_instruction));
+            return Ok((configured, pin, compaction_instruction, tool_continuation));
         }
     };
     if now.as_ref() == Some(&kept) {
-        return Ok((configured, pin, compaction_instruction));
+        return Ok((configured, pin, compaction_instruction, tool_continuation));
     }
     let pin = Pin {
         service: None,
         provider: Some(kept.provider.clone()),
     };
-    Ok((laid(ctx, configured, kept)?, pin, compaction_instruction))
+    Ok((
+        laid(ctx, configured, kept)?,
+        pin,
+        compaction_instruction,
+        tool_continuation,
+    ))
 }
 
 fn laid(ctx: &QueryCtx, configured: Configured, kept: ModelKept) -> Result<Configured, Error> {

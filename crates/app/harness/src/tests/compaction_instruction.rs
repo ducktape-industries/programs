@@ -9,6 +9,7 @@ fn configure(chain: &MockChain, instruction: Option<&str>, provider: &str) {
         },
         pin: pin_of(provider),
         compaction_instruction: instruction.map(str::to_owned),
+        tool_continuation: crate::config::ToolContinuation::default(),
     };
     commit(chain, ADA, CONFIG, &parsed.write());
 }
@@ -207,7 +208,8 @@ fn summary_for(chain: &MockChain, thread: u64) -> RequestRow {
                 _ => "",
             };
             let sent = body(chain, row);
-            target == model_wire::SUMMARY && sent["cache_key"] == thread.to_string()
+            let expected = thread.to_string();
+            target == model_wire::SUMMARY && sent["cache_key"].as_str() == Some(expected.as_str())
         })
         .unwrap()
 }
@@ -255,6 +257,7 @@ fn interleaved_summaries(second_instruction: Option<&str>) {
         },
         pin: pin_of(model_wire::codex::PROVIDER),
         compaction_instruction: second_instruction.map(str::to_owned),
+        tool_continuation: crate::config::ToolContinuation::default(),
     };
     commit(chain, ADA, second_path, &second_config.write());
     let second = number(

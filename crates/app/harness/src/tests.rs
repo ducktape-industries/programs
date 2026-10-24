@@ -52,6 +52,7 @@ mod stranded;
 mod streams;
 mod tags;
 mod thinking;
+mod tool_continuation;
 mod unanswered;
 mod wait;
 mod wait_file;

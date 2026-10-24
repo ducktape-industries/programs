@@ -786,8 +786,13 @@ fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
 }
 
 fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<Step>, Error> {
-    let (configured, _, compaction_instruction) =
+    let (configured, _, compaction_instruction, tool_continuation) =
         crate::kept::configured_for(ctx, thread, &agent.path)?;
+    let awaiting_tools =
+        tool_continuation == crate::config::ToolContinuation::Sync && thread.open_calls > 0;
+    if awaiting_tools {
+        return Ok(None);
+    }
     let (snapshot, config, model) = match configured {
         Configured::Routed {
             snapshot,

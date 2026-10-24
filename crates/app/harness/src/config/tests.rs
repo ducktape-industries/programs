@@ -4,6 +4,7 @@ mod listen;
 mod server_tools;
 mod splice;
 mod thinking;
+mod tool_continuation;
 
 use super::*;
 

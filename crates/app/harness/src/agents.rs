@@ -106,18 +106,31 @@ pub(crate) fn configured(ctx: &QueryCtx, path: &str) -> Result<Configured, Error
 
 // `configured`, and the service or account its front matter pins the agent's model calls to
 pub(crate) fn configured_pinned(ctx: &QueryCtx, path: &str) -> Result<(Configured, Pin), Error> {
-    configured_file(ctx, path).map(|(configured, pin, _)| (configured, pin))
+    configured_file(ctx, path).map(|(configured, pin, _, _)| (configured, pin))
 }
 
 pub(crate) fn configured_file(
     ctx: &QueryCtx,
     path: &str,
-) -> Result<(Configured, Pin, Option<String>), Error> {
+) -> Result<
+    (
+        Configured,
+        Pin,
+        Option<String>,
+        crate::config::ToolContinuation,
+    ),
+    Error,
+> {
     let (snapshot, bytes) = match read(ctx, path, None) {
         Ok(read) => read,
         Err(error) => {
             let reason = format!("{}: {}", error.code, error.message);
-            return Ok((Configured::Unreadable { reason }, Pin::default(), None));
+            return Ok((
+                Configured::Unreadable { reason },
+                Pin::default(),
+                None,
+                crate::config::ToolContinuation::default(),
+            ));
         }
     };
     let parsed = match crate::config::PromptConfig::parse(&bytes) {
@@ -127,19 +140,25 @@ pub(crate) fn configured_file(
                 snapshot,
                 malformed,
             };
-            return Ok((configured, Pin::default(), None));
+            return Ok((
+                configured,
+                Pin::default(),
+                None,
+                crate::config::ToolContinuation::default(),
+            ));
         }
     };
     let crate::config::PromptConfig {
         config,
         pin,
         compaction_instruction,
+        tool_continuation,
     } = parsed;
     let configured = match &pin.provider {
         Some(provider) => routed(ctx, snapshot, config, provider.clone())?,
         None => Configured::Unprovided { snapshot, config },
     };
-    Ok((configured, pin, compaction_instruction))
+    Ok((configured, pin, compaction_instruction, tool_continuation))
 }
 
 pub(crate) fn routed(

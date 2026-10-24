@@ -13,6 +13,9 @@ absent: a thread summarizes only when the next answer would not fit), an optiona
 `compaction_instruction` (a nonblank string replacing the Codex summary instruction exactly;
 missing keeps the adapter's default; it is summary-only and refreshes for existing conversations,
 without changing their kept model; unsupported provider/wire paths refuse an override explicitly),
+an optional `tool_continuation` (`async`, the default, or `sync`: before starting another
+model request, wait until all outstanding tool calls have terminal results; tools still run
+concurrently, and this setting refreshes for existing conversations),
 an optional `service` (accepted as metadata but ignored for placement; harness reads `provider`
 beside `harness::Config`, as `harness::config::Pin`), and whose body is the system prompt (`harness::Config`). A
 model call sends each paragraph of the system prompt as its own system block, in order,
@@ -185,8 +188,13 @@ was taken back, or it is not active), does not run. `files_history`, `files_list
 `files_find` each answer one page: `limit` (at least 1) chooses its number of snapshots
 or entries, 20 when omitted or null, and `cursor` takes the previous answer's `next` to
 continue. This is a tool default, not a bound on files queries: a files `PageRequest`
-with no limit still means every row. Once the turn is recorded and every
-result is back, harness asks the model again. Input that arrives while the loop runs is
+with no limit still means every row. By default, once the turn is recorded, harness can
+ask the model again with call acknowledgements while results are still outstanding. With
+`tool_continuation = "sync"`, it waits for every outstanding call to finish, fail or be
+refused before another model request. Call acknowledgements remain in the transcript,
+and actual results follow as separate inputs. Input arriving during tool work never
+bypasses that wait. Recovery records real terminal outcomes before releasing it; a
+pending call is not silently marked completed. Input that arrives while the loop runs is
 held and follows the results; behind a turn the model paused (`pause_turn`, mid server
 tool), it waits until the continuation is answered, as the continuation goes on from the
 paused turn's last block. A paused turn whose continuation is given up keeps no server

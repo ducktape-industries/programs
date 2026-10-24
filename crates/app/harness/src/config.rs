@@ -39,6 +39,15 @@ pub struct PromptConfig {
     pub config: Config,
     pub pin: Pin,
     pub compaction_instruction: Option<String>,
+    pub tool_continuation: ToolContinuation,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolContinuation {
+    #[default]
+    Async,
+    Sync,
 }
 
 #[derive(
@@ -164,6 +173,8 @@ struct FrontMatter {
     service: Option<String>,
     provider: Option<String>,
     compaction_instruction: Option<String>,
+    #[serde(default)]
+    tool_continuation: ToolContinuation,
 }
 
 fn fence(line: &str) -> bool {
@@ -254,11 +265,15 @@ impl PromptConfig {
             config,
             pin,
             compaction_instruction: matter.compaction_instruction,
+            tool_continuation: matter.tool_continuation,
         })
     }
 
     fn front(&self) -> String {
         let mut front = self.config.front(&self.pin);
+        if self.tool_continuation == ToolContinuation::Sync {
+            front.push_str("tool_continuation = \"sync\"\n");
+        }
         if let Some(instruction) = &self.compaction_instruction {
             let instruction = toml::Value::String(instruction.clone());
             front.push_str(&format!("compaction_instruction = {instruction}\n"));
@@ -362,6 +377,7 @@ pub fn with_front(file: &[u8], config: &Config, provider: &str) -> Result<String
         config: config.clone(),
         pin,
         compaction_instruction: parsed.compaction_instruction,
+        tool_continuation: parsed.tool_continuation,
     };
     Ok(format!("{open}{}{close}{body}", parsed.front()))
 }
