@@ -1,6 +1,6 @@
 //! The agents on a `MockChain` with identity, attribution, awaits, scheduler, chat, files, egress,
 //! wake and valset seated: what an agent hears reaches it, its model's node answers as the model
-//! would, whole or streamed, and every tool call runs as the agent once its relay comes back.
+//! would, whole or streamed; tools write as the agent after their relay or preparation.
 mod accounts;
 mod adapted;
 mod blob_put;
@@ -19,6 +19,7 @@ mod conversations;
 mod depth;
 mod file_tools;
 mod files_diff;
+mod files_prepare;
 mod final_errors;
 mod fleet_run;
 mod forge_commit;
@@ -553,16 +554,37 @@ fn model_says_after(chain: &MockChain, content: Value, stop: &str, input_tokens:
 
 fn relay_back(chain: &MockChain, call: &str) {
     let rows = assigned(chain, RELAY);
-    let row = rows
-        .iter()
-        .find(|row| {
-            row.request
-                == Request::Relay {
-                    note: call.as_bytes().to_vec(),
-                }
-        })
-        .expect("the call is relaying");
-    answer(chain, row.id, Answer::Output(Vec::new()));
+    let relaying = rows.iter().find(|row| {
+        row.request
+            == Request::Relay {
+                note: call.as_bytes().to_vec(),
+            }
+    });
+    if let Some(row) = relaying {
+        answer(chain, row.id, Answer::Output(Vec::new()));
+        return;
+    }
+    let preparations = chain.preparations();
+    let host = chain.host(&harness());
+    let exec = host.exec(::program::MockHost::env(harness()));
+    let completed = crate::state::CALLS
+        .all(&exec)
+        .unwrap()
+        .into_iter()
+        .any(|((_, id), row)| id == call && matches!(row.state, CallState::Done { .. }));
+    if completed {
+        return;
+    }
+    assert!(
+        !preparations.is_empty(),
+        "the call has no relay or native preparation"
+    );
+    for (id, open) in preparations {
+        if open.answered.is_none() {
+            chain.answer_preparation(id).unwrap();
+        }
+        chain.ready_preparation(id).unwrap();
+    }
 }
 
 fn frames(chain: &MockChain, thread: u64) -> Vec<Body> {
@@ -1051,7 +1073,8 @@ fn every_tool_call_is_acked_at_once_and_its_result_arrives_independently() {
             .any(|body| matches!(body, Body::Refused { problem, .. } if problem.contains("path")))
     );
     assert_eq!(bodies.len(), 6);
-    assert_eq!(assigned(chain, RELAY).len(), 2);
+    assert_eq!(assigned(chain, RELAY).len(), 1);
+    assert_eq!(chain.preparations().len(), 1);
     let [receipt] = assigned(chain, SERVICE).try_into().unwrap();
     let sent = provider_body(chain, &receipt);
     let results = sent["messages"][2]["content"].as_array().unwrap();
@@ -1219,7 +1242,10 @@ fn a_call_in_flight_when_its_agent_is_taken_back_does_not_run() {
     chain.at(4, 0);
     relay_back(chain, "toolu_w");
     let (text, failed) = result_of(chain, thread, "toolu_w");
-    assert!(failed && text.contains("stopped running here"), "{text}");
+    assert!(
+        failed && text.contains("stopped before preparation completed"),
+        "{text}"
+    );
     let asked = files::Query::Stat {
         path: "/shared/late.md".into(),
         at: None,
@@ -1228,6 +1254,14 @@ fn a_call_in_flight_when_its_agent_is_taken_back_does_not_run() {
         panic!()
     };
     assert_eq!(entry, None, "the agent taken back wrote nothing");
+    assert!(
+        !chain
+            .host(&harness())
+            .borrow()
+            .lines
+            .keys()
+            .any(|(program, line)| { program == &harness() && line.starts_with(b"read/") })
+    );
     chain.at(5, 0);
     model_says(
         chain,

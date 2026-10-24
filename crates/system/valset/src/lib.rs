@@ -81,6 +81,9 @@ pub enum Query {
     #[ask(Reply::QueryPolicy(QueryPolicy))]
     #[tool_query(description = "Which queries the network answers: Signed, only queries signed by a key, or Open, unsigned ones too; a network founded before the policy existed answers Signed.", example = crate::tools::query_policy)]
     QueryPolicy,
+    #[ask(Reply::HaloCleared(Vec<Vec<u8>>))]
+    #[tool_query(description = "The keys of members that explicitly cleared their direct halo address, in key order.", example = crate::tools::halo_cleared)]
+    HaloCleared,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -95,6 +98,7 @@ pub enum Reply {
     },
     Voices(Vec<Vec<u8>>),
     QueryPolicy(QueryPolicy),
+    HaloCleared(Vec<Vec<u8>>),
 }
 
 /// A motion waiting for votes, and the validators that cast one: only
@@ -148,6 +152,7 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Halo · {halo}"),
             vec![field("halo", Value::text(halo))],
         ),
+        Op::ClearHalo => ("No direct halo".into(), vec![]),
         Op::Vote(motion) => {
             let key = |key: &Vec<u8>| vec![field("key", Value::Key(key.clone()))];
             let (verb, fields) = match motion {
@@ -191,6 +196,6 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Enroll", "Leave", "Vote", "SetHalo"]
+        ["Enroll", "Leave", "Vote", "SetHalo", "ClearHalo"]
     );
 }

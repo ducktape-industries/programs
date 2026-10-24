@@ -1,25 +1,4 @@
-//! A native chain of programs, run as the kernel runs them: several programs
-//! each seated by name over its own [`MockHost`], querying each other
-//! through the bytes, and a submission run as one frame, its messages after
-//! it, depth first, in emit order, undone whole on a rejection it does not
-//! absorb (the kernel's `run_frame`, `crates/kernel/host/src/lib.rs`).
-//! [`MockChain`] is the kernel a native test lacks; a program alone still
-//! runs over a bare [`MockHost`].
-//!
-//! Left out of the kernel's run, on purpose: fuel (a run never runs out),
-//! blob rostering (a blob put stays put), state roots (`ctx.root` is
-//! `None`), committed reads (they read the same map as a plain read), and
-//! the query stack's cycle check (a program asked again while a query of it
-//! is being answered is refused as unknown rather than as a cycle), and
-//! receipts (a submission is its output or its refusal; what ran nested is
-//! read off the hosts, and a rejected run's events go with its writes,
-//! where the kernel's receipt would keep them; the receipt the scheduler
-//! keeps for a scheduled run carries its program and outcome alone).
-//!
-//! A block ends when [`MockChain::at`] moves past it: the chain then runs the
-//! entries the scheduler role holds due at that height, as the kernel's
-//! `crates/kernel/host/src/scheduling.rs` does.
-
+//! Native programs run together with awaiting calls and explicit read/preparation completion.
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
@@ -116,6 +95,7 @@ struct Checkpoint {
     written: Vec<crate::mock::Written>,
     parked: BTreeSet<FrameId>,
     reads: BTreeMap<Ticket, OpenRead>,
+    preparations: BTreeMap<Ticket, OpenPreparation>,
 }
 
 struct Parked {
@@ -231,6 +211,7 @@ pub struct MockChain {
     clock: Cell<(u64, u64)>,
     held: RefCell<BTreeMap<BlobId, Blob>>,
     reads: RefCell<BTreeMap<Ticket, OpenRead>>,
+    preparations: RefCell<BTreeMap<Ticket, OpenPreparation>>,
     unserved: Cell<bool>,
 }
 
@@ -260,6 +241,7 @@ impl MockChain {
             clock: Cell::new((1, 0)),
             held: RefCell::default(),
             reads: RefCell::default(),
+            preparations: RefCell::default(),
             unserved: Cell::new(false),
         }
     }
@@ -1253,6 +1235,24 @@ impl MockChain {
 
     fn ask_read(&self, env: &Env, ticket: Ticket, payload: &[u8]) -> Result<(), Error> {
         let asked = abi::decode::<reads::Op>(payload).map_err(crate::kernel::error_from)?;
+        if let reads::Op::Prepare {
+            body,
+            hash,
+            kind,
+            chunk_bytes,
+        } = asked
+        {
+            return self.ask_preparation(
+                env,
+                ticket,
+                reads::Preparation {
+                    body,
+                    hash,
+                    kind,
+                    chunk_bytes,
+                },
+            );
+        }
         let reads::Op::Read { target, query } = asked else {
             let only = "a program asks $reads to read; only a member answers a read";
             return Err(Error::new(code::UNSUPPORTED, only));
@@ -1288,6 +1288,7 @@ impl MockChain {
     }
 
     fn expire_reads(&self) {
+        self.expire_preparations();
         let (height, _) = self.clock.get();
         let due: Vec<Ticket> = self
             .reads
@@ -1324,6 +1325,7 @@ impl MockChain {
                 .collect(),
             parked: self.parked.borrow().keys().copied().collect(),
             reads: self.reads.borrow().clone(),
+            preparations: self.preparations.borrow().clone(),
         }
     }
 
@@ -1335,6 +1337,7 @@ impl MockChain {
             .borrow_mut()
             .retain(|frame, _| checkpoint.parked.contains(frame));
         *self.reads.borrow_mut() = checkpoint.reads;
+        *self.preparations.borrow_mut() = checkpoint.preparations;
     }
 }
 
@@ -1361,6 +1364,9 @@ impl Seat {
         })
     }
 }
+
+mod preparations;
+pub use preparations::OpenPreparation;
 
 #[cfg(test)]
 mod foreign;

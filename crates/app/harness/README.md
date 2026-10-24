@@ -166,9 +166,9 @@ provisional or final, is the call's failed result. A reply the service sends who
 refusal such as a 429) is read whole. Only the program bound to the egress role may send
 `Streamed`, and only for a thread waiting on its model. While no member node serves any
 service the call may go to, a thread tells itself so and does not ask the model. Each
-tool call is relayed through egress's `relay` service as it starts (a call of a reply
-read whole starts when the reply is recorded); when its relay comes back, in a later
-block, harness runs the call: a read of `files`, `chat`, `forge`, the identity role or
+tool call other than native `files_write` is relayed through egress's `relay` service
+as it starts (a call of a reply read whole starts when the reply is recorded); when
+its relay comes back, in a later block, harness runs the call: a read of `files`, `chat`, `forge`, the identity role or
 `activity` as a query, a search or read of the thread's own transcript, a write to
 `files` or `chat` as a call made as the agent, or any program's own op or query through
 three tools that read the program's borsh schema (its `Op`, `Query` and `Reply`, and
@@ -286,3 +286,13 @@ by those ids and deleting their records and debtor/asker indexes. It returns the
 when more remain, otherwise null; continue from that cursor. Retirement makes no kept/dropped claim
 about the underlying work. Ordinary booked runs, event waits, note delivery, board state and
 per-agent summary directives are unchanged.
+
+Native `files_write` bypasses the empty Relay. It captures base, current mode and meta,
+then awaits pure chunk preparation through `$reads` as harness. The returned read blob
+contains ordered chunk entries; harness constructs `Content::Chunks` without hashing
+or putting those chunks again. A stopped, closed, voided or already-completed call
+cannot commit a late result. Commit still runs as the original agent, with captured
+base and metadata, followed by the optional write list. The continuation releases
+only its preparation ticket's reply hold after decoding or abandoning the reply,
+before any subsequent write awaits. A list refusal leaves the successful file write in place. This requires the node's reads worker to be activated;
+a source build alone does not activate it on a network.

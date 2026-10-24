@@ -148,7 +148,7 @@ enum State {
 }
 
 impl Call {
-    fn ticket(&mut self) -> Result<Ticket, Error> {
+    pub fn ticket(&mut self) -> Result<Ticket, Error> {
         let State::Unsent {
             target,
             payload,

@@ -559,6 +559,58 @@ fn a_member_registers_a_halo_address_other_members_dial_and_moves_it_alone() {
     assert_eq!(refused(&store, 7, moved), code::NOT_FOUND);
 }
 
+fn halo_cleared(store: &MockHost) -> Vec<Vec<u8>> {
+    match ask(store, Query::HaloCleared) {
+        Reply::HaloCleared(cleared) => cleared,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn only_explicit_member_action_clears_a_direct_halo() {
+    let store = founded();
+    assert!(halo_cleared(&store).is_empty());
+    run(&store, 1, Op::SetHalo { halo: halo(1) }).unwrap();
+    assert!(halo_cleared(&store).is_empty());
+    assert_eq!(refused(&store, 7, Op::ClearHalo), code::NOT_FOUND);
+    run(&store, 2, Op::ClearHalo).unwrap();
+    run(&store, 1, Op::ClearHalo).unwrap();
+    run(&store, 1, Op::ClearHalo).unwrap();
+    assert_eq!(halo_cleared(&store), [key(1), key(2)]);
+    assert_eq!(held(&store, 1), Some(membership(1, Role::Validator)));
+    run(&store, 1, Op::SetHalo { halo: halo(1) }).unwrap();
+    assert_eq!(halo_cleared(&store), [key(2)]);
+    run(&store, 2, enroll(2, None)).unwrap();
+    assert!(halo_cleared(&store).is_empty());
+}
+
+#[test]
+fn leaving_or_removal_erases_a_members_explicit_halo_choice() {
+    let store = founded();
+    run(&store, 3, enroll(3, Some(invite(1, 1)))).unwrap();
+    run(&store, 3, Op::ClearHalo).unwrap();
+    run(&store, 3, Op::Leave).unwrap();
+    assert!(halo_cleared(&store).is_empty());
+    run(&store, 3, enroll(3, Some(invite(1, 2)))).unwrap();
+    assert!(halo_cleared(&store).is_empty());
+    run(&store, 3, Op::ClearHalo).unwrap();
+    pass(&store, &[1, 2], Motion::Remove { key: key(3) });
+    assert_eq!(held(&store, 3), None);
+    assert!(halo_cleared(&store).is_empty());
+}
+
+#[test]
+fn halo_cleared_uses_the_existing_current_core_role_codec() {
+    assert_eq!(
+        abi::encode(&Query::HaloCleared),
+        abi::encode(&abi::role::validators::Query::HaloCleared)
+    );
+    assert_eq!(
+        abi::encode(&Reply::HaloCleared(vec![key(1)])),
+        abi::encode(&abi::role::validators::Reply::HaloCleared(vec![key(1)]))
+    );
+}
+
 #[test]
 fn memberships_page_in_key_order_at_the_answering_height() {
     let store = founded();

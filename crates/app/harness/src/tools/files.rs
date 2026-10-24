@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use ::program::{BlobId, Error, ExecCtx, HashKind, invalid};
 use abi::role::identity::AccountNumber;
+use abi::role::reads;
 use files::{Change, Content, EntryInfo, Fold, Node, Ownership, Party, Query, Reply};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -825,8 +826,6 @@ impl Tool for Write {
         )
     }
 
-    // A file already at the path keeps its meta, and its mode unless the call gives one: a
-    // rewrite changes the bytes, not what the file carries.
     fn run(ctx: &ExecCtx, seat: &Seat, args: WriteArgs) -> Result<Run, Error> {
         let base = resolved(ctx, snapshot(&args.base)?)?;
         let (exec, meta) = match stat(ctx, &args.path, None)? {
@@ -837,25 +836,58 @@ impl Tool for Write {
             }) => (args.executable.unwrap_or(exec), meta),
             _ => (args.executable.unwrap_or(false), BTreeMap::new()),
         };
-        let path = args.path.clone();
-        let put = Change::Put {
-            path: args.path,
-            exec,
-            meta,
-            content: chunked(ctx, args.content.as_bytes())?,
-        };
-        let commit = committing(seat, base, args.message, vec![put]);
-        let Some(list) = args.write else {
-            return Ok(Run::Write(vec![commit]));
+        let preparation = reads::Preparation {
+            body: args.content.into_bytes(),
+            hash: HashKind::Sha256,
+            kind: files::CHUNK.into(),
+            chunk_bytes: files::CHUNK_SIZE,
         };
         let agent = seat.agent;
+        let thread = seat.thread;
+        let call = seat.call.to_owned();
         let then = move |ctx: &ExecCtx, output: &[u8]| {
-            let mut answer = committed(output)?;
-            answer["write"] = json!("set");
-            set_list(ctx, agent, path, Some(list), answer)
+            let read: reads::Read = ::program::decoded(reads::PROGRAM, "Read", output)?;
+            let reply = ctx
+                .blob_get(read.entry.id)
+                .ok_or_else(|| invalid("prepared reply is not held"))?;
+            if reply.kind != reads::KIND {
+                return Err(invalid("prepared reply has the wrong kind"));
+            }
+            let prepared: reads::Prepared =
+                ::program::decoded(reads::PROGRAM, "Prepared", &reply.body)?;
+            let content = Content::Chunks {
+                size: prepared.size,
+                chunks: prepared.chunks.into_iter().map(|entry| entry.id).collect(),
+            };
+            let path = args.path.clone();
+            let put = Change::Put {
+                path: args.path,
+                exec,
+                meta,
+                content,
+            };
+            let seat = Seat {
+                thread,
+                agent,
+                call: &call,
+                shown: None,
+            };
+            let commit = committing(&seat, base, args.message, vec![put]);
+            let Some(list) = args.write else {
+                return Ok(Run::Write(vec![commit]));
+            };
+            let then = move |ctx: &ExecCtx, output: &[u8]| {
+                let mut answer = committed(output)?;
+                answer["write"] = json!("set");
+                set_list(ctx, agent, path, Some(list), answer)
+            };
+            Ok(Run::Then {
+                writes: vec![commit],
+                then: Box::new(then),
+            })
         };
-        Ok(Run::Then {
-            writes: vec![commit],
+        Ok(Run::Prepare {
+            preparation,
             then: Box::new(then),
         })
     }

@@ -4,7 +4,8 @@ use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, decoded};
 
 use crate::rules::{
-    MEMBERS, account_of, execute, init, memberships, motions, query_policy, validators, voices,
+    MEMBERS, account_of, execute, halo_cleared, init, memberships, motions, query_policy,
+    validators, voices,
 };
 use crate::{Genesis, Membership, Op, PROGRAM, Query, Reply};
 
@@ -51,6 +52,7 @@ impl Program for Valset {
                 Reply::Voices(voices)
             }
             Query::QueryPolicy => Reply::QueryPolicy(query_policy(ctx)?),
+            Query::HaloCleared => Reply::HaloCleared(halo_cleared(ctx)?),
         })
     }
 }

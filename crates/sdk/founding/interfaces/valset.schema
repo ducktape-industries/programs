@@ -289,8 +289,21 @@
               3,
               "SetHalo",
               "Op__SetHalo"
+            ],
+            [
+              4,
+              "ClearHalo",
+              "Op__ClearHalo"
             ]
           ]
+        }
+      }
+    ],
+    [
+      "Op__ClearHalo",
+      {
+        "struct": {
+          "fields": "empty"
         }
       }
     ],
@@ -576,6 +589,11 @@
               6,
               "QueryPolicy",
               "Query__QueryPolicy"
+            ],
+            [
+              7,
+              "HaloCleared",
+              "Query__HaloCleared"
             ]
           ]
         }
@@ -611,6 +629,14 @@
     ],
     [
       "QueryPolicy__Signed",
+      {
+        "struct": {
+          "fields": "empty"
+        }
+      }
+    ],
+    [
+      "Query__HaloCleared",
       {
         "struct": {
           "fields": "empty"
@@ -741,8 +767,25 @@
               6,
               "QueryPolicy",
               "Reply__QueryPolicy"
+            ],
+            [
+              7,
+              "HaloCleared",
+              "Reply__HaloCleared"
             ]
           ]
+        }
+      }
+    ],
+    [
+      "Reply__HaloCleared",
+      {
+        "struct": {
+          "fields": {
+            "unnamed_fields": [
+              "Vec<Vec<u8>>"
+            ]
+          }
         }
       }
     ],

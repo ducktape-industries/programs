@@ -66,6 +66,10 @@ pub(crate) type Following = Box<dyn FnOnce(&ExecCtx, &[u8]) -> Result<Run, Error
 
 pub(crate) enum Run {
     Done(Value),
+    Prepare {
+        preparation: abi::role::reads::Preparation,
+        then: Following,
+    },
     Write(Vec<Write>),
     Read {
         writes: Vec<Write>,

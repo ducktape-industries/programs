@@ -19,6 +19,7 @@ const DOOR: Item<bool> = Item::new("door");
 const QUERIES: Item<QueryPolicy> = Item::new("queries");
 const SPENT: Set<Vec<u8>> = Set::new("spent/");
 const VOTES: Map<Vec<u8>, Vec<Vec<u8>>> = Map::new("votes/");
+const HALOLESS: Set<Vec<u8>> = Set::new("haloless/");
 const KEY_LEN: usize = 32;
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) -> Result<(), Error> {
@@ -49,6 +50,7 @@ pub(crate) fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         Op::Leave => leave(ctx, signer),
         Op::Vote(motion) => vote(ctx, signer, motion),
         Op::SetHalo { halo } => set_halo(ctx, signer, halo),
+        Op::ClearHalo => clear_halo(ctx, signer),
     }
 }
 
@@ -58,6 +60,10 @@ pub(crate) fn memberships(ctx: &QueryCtx) -> Result<Vec<Membership>, Error> {
         .into_iter()
         .map(|(_, membership)| membership)
         .collect())
+}
+
+pub(crate) fn halo_cleared(ctx: &QueryCtx) -> Result<Vec<Vec<u8>>, Error> {
+    HALOLESS.all(ctx)
 }
 
 pub(crate) fn validators(ctx: &QueryCtx) -> Result<Vec<Vec<u8>>, Error> {
@@ -83,6 +89,7 @@ fn enroll(
             ..held
         };
         MEMBERS.put(ctx, &key, &membership);
+        HALOLESS.remove(ctx, &key);
         return Ok(());
     }
     fits(ctx, &key)?;
@@ -162,6 +169,13 @@ fn set_halo(ctx: &ExecCtx, key: Vec<u8>, halo: String) -> Result<(), Error> {
     registered(&halo)?;
     let held = member(ctx, &key)?;
     MEMBERS.put(ctx, &key, &Membership { halo, ..held });
+    HALOLESS.remove(ctx, &key);
+    Ok(())
+}
+
+fn clear_halo(ctx: &ExecCtx, key: Vec<u8>) -> Result<(), Error> {
+    member(ctx, &key)?;
+    HALOLESS.insert(ctx, &key);
     Ok(())
 }
 
@@ -386,6 +400,7 @@ fn remove(ctx: &ExecCtx, key: Vec<u8>) {
     ] {
         VOTES.remove(ctx, &abi::encode(&motion));
     }
+    HALOLESS.remove(ctx, &key);
     MEMBERS.remove(ctx, &key);
 }
 

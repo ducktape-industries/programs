@@ -15,7 +15,8 @@ program that fills each role, as the programs role answers), the `Env` origin ch
 (`signer`, `sending_program`, `sent_by`) and `authority` (a message from the program
 bound to the validators role), `export!`, `Awaiting` and `export_awaiting!` (an `async
 fn execute(ctx: Ctx, op)` whose `ctx.call(target, &op).await` waits, parked between
-blocks when it must, for the target's answer), `ctx.schedule(height, target, &op)` and
+blocks when it must, for the target's answer; `Call::ticket` starts that same call and
+returns its ticket so its caller can release a ticket-scoped reply line), `ctx.schedule(height, target, &op)` and
 `ctx.cancel(entry)` (a run of `target` at a later height, through the scheduler role,
 and its cancel), `defer` and `resolve` (how a called program answers later), `Error` and
 its constructors and `decoded` and `MockHost`, the native host the same contexts run
@@ -26,3 +27,7 @@ and the scheduler role's due entries at the end of each block `at` moves past.
 `Scan`, …) become the SDK's (`Error`, `ProgramId`, `MessageId`, `Range`, …), byte for
 byte; `kernel::error_from`/`refusal_from` convert an error. `examples/counter.rs` is a
 program written with it alone
+
+`MockChain` keeps preparation tickets separately from ordinary reads. `preparations`,
+`answer_preparation`, `ready_preparation` and `refuse_preparation` let a test drive the
+pure byte preparation lifecycle explicitly; ordinary `answer_reads` is unchanged.

@@ -48,6 +48,11 @@ impl Described for Ops {
                     halo: "node.example:9100".into(),
                 },
             ),
+            told(
+                "ClearHalo",
+                "The signing enrolled member explicitly has no direct halo address. Its registered address and membership stay unchanged; SetHalo or enrolling again undoes this, as do leaving or removal. Other members reach it through the existing relay or punch path.",
+                Op::ClearHalo,
+            ),
         ]
     }
 }
@@ -82,4 +87,8 @@ pub(crate) fn voices() -> Query {
 
 pub(crate) fn query_policy() -> Query {
     Query::QueryPolicy
+}
+
+pub(crate) fn halo_cleared() -> Query {
+    Query::HaloCleared
 }

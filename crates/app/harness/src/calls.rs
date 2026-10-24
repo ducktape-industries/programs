@@ -57,11 +57,12 @@ fn planned(
     let resolved = tools::resolve(ctx, thread.agent, tool)?
         .ok_or_else(|| format!("there is no tool named {tool}"))?;
     let input: Value = serde_json::from_str(input).map_err(|_| invalid_json(input))?;
-    match resolved {
+    match &resolved {
         Resolved::Native(entry) => (entry.check)(&input)?,
         Resolved::File(file) => file.check(&input)?,
     }
-    let relaying = serves(ctx, RELAY).map_err(|error| error.message)?;
+    let prepares = prepares_bytes(&resolved);
+    let relaying = prepares || serves(ctx, RELAY).map_err(|error| error.message)?;
     if !relaying {
         return Err(format!(
             "no member node serves {RELAY}, so no tool call can run"
@@ -594,7 +595,17 @@ pub(crate) async fn run_call(
 async fn relay_call(ctx: &Ctx, id: u64, index: u64, call: &str) -> Result<Settled, Error> {
     let note = call.as_bytes().to_vec();
     let relay = egress::Request::Relay { note };
-    let relayed = request(ctx, relay, egress::Delivery::Whole, None).await;
+    let owner = thread(ctx, id)?;
+    let row = CALLS.get(ctx, &(id, call.to_owned()))?;
+    let resolved = row
+        .as_ref()
+        .and_then(|row| tools::resolve(ctx, owner.agent, &row.tool).ok().flatten());
+    let prepares = resolved.as_ref().is_some_and(prepares_bytes);
+    let relayed = if prepares {
+        Ok(Vec::new())
+    } else {
+        request(ctx, relay, egress::Delivery::Whole, None).await
+    };
     if is_voided(ctx, id, call)? {
         return release(ctx, id);
     }
@@ -648,6 +659,10 @@ pub(crate) fn lost(ctx: &ExecCtx, id: u64, call: &str, why: String) -> Result<bo
         }
         CallState::Relaying | CallState::Showing | CallState::Done { .. } => Ok(false),
     }
+}
+
+fn prepares_bytes(tool: &Resolved) -> bool {
+    matches!(tool, Resolved::Native(entry) if entry.name == <tools::files::Write as tools::Tool>::NAME)
 }
 
 enum Ready {
@@ -722,6 +737,40 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
     loop {
         let (writes, after, step) = match next {
             Ok(Run::Done(value)) => return Ok((value.to_string(), false)),
+            Ok(Run::Prepare { preparation, then }) => {
+                mark(ctx, id, call, CallState::Writing)?;
+                crate::resume::awaiting(ctx, id, call, &[]).await;
+                let op = abi::role::reads::Op::Prepare {
+                    body: preparation.body,
+                    hash: preparation.hash,
+                    kind: preparation.kind,
+                    chunk_bytes: preparation.chunk_bytes,
+                };
+                let mut preparation = ctx.call_raw(abi::role::reads::PROGRAM, abi::encode(&op));
+                let ticket = preparation.ticket()?;
+                let output = preparation.await;
+                next = (|| {
+                    let current_owner = thread(ctx, id)?;
+                    let current = CALLS.get(ctx, &(id, call.to_owned()))?;
+                    let same = current.is_some_and(|current| {
+                        current.state == CallState::Writing
+                            && current.tool == row.tool
+                            && current.input == row.input
+                    });
+                    let active = !current_owner.closed
+                        && current_owner.agent == owner.agent
+                        && running(ctx, owner.agent)?.is_some()
+                        && same;
+                    if !active {
+                        return Err(::program::wrong_state(
+                            "the call stopped before preparation completed",
+                        ));
+                    }
+                    then(ctx, &output?)
+                })();
+                ctx.blob_release_lines([b"read/".as_slice(), &ticket.to_be_bytes()].concat());
+                continue;
+            }
             Ok(Run::Paced {
                 request,
                 body,

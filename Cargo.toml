@@ -53,19 +53,19 @@ gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpu
 
 # ---- the kernel ABI a program and the host share: ducktape's own
 # `crates/kernel/abi`, at the rev the host below is pinned to
-abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
+abi = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
 
 # ---- the blobs contract the blobs program records and the programs that read
 # held blobs ask it by; the host the founding suite runs the boot set on and
 # the key schemes it signs with, and the probe fixture it seats
 # (dev-dependencies only)
-host = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
-blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
-fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
-state = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
-node = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
-consensus = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
+host = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
+blob = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
+keyscheme = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
+fixture-wasm = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
+state = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
+node = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
+consensus = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
 
 # ---- external
 commonware-codec = { version = "2026.9.0", default-features = false }
@@ -108,7 +108,7 @@ unicode-normalization = "0.1"
 # harness's agent configuration: the TOML front matter of a file in files.
 toml = { version = "1", default-features = false, features = ["std", "parse", "display", "serde"] }
 
-[patch."https://github.com/ducktape-industries/ducktape"]
+[patch."duck://duckpond-725bcad1/forge/core"]
 store = { path = "crates/sdk/store" }
 
 # proc-macro and build-script crates (serde_derive, async-trait, borsh-derive)
@@ -203,5 +203,5 @@ strip = "debuginfo"
 [patch.crates-io]
 # core's state crate builds on its vendored commonware-storage (an owned reader of the QMDB log),
 # so every build that links it takes the same copy
-commonware-storage = { git = "https://github.com/ducktape-industries/ducktape", rev = "9ccd6ea517b31fe1bea2bd04b64246cb14dc99ec" }
+commonware-storage = { git = "duck://duckpond-725bcad1/forge/core", rev = "fb89bfdcf86ebdd4bd780f84b1272fc272c1beb8" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "eef11e96c9fcf7e0389d31f125013370a1b02d92" }

@@ -1,48 +1,4 @@
-//! The program SDK. A program is a type implementing [`Program`] (its name,
-//! the three types it speaks, the same trait a view names it by, and what it
-//! does with each), and one [`export!`]; its entry points receive an [`ExecCtx`] or a [`QueryCtx`],
-//! whose methods are the whole host surface: `env`, `sender` (the account a
-//! write acts as, which the host resolved through the identity role), raw
-//! state (`get`, `set`, `delete`, `scan`), blobs, `event`, `set_return_data`,
-//! `sha256` and `verify`, and the two ways to another program: `emit` (a write
-//! it runs in this frame, replying or not) and `query` (a read). On wasm32
-//! they are host calls; natively the same contexts run over a [`MockHost`],
-//! and several programs run together, a submission as one frame with its
-//! messages and replies as the kernel runs it, on a [`MockChain`].
-//! [`Env`] adds the origin checks (`signer`, `sending_program`, `sent_by`) and
-//! `authority`, which admits only a message from the program bound to the
-//! validators role.
-//! A message emitted with [`Reply::Wanted`] comes back to its emitter as
-//! [`Program::reply`], with its id and outcome; a program
-//! that never wants a reply leaves `reply` at its default.
-//!
-//! ```ignore
-//! use program::{Error, ExecCtx, Program, QueryCtx};
-//!
-//! pub struct Counter;
-//!
-//! impl Program for Counter {
-//!     const NAME: &'static str = "counter";
-//!     type Op = u64;
-//!     type Query = ();
-//!     type Reply = u64;
-//!
-//!     fn execute(ctx: &ExecCtx, by: u64) -> Result<(), Error> {
-//!         let n: u64 = ctx.record("n")?.unwrap_or(0);
-//!         ctx.put("n", &(n + by));
-//!         Ok(())
-//!     }
-//!
-//!     fn query(ctx: &QueryCtx, (): ()) -> Result<u64, Error> {
-//!         Ok(ctx.record("n")?.unwrap_or(0))
-//!     }
-//! }
-//!
-//! program::export!(Counter);
-//! ```
-//!
-//! `store` is the optional typed layer on top (`Map`/`Set`/`Item`, pages).
-
+//! The program SDK, its contexts, awaiting calls and native test chain.
 pub mod awaiting;
 #[cfg(not(target_arch = "wasm32"))]
 mod chain;
@@ -70,7 +26,7 @@ pub use abi::{
 };
 pub use awaiting::{Awaiting, Ctx, all};
 #[cfg(not(target_arch = "wasm32"))]
-pub use chain::{MAX_DEPTH, MockChain, OpenRead, Roster};
+pub use chain::{MAX_DEPTH, MockChain, OpenPreparation, OpenRead, Roster};
 pub use ctx::{ExecCtx, QueryCtx, Reply};
 pub use kernel::{
     AccountNumber, Cause, EntryId, Env, Error, Foreign, FrameId, MessageId, NetworkId, Order,

@@ -466,11 +466,72 @@ fn a_mentioned_agent_answers_through_elected_nodes_and_writes_as_itself() {
             matches!(&frames[2], Body::Receipt { call, .. } if call == "toolu_1"),
             "the call is acknowledged in the frame after its turn"
         );
-        let [relay] = net.assigned(RELAY).await.try_into().unwrap();
+        assert!(net.assigned(RELAY).await.is_empty());
         let [next] = net.assigned(SERVICE).await.try_into().unwrap();
         assert_eq!(net.parked(), 1, "the thread's loop waits parked");
-
-        net.answer(relay.id, Vec::new()).await;
+        let rows = net
+            .host
+            .view(Layer::Confirmed)
+            .scan(PARKED, &Scan::prefix(b"prepare/"))
+            .unwrap();
+        let [row] = rows.as_slice() else {
+            panic!("one native preparation is pending");
+        };
+        let id = u64::from_be_bytes(row.key[b"prepare/".len()..].try_into().unwrap());
+        let open: abi::role::reads::PreparationRow = abi::decode(&row.value).unwrap();
+        assert_eq!(open.requester, harness::PROGRAM);
+        assert_eq!(open.preparation.body, b"up");
+        let chunk = net.stored(&open.preparation.kind, &open.preparation.body);
+        let chunk = abi::role::reads::Entry {
+            id: chunk.id,
+            len: chunk.len,
+            kind: chunk.kind,
+        };
+        let prepared = abi::role::reads::Prepared {
+            size: open.preparation.body.len() as u64,
+            chunks: vec![chunk.clone()],
+        };
+        let reply = net.stored(abi::role::reads::KIND, &abi::encode(&prepared));
+        let reply = abi::role::reads::Entry {
+            id: reply.id,
+            len: reply.len,
+            kind: reply.kind,
+        };
+        let mut members: Vec<_> = FOUNDERS.into_iter().map(public).collect();
+        members.sort();
+        let assigned = abi::role::reads::assigned(id, &members).unwrap().to_vec();
+        net.apply(
+            &assigned,
+            abi::role::reads::PROGRAM,
+            &abi::role::reads::Op::PreparedAnswer {
+                id,
+                at: net.height,
+                outcome: Ok(abi::role::reads::Product {
+                    reply,
+                    produced: vec![chunk],
+                }),
+            },
+        )
+        .await;
+        let rows = net
+            .host
+            .view(Layer::Confirmed)
+            .scan(PARKED, &Scan::prefix(b"prepare/"))
+            .unwrap();
+        let [row] = rows.as_slice() else {
+            panic!("preparation awaits custody");
+        };
+        let open: abi::role::reads::PreparationRow = abi::decode(&row.value).unwrap();
+        let abi::role::reads::PreparationState::Putting { bundle, .. } = open.state else {
+            panic!("preparation awaits custody");
+        };
+        net.receipted(bundle, &FOUNDERS).await;
+        net.apply(
+            &public(NODE),
+            abi::role::reads::PROGRAM,
+            &abi::role::reads::Op::Ready { id },
+        )
+        .await;
         let asked = files::Query::Read {
             path: "/shared/status.md".into(),
             at: None,
