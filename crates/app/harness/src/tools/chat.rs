@@ -218,6 +218,7 @@ impl Tool for Thread {
 pub(crate) struct SearchArgs {
     text: String,
     channel: Option<String>,
+    limit: Option<u64>,
     around: Option<usize>,
     cursor: Option<String>,
 }
@@ -241,7 +242,7 @@ pub(crate) struct Search;
 
 impl Tool for Search {
     const NAME: &'static str = "chat_search";
-    const DESCRIPTION: &'static str = "Search chat messages for words, across every channel or in one: each hit's channel, seq, author and time, and the sentences of it that hold a word (with around, the bytes around each match instead). chat_thread or chat_messages reads a message whole.";
+    const DESCRIPTION: &'static str = "Search chat messages for words, across every channel or in one: each hit's channel, seq, author and time, and the sentences of it that hold a word (with around, the bytes around each match instead). The newest limit hits (20 if omitted) and next for older hits; chat_thread or chat_messages reads a message whole.";
     type Args = SearchArgs;
 
     fn schema() -> Value {
@@ -249,6 +250,7 @@ impl Tool for Search {
             json!({
                 "text": { "type": "string", "description": "the words to find" },
                 "channel": channel_schema(),
+                "limit": { "type": "integer", "minimum": 1, "description": "at most this many matching messages, the newest; 20 if omitted" },
                 "around": { "type": "integer", "minimum": 0, "description": "instead of the sentences: this many bytes on each side of each match" },
                 "cursor": cursor_schema(),
             }),
@@ -257,12 +259,20 @@ impl Tool for Search {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: SearchArgs) -> Result<Run, Error> {
+        let limit = args.limit.unwrap_or(LISTED);
+        if limit == 0 {
+            return Err(::program::invalid(
+                "a limit is a number of matching messages from 1",
+            ));
+        }
+        let mut page = page(&args.cursor)?;
+        page.limit = Some(limit);
         let terms = chat::search_terms(&args.text);
         let asked = Query::TextSearch {
             text: args.text,
             viewer: vec![agent(seat)],
             channel_id: args.channel,
-            page: page(&args.cursor)?,
+            page,
         };
         match ask(ctx, seat, asked)? {
             Reply::TextHits(rows) => Ok(Run::Done(json!({
