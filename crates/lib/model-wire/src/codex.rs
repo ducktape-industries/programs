@@ -389,7 +389,13 @@ impl Fold {
             "response.completed" => vec![self.completed(&event["response"])],
             "response.incomplete" => vec![self.incomplete(&event["response"])],
             "response.failed" => vec![Event::Failed(failed(&event["response"]["error"]))],
-            "error" => vec![Event::Failed(failed(&event))],
+            "error" => {
+                let error = event
+                    .get("error")
+                    .filter(|error| error.is_object())
+                    .unwrap_or(&event);
+                vec![Event::Failed(failed(error))]
+            }
             _ => Vec::new(),
         }
     }

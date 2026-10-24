@@ -215,6 +215,52 @@ fn an_incomplete_reply_stops_at_max_tokens_and_a_failure_reads_by_its_code() {
 }
 
 #[test]
+fn a_nested_stream_error_preserves_its_code_and_message() {
+    let classes = [
+        ("context_length_exceeded", Class::Overflow),
+        ("rate_limit_exceeded", Class::Limited),
+        ("server_error", Class::Overloaded),
+        ("unknown_failure", Class::Provider),
+    ];
+    for (code, class) in classes {
+        let event = json!({
+            "type": "error",
+            "error": { "type": "invalid_request_error", "code": code, "message": "the provider's explanation" },
+        });
+        let Some(Event::Failed(failure)) = folded(&[event]).pop() else {
+            panic!("{code} fails");
+        };
+        assert_eq!(failure.class, class, "{code}");
+        assert!(failure.message.contains(code));
+        assert!(failure.message.contains("the provider's explanation"));
+    }
+}
+
+#[test]
+fn flat_stream_errors_keep_their_fields_and_empty_errors_stay_unclassified() {
+    for nested in [None, Some(Value::Null), Some(json!("not an error object"))] {
+        let mut event = json!({ "type": "error", "code": "server_error", "message": "try later" });
+        if let Some(nested) = nested {
+            event["error"] = nested;
+        }
+        let Some(Event::Failed(failure)) = folded(&[event]).pop() else {
+            panic!("the event fails");
+        };
+        assert_eq!(failure.class, Class::Overloaded);
+        assert!(failure.message.contains("server_error: try later"));
+    }
+    for event in [
+        json!({ "type": "error" }),
+        json!({ "type": "error", "error": {} }),
+    ] {
+        let Some(Event::Failed(failure)) = folded(&[event]).pop() else {
+            panic!("the event fails");
+        };
+        assert_eq!(failure.class, Class::Provider);
+    }
+}
+
+#[test]
 fn a_stream_cut_short_is_dropped() {
     let stream = text_stream();
     let events = folded(&stream[..4]);
