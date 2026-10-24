@@ -59,7 +59,7 @@ fn next(seeded: &mut Seeded) -> (Oid, Vec<u8>) {
     (child, pack_of(&seeded.store, &new))
 }
 
-fn settings_ops() -> [Op; 4] {
+fn settings_ops() -> [Op; 3] {
     [
         Op::Configure {
             repo: "project".into(),
@@ -69,11 +69,6 @@ fn settings_ops() -> [Op; 4] {
             repo: "project".into(),
             branch: FEATURE.as_bytes().to_vec(),
             protected: true,
-        },
-        Op::RequireChecks {
-            repo: "project".into(),
-            branch: FEATURE.as_bytes().to_vec(),
-            required: None,
         },
         Op::Archive {
             repo: "project".into(),
@@ -142,7 +137,10 @@ fn a_new_repository_takes_writes_from_its_owner_alone() {
         "another's change"
     );
     act(sandbox, STRANGER, &close).unwrap();
-    for op in settings_ops().iter().take(3) {
+    for op in settings_ops()
+        .iter()
+        .filter(|op| !matches!(op, Op::Archive { .. }))
+    {
         act(sandbox, OWNER, op).unwrap();
     }
     push(

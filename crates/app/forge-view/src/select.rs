@@ -9,28 +9,12 @@ use crate::words::{self, ref_label};
 use forge::Principal;
 use forge::{
     Bounds, Change, ChangeState, CommitInfo, Comparison, FileDiff, PageRequest, PageResponse,
-    PreviewInfo, Query, RefInfo, Reply, RepoInfo, Review, Revision, Side, Tally, Verdict,
+    Query, RefInfo, Reply, RepoInfo, Review, Revision, Side, Tally, Verdict,
 };
 use identity::{Ownership, Party};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CheckedOn {
-    Head,
-    Preview { stale: bool },
-}
-
-impl CheckedOn {
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            CheckedOn::Head => "head",
-            CheckedOn::Preview { .. } => "preview",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CheckGroup {
-    pub(crate) on: CheckedOn,
     pub(crate) commit: String,
 }
 
@@ -591,20 +575,6 @@ impl Forge {
         }
     }
 
-    pub(crate) fn preview_query(&self) -> Option<Query> {
-        let (change, ..) = self.change()?;
-        let repo = self.nav.repo.clone()?;
-        let open = change.state == ChangeState::Open;
-        open.then_some(Query::Preview { repo, n: change.n })
-    }
-
-    pub(crate) fn preview(&self) -> Option<&PreviewInfo> {
-        match self.ready(&self.preview_query()?)? {
-            Reply::Preview { preview, .. } => preview.as_ref(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn statuses_query(&self, commit: &str) -> Option<Query> {
         Some(Query::Statuses {
             repo: self.nav.repo.clone()?,
@@ -614,32 +584,17 @@ impl Forge {
     }
 
     pub(crate) fn check_groups(&self) -> Vec<CheckGroup> {
-        let head = self.checked_head();
-        let target = self.change().and_then(|(_, _, target, _)| target.clone());
-        let preview = self.preview().map(|preview| {
-            let source_moved = head.as_deref() != Some(preview.from_head.as_str());
-            let target_moved = target.as_deref() != Some(preview.into_head.as_str());
-            let stale = source_moved || target_moved;
-            CheckGroup {
-                on: CheckedOn::Preview { stale },
-                commit: preview.merge.clone(),
-            }
-        });
-        head.map(|commit| CheckGroup {
-            on: CheckedOn::Head,
-            commit,
-        })
-        .into_iter()
-        .chain(preview)
-        .collect()
+        self.checked_head()
+            .map(|commit| CheckGroup { commit })
+            .into_iter()
+            .collect()
     }
 
     pub(crate) fn check_reads(&self) -> Vec<Query> {
-        let statuses = self
-            .check_groups()
+        self.check_groups()
             .into_iter()
-            .filter_map(|group| self.statuses_query(&group.commit));
-        self.preview_query().into_iter().chain(statuses).collect()
+            .filter_map(|group| self.statuses_query(&group.commit))
+            .collect()
     }
 
     /// The principals chat marks as the reader's own: at most one.

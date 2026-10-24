@@ -8,41 +8,6 @@
       }
     ],
     [
-      "Carried",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "context",
-                "String"
-              ],
-              [
-                "gated",
-                "String"
-              ],
-              [
-                "reported",
-                "CheckState"
-              ],
-              [
-                "state",
-                "CheckState"
-              ],
-              [
-                "url",
-                "Option<String>"
-              ],
-              [
-                "differs",
-                "Vec<String>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "CheckState",
       {
         "enum": {
@@ -105,25 +70,6 @@
       }
     ],
     [
-      "Foreign",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "network",
-                "[u8; 32]"
-              ],
-              [
-                "account",
-                "u64"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Interface<Op, Query, Reply, Returns<Op>>",
       {
         "struct": {
@@ -156,11 +102,6 @@
         "enum": {
           "tag_width": 1,
           "variants": [
-            [
-              0,
-              "Watched",
-              "Op__Watched"
-            ],
             [
               1,
               "Report",
@@ -270,58 +211,6 @@
               ]
             ]
           }
-        }
-      }
-    ],
-    [
-      "Op__Watched",
-      {
-        "struct": {
-          "fields": {
-            "unnamed_fields": [
-              "Watched"
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Option<PreviewVerdict>",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "None",
-              "()"
-            ],
-            [
-              1,
-              "Some",
-              "PreviewVerdict"
-            ]
-          ]
-        }
-      }
-    ],
-    [
-      "Option<Principal>",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "None",
-              "()"
-            ],
-            [
-              1,
-              "Some",
-              "Principal"
-            ]
-          ]
         }
       }
     ],
@@ -451,90 +340,6 @@
       }
     ],
     [
-      "PreviewVerdict",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "head",
-                "String"
-              ],
-              [
-                "merge",
-                "String"
-              ],
-              [
-                "carried",
-                "Vec<Carried>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Principal",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "Account",
-              "Principal__Account"
-            ],
-            [
-              1,
-              "Root",
-              "Principal__Root"
-            ],
-            [
-              2,
-              "Foreign",
-              "Principal__Foreign"
-            ]
-          ]
-        }
-      }
-    ],
-    [
-      "Principal__Account",
-      {
-        "struct": {
-          "fields": {
-            "unnamed_fields": [
-              "u64"
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Principal__Foreign",
-      {
-        "struct": {
-          "fields": {
-            "unnamed_fields": [
-              "Foreign"
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Principal__Root",
-      {
-        "struct": {
-          "fields": "empty"
-        }
-      }
-    ],
-    [
       "Query",
       {
         "enum": {
@@ -544,11 +349,6 @@
               0,
               "Reports",
               "Query__Reports"
-            ],
-            [
-              1,
-              "Verdict",
-              "Query__Verdict"
             ],
             [
               2,
@@ -576,25 +376,6 @@
               [
                 "page",
                 "PageRequest"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Query__Verdict",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
               ]
             ]
           }
@@ -632,11 +413,6 @@
               "Reply__Reports"
             ],
             [
-              1,
-              "Verdict",
-              "Reply__Verdict"
-            ],
-            [
               2,
               "Wanted",
               "Reply__Wanted"
@@ -652,18 +428,6 @@
           "fields": {
             "unnamed_fields": [
               "PageResponse<Report>"
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Reply__Verdict",
-      {
-        "struct": {
-          "fields": {
-            "unnamed_fields": [
-              "Option<PreviewVerdict>"
             ]
           }
         }
@@ -754,67 +518,10 @@
       }
     ],
     [
-      "Revision",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "Ref",
-              "Revision__Ref"
-            ],
-            [
-              1,
-              "Oid",
-              "Revision__Oid"
-            ]
-          ]
-        }
-      }
-    ],
-    [
-      "Revision__Oid",
-      {
-        "struct": {
-          "fields": {
-            "unnamed_fields": [
-              "String"
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Revision__Ref",
-      {
-        "struct": {
-          "fields": {
-            "unnamed_fields": [
-              "Vec<u8>"
-            ]
-          }
-        }
-      }
-    ],
-    [
       "String",
       {
         "sequence": {
           "elements": "u8",
-          "length_range": {
-            "end": 4294967295,
-            "start": 0
-          },
-          "length_width": 4
-        }
-      }
-    ],
-    [
-      "Vec<Carried>",
-      {
-        "sequence": {
-          "elements": "Carried",
           "length_range": {
             "end": 4294967295,
             "start": 0
@@ -872,354 +579,6 @@
             "start": 0
           },
           "length_width": 4
-        }
-      }
-    ],
-    [
-      "Verdict",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "Approve",
-              "Verdict__Approve"
-            ],
-            [
-              1,
-              "RequestChanges",
-              "Verdict__RequestChanges"
-            ],
-            [
-              2,
-              "Comment",
-              "Verdict__Comment"
-            ]
-          ]
-        }
-      }
-    ],
-    [
-      "Verdict__Approve",
-      {
-        "struct": {
-          "fields": "empty"
-        }
-      }
-    ],
-    [
-      "Verdict__Comment",
-      {
-        "struct": {
-          "fields": "empty"
-        }
-      }
-    ],
-    [
-      "Verdict__RequestChanges",
-      {
-        "struct": {
-          "fields": "empty"
-        }
-      }
-    ],
-    [
-      "Watched",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "Moved",
-              "Watched__Moved"
-            ],
-            [
-              1,
-              "Opened",
-              "Watched__Opened"
-            ],
-            [
-              2,
-              "Previewed",
-              "Watched__Previewed"
-            ],
-            [
-              3,
-              "Closed",
-              "Watched__Closed"
-            ],
-            [
-              4,
-              "Merged",
-              "Watched__Merged"
-            ],
-            [
-              5,
-              "Reviewed",
-              "Watched__Reviewed"
-            ],
-            [
-              6,
-              "LeftQueue",
-              "Watched__LeftQueue"
-            ],
-            [
-              7,
-              "Dispatched",
-              "Watched__Dispatched"
-            ]
-          ]
-        }
-      }
-    ],
-    [
-      "Watched__Closed",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__Dispatched",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "event_type",
-                "String"
-              ],
-              [
-                "payload",
-                "Vec<u8>"
-              ],
-              [
-                "commit",
-                "String"
-              ],
-              [
-                "by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__LeftQueue",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "into",
-                "Vec<u8>"
-              ],
-              [
-                "why",
-                "String"
-              ],
-              [
-                "queued_by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__Merged",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "oid",
-                "String"
-              ],
-              [
-                "by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__Moved",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "reference",
-                "Vec<u8>"
-              ],
-              [
-                "old",
-                "Option<String>"
-              ],
-              [
-                "new",
-                "Option<String>"
-              ],
-              [
-                "by",
-                "Option<Principal>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__Opened",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "from",
-                "Revision"
-              ],
-              [
-                "into",
-                "Vec<u8>"
-              ],
-              [
-                "head",
-                "String"
-              ],
-              [
-                "by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__Previewed",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "merge",
-                "String"
-              ],
-              [
-                "by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__Reviewed",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "id",
-                "u64"
-              ],
-              [
-                "verdict",
-                "Verdict"
-              ],
-              [
-                "by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "[u8; 32]",
-      {
-        "sequence": {
-          "elements": "u8",
-          "length_range": {
-            "end": 32,
-            "start": 32
-          },
-          "length_width": 0
         }
       }
     ],

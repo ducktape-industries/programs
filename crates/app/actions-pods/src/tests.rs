@@ -36,9 +36,6 @@ const ASTRAY: u64 = 6;
 const BUILT: u64 = 11;
 const LOTS: u64 = 13;
 const STRAYED: u64 = 12;
-const QUEUE_HEAD: u64 = 14;
-const QUEUE_PREVIEW: &str = "2222222222222222222222222222222222222222";
-const QUEUED_CHANGE: u64 = 7;
 const LIMITED: u64 = 16;
 
 const CLAIMED: Item<Vec<u64>> = Item::new("claimed");
@@ -139,66 +136,6 @@ impl Program for Stand {
     }
 }
 
-struct Forged;
-
-impl Program for Forged {
-    const NAME: &'static str = forge::PROGRAM;
-    type Op = forge::Op;
-    type Query = forge::Query;
-    type Reply = forge::Reply;
-
-    fn execute(_: &ExecCtx, _: forge::Op) -> Result<(), Error> {
-        Err(invalid("the stand-in for forge takes no op"))
-    }
-
-    fn query(ctx: &QueryCtx, query: forge::Query) -> Result<forge::Reply, Error> {
-        let height = ctx.env().height;
-        match query {
-            forge::Query::Required { .. } => {
-                let required = forge::Required {
-                    reporter: forge::Principal::Account(37),
-                    contexts: vec!["check.toml#check".into()],
-                };
-                let items = vec![forge::RequiredBranch {
-                    branch: b"refs/heads/dev".to_vec(),
-                    required,
-                }];
-                let page = PageResponse {
-                    height,
-                    items,
-                    next: None,
-                };
-                Ok(forge::Reply::Required { height, page })
-            }
-            forge::Query::Queue { .. } => {
-                let items = vec![forge::QueueEntry {
-                    n: QUEUED_CHANGE,
-                    head: COMMIT.into(),
-                    by: forge::Principal::Account(17),
-                    height,
-                }];
-                let page = PageResponse {
-                    height,
-                    items,
-                    next: None,
-                };
-                Ok(forge::Reply::Queue { height, page })
-            }
-            forge::Query::Preview { n, .. } => {
-                let preview = (n == QUEUED_CHANGE).then(|| forge::PreviewInfo {
-                    n,
-                    into_head: COMMIT.into(),
-                    from_head: COMMIT.into(),
-                    merge: QUEUE_PREVIEW.into(),
-                    height,
-                });
-                Ok(forge::Reply::Preview { height, preview })
-            }
-            _ => Err(invalid("the stand-in for forge answers merge queues")),
-        }
-    }
-}
-
 fn needs_of(check: u64) -> Vec<Need> {
     let met = match check {
         NEEDY => BUILT,
@@ -269,12 +206,7 @@ fn check_row(id: u64) -> CheckRow {
         id,
         run: 1,
         repo: "programs".into(),
-        commit: if id == QUEUE_HEAD {
-            QUEUE_PREVIEW
-        } else {
-            COMMIT
-        }
-        .into(),
+        commit: COMMIT.into(),
         workflow: "gates.toml".into(),
         attempt: if id == AGAIN { 2 } else { 1 },
         job: Job {
@@ -903,29 +835,6 @@ fn a_check_offered_while_an_older_one_waits_runs_after_it() {
 }
 
 #[test]
-fn the_check_a_merge_queue_waits_on_takes_free_room_before_older_waiting_checks() {
-    let mut node = node();
-    node.chain.seat::<Forged>(forge::PROGRAM);
-    let wait = waiting_on_its_pod(&mut node);
-    node.offer(2).unwrap();
-    node.offer(QUEUE_HEAD).unwrap();
-    node.after(1_000);
-    node.after(0);
-    assert_eq!(node.waiting(), [2, QUEUE_HEAD]);
-    node.ended(&wait, 0, json!(0));
-    copied_and_deleted(&mut node);
-    node.after(1_000);
-    node.after(0);
-    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
-    assert_eq!(
-        node.held(),
-        [QUEUE_HEAD],
-        "the check on the merge queue front's Preview takes the pod"
-    );
-    assert_eq!(node.waiting(), [2]);
-}
-
-#[test]
 fn a_creation_slower_than_a_whole_request_still_waits_at_half_the_window() {
     let mut node = node();
     node.offer(1).unwrap();
@@ -987,23 +896,41 @@ fn a_quota_with_no_room_leaves_the_check_queued_until_a_pod_of_this_runner_ends(
 }
 
 #[test]
-fn a_check_the_quota_has_no_room_for_lets_a_later_check_take_the_free_room() {
+fn a_check_the_quota_has_no_room_for_keeps_its_turn_before_a_later_check() {
     let mut node = node();
     node.held_by_owner();
-    node.concurrent(2).unwrap();
-    waiting_on_its_pod(&mut node);
+    node.concurrent(3).unwrap();
+    let wait = waiting_on_its_pod(&mut node);
     node.offer(SIXTEEN).unwrap();
-    node.offer(8).unwrap();
     node.after(1_000);
     node.after(0);
     node.answer_to(500, "POST", "/v1/pods", 403, json!({"error": FULL}));
-    assert_eq!(node.waiting(), [SIXTEEN], "check 8 is booked to run again");
+    node.offer(8).unwrap();
     node.after(1_000);
     node.after(0);
-    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
-    assert_eq!(node.held(), [1, 8], "check 8 fits where check 4 did not");
-    assert_eq!(node.waiting(), [SIXTEEN]);
+    assert!(
+        node.open()
+            .iter()
+            .all(|row| aimed(row) != sent("POST", "/v1/pods"))
+    );
+    assert_eq!(node.held(), [1]);
+    assert_eq!(node.waiting(), [SIXTEEN, 8]);
     assert!(node.reports().is_empty(), "a full quota reports nothing");
+    node.ended(&wait, 0, json!(0));
+    copied_and_deleted(&mut node);
+    node.after(1_000);
+    node.after(0);
+    let made = node
+        .open()
+        .into_iter()
+        .filter(|row| aimed(row) == sent("POST", "/v1/pods"))
+        .min_by_key(|row| row.id)
+        .unwrap();
+    assert_eq!(node.body(&made)["resources"]["requests"]["memory"], "40Gi");
+    node.reply(&made, 201, pod("duckpond-8"));
+    node.after(500);
+    node.after(0);
+    assert!(node.held().contains(&SIXTEEN));
 }
 
 #[test]
@@ -1032,7 +959,7 @@ fn a_full_check_offered_again_that_waits_for_room_is_tried_again_when_room_frees
     let mut node = node();
     node.held_by_owner();
     node.concurrent(2).unwrap();
-    waiting_on_its_pod(&mut node);
+    let wait = waiting_on_its_pod(&mut node);
     node.offer(SIXTEEN).unwrap();
     node.after(1_000);
     node.after(0);
@@ -1041,14 +968,26 @@ fn a_full_check_offered_again_that_waits_for_room_is_tried_again_when_room_frees
     node.offer(SIXTEEN).unwrap();
     node.after(1_000);
     node.after(0);
-    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
-    let deleted = json!({"deleted": "duckpond-8"});
-    node.answer_to(1_000, "DELETE", "/v1/pods/duckpond-8", 200, deleted);
+    let retried = node.pending_to("POST", "/v1/pods");
+    assert_eq!(
+        node.body(&retried)["resources"]["requests"]["memory"],
+        "40Gi"
+    );
+    node.reply(&retried, 403, json!({"error": FULL}));
+    node.after(500);
+    node.after(0);
+    node.ended(&wait, 0, json!(0));
+    copied_and_deleted(&mut node);
     node.after(1_000);
     node.after(0);
-    let made = node.pending_to("POST", "/v1/pods");
+    let made = node
+        .open()
+        .into_iter()
+        .filter(|row| aimed(row) == sent("POST", "/v1/pods"))
+        .min_by_key(|row| row.id)
+        .unwrap();
     let memory = &node.body(&made)["resources"]["requests"]["memory"];
-    assert_eq!(memory, "40Gi", "check 4 is tried again");
+    assert_eq!(memory, "40Gi", "check 4 is tried again before check 9");
 }
 
 #[test]

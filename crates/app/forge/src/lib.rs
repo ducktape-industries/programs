@@ -42,7 +42,6 @@ mod state;
 mod watchers;
 
 mod program;
-mod queue;
 
 pub use contract::*;
 pub use description::describe;
@@ -55,10 +54,9 @@ pub use program::Forge;
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ACTIVITY, ARCHIVED, ARCHIVING, AUTHORED, AUTHORSHIP, BOUNDS, CHANGES, CUSTODY, FORMED,
-        INVOLVED, LOGGING, MESSAGES, NUMBERS, PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS,
-        REPOS_DEFAULTING_TO_OWNER, REQUIRED, REVIEWS, SETTINGS_CUSTODY, STATUSES, TRAINS, WATCHERS,
-        WRITES,
+        ACTIVITY, ARCHIVED, ARCHIVING, AUTHORED, AUTHORSHIP, BOUNDS, CHANGES, CUSTODY, INVOLVED,
+        LOGGING, MESSAGES, NUMBERS, PROTECTED, REFS, REPOS, REPOS_DEFAULTING_TO_OWNER, REVIEWS,
+        SETTINGS_CUSTODY, STATUSES, WATCHERS, WRITES,
     };
 }
 
@@ -85,11 +83,11 @@ fn op_variants_only_append() {
             "Protect",
             "Watch",
             "-",
-            "Preview",
+            "-",
             "Status",
-            "RequireChecks",
-            "Enqueue",
-            "Dequeue",
+            "-",
+            "-",
+            "-",
             "AdoptOwners",
             "Archive",
             "Dispatch",
@@ -107,11 +105,11 @@ fn watched_variants_only_append() {
         [
             "Moved",
             "Opened",
-            "Previewed",
+            "-",
             "Closed",
             "Merged",
             "Reviewed",
-            "LeftQueue",
+            "-",
             "Dispatched",
         ]
     );

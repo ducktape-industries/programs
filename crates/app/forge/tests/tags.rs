@@ -5,7 +5,7 @@ use common::*;
 
 const REPO: &str = "project";
 
-const LIVE_OPS: [(&str, i64); 24] = [
+const LIVE_OPS: [(&str, i64); 20] = [
     ("Create", 0),
     ("Configure", 1),
     ("Push", 4),
@@ -21,11 +21,7 @@ const LIVE_OPS: [(&str, i64); 24] = [
     ("DeleteBranch", 14),
     ("Protect", 15),
     ("Watch", 16),
-    ("Preview", 18),
     ("Status", 19),
-    ("RequireChecks", 20),
-    ("Enqueue", 21),
-    ("Dequeue", 22),
     ("AdoptOwners", 23),
     ("Archive", 24),
     ("Dispatch", 25),
@@ -249,4 +245,81 @@ fn a_list_involved_tag_is_refused_and_writes_nothing() {
     let undecoded = refused.message.starts_with("forge: Op did not decode: ");
     assert!(undecoded, "{refused}");
     assert_eq!(repo_read(&sandbox), before);
+}
+
+#[test]
+fn merge_scheduling_tags_are_refused_without_writes() {
+    let sandbox = founded();
+    create(&sandbox, REPO, HashKind::Sha1);
+    let before = repo_read(&sandbox);
+    let repo = encoded(&REPO.to_owned());
+    let branch = encoded(&b"refs/heads/main".to_vec());
+    let number = encoded(&1u64);
+    let bytes = [
+        op_bytes(18, &[repo.clone(), number.clone()]),
+        op_bytes(20, &[repo.clone(), branch.clone(), encoded(&None::<()>)]),
+        op_bytes(
+            21,
+            &[repo.clone(), number.clone(), encoded(&"a".repeat(40))],
+        ),
+        op_bytes(22, &[repo.clone(), number]),
+        op_bytes(28, &[repo, branch, encoded(&None::<forge::Train>)]),
+    ];
+    for bytes in bytes {
+        let refused = sandbox
+            .forge
+            .refused(|| sent_as_bytes(&sandbox, OWNER, &bytes));
+        assert!(
+            [code::WRONG_STATE, code::INVALID_INPUT].contains(&refused.code.as_str()),
+            "{refused}"
+        );
+        assert_eq!(repo_read(&sandbox), before);
+    }
+}
+
+#[test]
+fn merge_notice_tags_cannot_be_reused() {
+    let retired = [
+        op_bytes(
+            2,
+            &[
+                encoded(&REPO),
+                encoded(&1_u64),
+                encoded(&"a".repeat(40)),
+                encoded(&person(OWNER)),
+            ],
+        ),
+        op_bytes(
+            6,
+            &[
+                encoded(&REPO),
+                encoded(&1_u64),
+                encoded(&b"refs/heads/main".to_vec()),
+                encoded(&"retired"),
+                encoded(&person(OWNER)),
+            ],
+        ),
+    ];
+    for bytes in retired {
+        assert!(borsh::from_slice::<forge::Watched>(&bytes).is_err());
+    }
+    let live = [
+        forge::Watched::Closed {
+            repo: REPO.into(),
+            n: 1,
+            by: person(OWNER),
+        },
+        forge::Watched::Dispatched {
+            repo: REPO.into(),
+            event_type: "manual".into(),
+            payload: Vec::new(),
+            commit: "a".repeat(40),
+            by: person(OWNER),
+        },
+    ];
+    for (event, tag) in live.into_iter().zip([3, 7]) {
+        let bytes = encoded(&event);
+        assert_eq!(bytes[0], tag);
+        assert_eq!(borsh::from_slice::<forge::Watched>(&bytes).unwrap(), event);
+    }
 }

@@ -16,22 +16,20 @@ only.
   squash commit on the target's head, under the same CAS. Neither enforces
   review verdicts. `Rebase` builds the same kind of commit for an open change on
   a newer base and moves the change's own source to it, so a change keeps its
-  number through a rebase. `Preview` builds, without moving the target, the squash
-  a change's merge would land on its target's current head; a branch with required
-  checks (`RequireChecks`) moves only by a merge of a change whose latest Preview
-  its reporter's `Status`es mark Passed.
+  number through a rebase. Callers review and test the exact source and target
+  heads they pass to a merge; statuses report evidence without moving a branch.
 - Changes keep their title, body, author account, and lifecycle on the forge record.
   A change's authorship is its own owned row (`o/`, kind `forge.change`), its author's
   from `ChangeOpen`: `ChangeEdit`, `ChangeRepoint` and `Rebase` write it, so the change's
   policy decides them, while reviews, closes and merges write only the shared record.
   A repository's custody is its own owned row (`k/`, kind `forge.repo`), its creator's
   from `Create`: every op the repository's policy decides (a push, a merge, a staged
-  pack, a branch deleted, the merge queue, a rebase, and closing someone else's change)
+  pack, a branch deleted, a rebase, and closing someone else's change)
   writes it, while the shared record (`p/`) takes every op's activity. Its settings are a
   second owned row (`f/`, kind `forge.settings`), its creator's from `Create`:
-  `Configure`, `Protect`, `RequireChecks`, `SetTrain` and `Archive` write that row, so the
+  `Configure`, `Protect` and `Archive` write that row, so the
   settings' own policy decides them. A repository created before the settings row has none,
-  and those five write its custody row as the other ops do.
+  and those three write its custody row as the other ops do.
   A repository's number counter allocates the shared future issue/change number space.
 - Every table is declared once in `src/state.rs` as a typed `store::Map`/`Set`/`Item`:
   records (repos, refs, changes, reviews), the indexes over them (activity,
@@ -129,11 +127,7 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `History { repo: r, walk: Walk::of(gitcore::walk::Walk::of(&wants, &haves)) }` | `Reply::Closure` less the trees: the commits `wants` reach less what `haves` reach, newest first, and the tags, trees and blobs a want names itself; `next` as for `Closure` |
 | `Shallow { repo: r, walk: DeepWalk::of(gitcore::walk::Deep::of(&wants, &haves, Some(depth), &client_shallows)) }` | `History` cut `depth` commits below each want (`git fetch --depth`): `listed` and `next` as for `History`, and once the depths are walked the boundary, `shallow` (the new boundary commits) and `unshallow` (the client's boundaries the walk went past) |
 | `Protected { repo: r, cursor: None, limit: 20 }` | `page<Vec<u8>>`: the protected branch names in byte order; the head is protected besides |
-| `Preview { repo: r, n: 1 }` | `Option<PreviewInfo>`: change 1's latest Preview, the target and source heads it read and the squash it made (`merge`) |
 | `Statuses { repo: r, commit: c, page }` | `page<CommitStatus>`: every status of `c`, by reporter then context, each with its state, url and height |
-| `Required { repo: r, page }` | `page<RequiredBranch>`: the branches with required checks, in byte-name order, each with its reporter and contexts |
-| `Queue { repo: r, branch: b"refs/heads/dev".to_vec(), page }` | `page<QueueEntry>`: the branch's merge queue, first in line first, each with its head when it joined and who queued it |
-| `Train { repo: r, branch: b"refs/heads/dev".to_vec() }` | `Option<Train>` and `Option<Formed>`: the branch's train, and the changes it formed, each with its Preview's commit, whether the front went on alone, and the block it formed in |
 | `Bounds` | the founded bounds `Repo` answers beside a repository, with no repository named |
 | `Archived { repo: r }` | `archived`: whether the repository is archived (`Archive`) |
 | `ArchivedRepos { page }` | `page<RepoInfo>`: the archived repositories, which `Repos` leaves out, in name order |
@@ -247,15 +241,15 @@ A repository's writers are whoever its list in the access program allows, at
 (`access::Op::Set`). A repository created before forge kept that default (it has no row in
 `REPOS_DEFAULTING_TO_OWNER`, `d/`) takes anyone's writes until its owner sets a list. `Push`, `Merge`, `SquashMerge`, `Stage`, `DeleteBranch` and
 a `ChangeClose` by anyone but the change's author need that key; `Configure`,
-`Protect`, `RequireChecks`, `SetTrain` and `Archive` need `forge::settings_key(repo)`: its owner alone unless
+`Protect` and `Archive` need `forge::settings_key(repo)`: its owner alone unless
 the owner sets a list there; on a repository from before the default it follows the
 repository's list unless the owner sets one of its own. While the ownership role is bound
 beside access, a write needs both: the access list and the policy of the owned row it writes (the
 repository's custody row, or a change's authorship row), which with no default of its owner's is
 their "Only me". So a list set with `access::Op::Set` alone admits no one new to a repository made
 since; its owner also links the row to a policy that lets those writers in (`Create` then
-`Relink`, or a `SetDefault` before the repository is made), as forge-view's Grant does. `Preview` and `Status` need no key: anyone previews an open
-change, and anyone reports a status, under their own account.
+`Relink`, or a `SetDefault` before the repository is made), as forge-view's Grant does.
+`Status` needs no key: anyone reports a status under their own account.
 Reviews remain appendable on closed/merged changes.
 Closing is terminal; there is no reopen operation.
 
@@ -275,12 +269,7 @@ Closing is terminal; there is no reopen operation.
 | `ChangeRepoint { repo: r, n: 1, from: feature }` | the change's source becomes `from`; `OpReply::Change` |
 | `DeleteBranch { repo: r, branch: b"refs/heads/old".to_vec(), expected: a }` | deletes an unprotected branch at `a` that no open change names; empty output |
 | `Protect { repo: r, branch: b"refs/heads/dev".to_vec(), protected: true }` | adds (`false`: removes) a protected branch; empty output |
-| `Preview { repo: r, n: 1 }` | change 1's squash on its target's head, under `refs/changes/1/merge`; `OpReply::Previewed { height, n, oid }` |
 | `Status { repo: r, commit: c, context: "ci/test".into(), state: CheckState::Passed, url: Some(log) }` | the sender's status of `c` in that context; empty output |
-| `RequireChecks { repo: r, branch: b"refs/heads/dev".to_vec(), required: Some(Required { reporter, contexts }) }` | the branch moves only by a gated merge (`None` drops it); empty output |
-| `Enqueue { repo: r, n: 1, expected_head: b }` | change 1 joins its target's merge queue; empty output |
-| `Dequeue { repo: r, n: 1 }` | change 1 leaves its queue; empty output |
-| `SetTrain { repo: r, branch: b"refs/heads/dev".to_vec(), train: Some(Train { length: 4, tip }) }` | the queue lands up to 4 changes at once, judged on the last one's Preview in each `tip` context (`None` drops it); empty output |
 | `Archive { repo: r, archived: true }` | archives the repository (`false`: restores it); empty output |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
@@ -358,60 +347,15 @@ its source, which the refusal lists. It ignores `allow_delete`, which governs on
 the deletions a git push asks for. The branch's objects stay, so it can be pushed
 again.
 
-`Preview { n }` builds open change `n`'s squash on its target's current head with
-`SquashMerge`'s machinery (the same base, 3-way merge, `merge_cost`, message,
-author and committer), points `refs/changes/<n>/merge` at it and records the two
-heads it read (`Query::Preview`); a conflict is refused `wrong_state`, naming every
-path, writing nothing. While both heads stay where they were, it answers the same
-commit and writes nothing; a watcher hears `Watched::Previewed` for each new one.
-`Status` records the sender's state of a commit (`Pending`, `Passed`, `Failed`,
-`Errored`) in a context, with a url: each reporter's own, so no one writes another's.
-`RequireChecks { branch, required }` names a reporter and its contexts for a branch.
-From then on a push that moves the branch is refused, and a `SquashMerge` or `Merge`
-into it is refused `wrong_state` unless it names its change, that change's latest
-Preview read the very heads being merged (else it is stale: preview again), and the
-reporter's status of the Preview's commit is `Passed` in every context. The refusal
-names each context that is pending, failed or errored, and says "no status from
-<reporter>" for one never reported (the checker is down, not the code). The squash a
-gated merge lands has the Preview's parent and tree, since the same merge runs on the
-same commits. The break-glass is the settings owner sending `RequireChecks` with
-`required: None`, one op on chain; the refusals say so.
+`Status` records the sender's state of an exact commit (`Pending`, `Passed`,
+`Failed`, `Errored`) in a context, with a url. Each reporter writes only its own
+status. Status reports do not schedule checks or move refs.
 
-`Enqueue { n, expected_head }` puts open change `n`, still at that head, at the end of
-its target's merge queue; the target must require checks (`Enqueue` and `Dequeue` need
-what `SquashMerge` needs). Only the first in line is previewed, as it reaches the front,
-with whoever queued it as committer (a Preview of the same heads made already is used as
-is). The op that makes that Preview green in every required context, a `Status` usually,
-lands it: the branch moves to the Preview's very commit, so what landed is what was
-tested, the change is merged by whoever queued it, and the next in line is previewed on
-the new head. An entry leaves the queue, with a `left queue` notice in its change's channel for
-whoever queued it, when a required context goes `Failed` or `Errored`, when its Preview
-is refused (a conflict names its paths), or when its head moves; a change that merged or
-closed otherwise just leaves. Each op that moves a ref, ends or re-points a change,
-reports a status or changes what a branch requires, or its train, moves the repository's
-queues on.
-
-`SetTrain { branch, train: Some(Train { length, tip }) }` lets a queue land up to `length`
-changes at once. The front is previewed on the branch's head and each of the next `length - 1`
-in line on the Preview ahead of it, all in the one op that settles the queue, so the last
-one's Preview (the train's tip) holds them all. Each of those Previews is told to watchers from
-that one frame, side by side, so what a watcher reports on them arrives at the same depth
-whatever the train's length. A change joins while its own Preview is Passed in every required
-context `tip` doesn't name; the train ends at the first change that isn't, or whose squash on
-the one ahead conflicts, and that change keeps its place until it reaches the front. When the
-tip is Passed in every `tip` context, the branch moves to the tip and each change in the train
-is merged, one squash commit each, so the branch stays linear. A red tip sends the front on
-alone, judged on its own Preview as without a train: green lands it, red takes it out of the
-queue. Each change behind it is then judged the same way as it reaches the front, on the same
-Previews, so a red caused by the change at place `j` costs `j - 1` extra runs, each landing one
-change, before that change leaves. A train takes every change eligible by the end of the block
-it forms in, then holds its members until its verdict, so a later review neither grows it nor
-moves its tip; a member that leaves, moves or goes red re-forms it from the changes eligible
-then. The queue is the only writer of the Previews of the first `length` in line: `Preview` of
-one of them answers the Preview the queue made and builds nothing. `Query::Train` answers the
-setting and the train formed. `tip` names only required contexts and `length` is at least 1;
-`None`, or `RequireChecks` with `required: None`, drops the train. `SetTrain` needs what
-`RequireChecks` needs.
+Merge queues, trains and Preview execution are retired. Their old operation tags
+refuse without writes. Merge the exact tested and reviewed source and target heads
+with `SquashMerge`; a moved head is refused, not silently refreshed or carried.
+Watchers receive ref moves, changes opening, reviews, closing, merging and dispatch;
+retired Preview and queue-exit event tags are not accepted as other events.
 
 `Dispatch { event_type, payload, at }` tells every watcher (`Watched::Dispatched`) that a
 writer dispatched `event_type` at the commit `at` resolves to: a branch ref goes to its head,
@@ -429,7 +373,7 @@ repository leaves `Repos` (its activity row goes, so pages stay whole) and is
 listed by `ArchivedRepos`; `Archived { repo }` says whether one is. forge refuses
 every op that names it, before writing anything, `wrong_state` ("<repo> is
 archived: un-archive it …"): pushes, stages, changes and reviews, merges, branch
-rules, statuses and previews alike, so its open changes stay as they are. `Create`
+rules and statuses alike, so its open changes stay as they are. `Create`
 of its name still answers that the name is taken. Every query answers as before,
 the git wire (`Advertise`, `Upload`, `Closure`, `History`, `Shallow`) included, so a clone, a fetch or a
 pinned dependency keeps working. `Archive { archived: false }` restores it: it is
@@ -462,7 +406,6 @@ review's card finds its notice by `Review.message_id`, and replies hang under it
 | a merge naming the change | `merged <repo> <n>` | Passed | `merged into <branch>` | the author and the reviewers |
 | `ChangeClose` | `closed <repo> <n>` | Note | `closed` | the author and the reviewers |
 | a refused archive | `archive refused <repo> <n>` | Failed | `archive refused: <reason>: <sentence>` | whoever closed or merged it |
-| a merge queue's leave | `left queue <repo> <n>` | Failed | `left the merge queue of <branch>: <why>` | whoever queued it |
 
 A review's line carries the review under it as `NotifyWith`'s `text`: its body, then each line
 comment as `` `<path>:<line>` `` (` (old)` after it on the old side) with the comment's words on the
@@ -513,11 +456,9 @@ watchers `first..=last`) has run over it; a watch set under the new id already i
 |---|---|
 | `Moved { reference, old, new, by }` | a push, a merge or a squash moved a ref (`old` or `new` None where it was made or deleted) |
 | `Opened { n, from, into, head, by }` | `ChangeOpen`, told before forge posts the opened notice in the change's room, so a watcher has acted on it by the time anyone hears that notice |
-| `Previewed { n, merge, by }` | a `Preview` made a new commit |
 | `Closed { n, by }` | `ChangeClose` |
 | `Merged { n, oid, by }` | a merge naming the change |
 | `Reviewed { n, id, verdict, by }` | `ReviewSubmit` |
-| `LeftQueue { n, into, why, queued_by }` | forge took the change out of a merge queue for the reason it names (its head moved, it no longer previews, a required check went red); `queued_by` queued it |
 
 ### A change in another room
 
@@ -606,17 +547,14 @@ the git server as a program, the same shape as `chat`: a push is one op carrying
 ref commands and naming its pack, a held blob, a merge is an op that lands the commit
 the client built, fetch and the ref advertisement are queries; a git object's blob id is
 its oid. It links `gitcore` for git operations. `Merge` lands a client-built commit;
-`SquashMerge`, `Rebase` and `Preview` build their merges in forge. The program runs
+`SquashMerge` and `Rebase` build their merges in forge. The program runs
 natively over `MemorySandbox` (forge and chat seated on a `MockChain`), which is where
 `fixtures/` comes from; `forge-view` links `forge` with `program` off. A program that
 sends `Watch { deliver }` hears every ref forge moves (push, merge, squash), every
-change it opens, every Preview it makes and every `Dispatch { repo, event_type, payload,
+change it opens and every `Dispatch { repo, event_type, payload,
 at }` a writer sends (held to the gate a push answers to, heard as `Watched::Dispatched`
 at the commit `at` resolves to: a branch's head or a full commit id forge holds), each
-as `deliver ++ borsh(Watched)`; its refusal never fails forge's write. A branch with
-required checks (`RequireChecks`) moves only by a merge of a change whose latest Preview
-(`Preview`, the squash the merge would land on the target's head) its reporter's
-`Status`es mark Passed; a change in its merge queue (`Enqueue`) lands in the op that
-turns its Preview green, as the very commit the checks ran on. `forge-view` says who can
+as `deliver ++ borsh(Watched)`; its refusal never fails forge's write.
+`forge-view` says who can
 edit a repository (its Settings) and a change (its details) through `policy-view`'s
 item, and what it offers follows their policies

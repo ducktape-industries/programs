@@ -1347,7 +1347,7 @@ fn a_change_lists_its_checks_under_its_body() {
     let cx = change("default");
     assert!(cx.find("forge-checks-head").is_some(), "{:?}", cx.texts());
     assert!(
-        cx.find("forge-checks-preview").is_some(),
+        cx.find("forge-checks-preview").is_none(),
         "{:?}",
         cx.texts()
     );
@@ -1356,7 +1356,7 @@ fn a_change_lists_its_checks_under_its_body() {
     for moved in ["outdated", "target-moved"] {
         let cx = change(moved);
         assert!(
-            cx.find("forge-checks-preview-stale").is_some(),
+            cx.find("forge-checks-preview-stale").is_none(),
             "{moved}: {:?}",
             cx.texts()
         );

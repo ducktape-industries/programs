@@ -47,11 +47,6 @@ pub enum Event {
         text: Option<String>,
     },
     ArchiveRefused(String),
-    LeftQueue {
-        into: Vec<u8>,
-        why: String,
-        by: Principal,
-    },
     NewHead {
         head: String,
     },
@@ -68,7 +63,6 @@ impl Event {
             Event::Merged => "merged".into(),
             Event::Reviewed { id, .. } => format!("review {id}"),
             Event::ArchiveRefused(_) => "archive refused".into(),
-            Event::LeftQueue { .. } => "left queue".into(),
             Event::NewHead { .. } => "head".into(),
             Event::Requested { .. } => "requested".into(),
         }
@@ -81,7 +75,6 @@ impl Event {
             | Event::Closed
             | Event::Merged
             | Event::ArchiveRefused(_)
-            | Event::LeftQueue { .. }
             | Event::NewHead { .. }
             | Event::Requested { .. } => None,
         }
@@ -97,7 +90,7 @@ impl Event {
                 Verdict::RequestChanges => Status::Failed,
                 Verdict::Comment => Status::Note,
             },
-            Event::ArchiveRefused(_) | Event::LeftQueue { .. } => Status::Failed,
+            Event::ArchiveRefused(_) => Status::Failed,
             Event::NewHead { .. } | Event::Requested { .. } => Status::Running,
         }
     }
@@ -117,9 +110,6 @@ impl Event {
                 format!("review {id}: {said}")
             }
             Event::ArchiveRefused(why) => format!("archive refused: {why}"),
-            Event::LeftQueue { into, why, .. } => {
-                format!("left the merge queue of {}: {why}", branch(into))
-            }
             Event::NewHead { head } => format!("new head {head}"),
             Event::Requested { .. } => "review requested".into(),
         }
@@ -146,7 +136,6 @@ impl Event {
                 .chain(&change.merged_by)
                 .cloned()
                 .collect(),
-            Event::LeftQueue { by, .. } => vec![by.clone()],
             Event::NewHead { .. } => change.reviewers.clone(),
             Event::Requested { reviewers } => reviewers.clone(),
         })
@@ -237,8 +226,7 @@ pub fn post(
     if renames_its_room {
         named(ctx, repo, change)?;
     }
-    let absorbs_the_answer =
-        elsewhere || matches!(event, Event::ArchiveRefused(_) | Event::LeftQueue { .. });
+    let absorbs_the_answer = elsewhere || matches!(event, Event::ArchiveRefused(_));
     if absorbs_the_answer {
         let posted = ctx.emit(chat::PROGRAM, &line, ::program::Reply::Wanted);
         LOGGING.insert(ctx, &posted.seq);

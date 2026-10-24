@@ -83,13 +83,6 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
                 detail: format!("review {id}: {said} by {}", who(&by)),
             })
         }
-        Watched::LeftQueue {
-            repo, n, into, why, ..
-        } => tell(ctx, &repo, n, |_| Line {
-            word: "left queue".into(),
-            status: Status::Failed,
-            detail: format!("left the merge queue of {}: {why}", branch(&into)),
-        }),
         Watched::Merged { repo, n, by, .. } => {
             tell(ctx, &repo, n, |change| Line {
                 word: "merged".into(),
@@ -108,7 +101,7 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             ROOMS.remove(ctx, &(repo, n));
             Ok(())
         }
-        Watched::Moved { .. } | Watched::Previewed { .. } | Watched::Dispatched { .. } => Ok(()),
+        Watched::Moved { .. } | Watched::Dispatched { .. } => Ok(()),
     }
 }
 

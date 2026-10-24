@@ -14,11 +14,10 @@ Each notice is a chat `Notify` in the room, at top level, with the kind `change`
 |---|---|---|---|
 | `Opened` | `opened <repo> <n>` | Running | `opened by account <a> from <branch>; its conversation is in <the change's room>` |
 | `Reviewed` | `review <id> <repo> <n>` | Passed (approve), Failed (request changes), Note (comment) | `review <id>: approved`, `changes requested` or `commented`, then `by account <a>` |
-| `LeftQueue` | `left queue <repo> <n>` | Failed | `left the merge queue of <branch>: <why>` |
 | `Merged` | `merged <repo> <n>` | Passed | `merged into <branch> by account <a>` |
 | `Closed` | `closed <repo> <n>` | Note | `closed by account <a>` |
 
-`Moved` and `Previewed` post nothing. A review's body stays in forge.
+`Moved` and `Dispatched` post nothing. A review's body stays in forge.
 
 ## Rows
 | key | what |

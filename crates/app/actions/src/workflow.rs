@@ -230,7 +230,7 @@ impl Workflow {
             }
             Event::Opened { .. } => self.opened,
             Event::Updated { .. } => self.updated,
-            Event::Preview { .. } => self.opened || self.updated,
+            Event::Preview { .. } => false,
             Event::Manual => self.trigger,
             Event::Dispatch { event_type } => self.dispatch.contains(event_type),
         }

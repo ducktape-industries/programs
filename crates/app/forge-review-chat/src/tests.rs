@@ -221,14 +221,6 @@ fn a_change_from_a_branch_a_rule_matches_tells_each_event_in_its_room() {
     let chain = world();
     tell(&chain, opened(1, branch("j-7/teach"))).unwrap();
     tell(&chain, reviewed(1)).unwrap();
-    let left = Watched::LeftQueue {
-        repo: "project".into(),
-        n: 1,
-        into: b"refs/heads/dev".to_vec(),
-        why: "gates failed".into(),
-        queued_by: Principal::Account(ADA_ACCOUNT),
-    };
-    tell(&chain, left).unwrap();
     assert_eq!(room(&chain, 1).as_deref(), Some("j-7"));
     let merged = Watched::Merged {
         repo: "project".into(),
@@ -253,23 +245,11 @@ fn a_change_from_a_branch_a_rule_matches_tells_each_event_in_its_room() {
                 "review 1 project 1",
                 "review 1: changes requested by account 13"
             ),
-            (
-                "left queue project 1",
-                "left the merge queue of dev: gates failed"
-            ),
             ("merged project 1", "merged into dev by account 11"),
         ]
     );
     let statuses: Vec<Status> = told.iter().map(|notice| notice.status).collect();
-    assert_eq!(
-        statuses,
-        [
-            Status::Running,
-            Status::Failed,
-            Status::Failed,
-            Status::Passed
-        ]
-    );
+    assert_eq!(statuses, [Status::Running, Status::Failed, Status::Passed]);
     assert!(
         told.iter()
             .all(|notice| notice.subject == "project #1: Teach 1"

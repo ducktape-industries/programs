@@ -280,57 +280,6 @@ fn a_watcher_hears_a_review_submitted() {
 }
 
 #[test]
-fn a_watcher_hears_a_change_forge_takes_out_of_a_merge_queue() {
-    let sandbox = watched();
-    let feature = open_feature(&sandbox);
-    let require = Op::RequireChecks {
-        repo: "project".into(),
-        branch: b"refs/heads/main".to_vec(),
-        required: Some(forge::Required {
-            reporter: person(STRANGER),
-            contexts: vec!["gates".into()],
-        }),
-    };
-    act(&sandbox, OWNER, &require).unwrap();
-    let enqueue = Op::Enqueue {
-        repo: "project".into(),
-        n: 1,
-        expected_head: feature.to_hex(),
-    };
-    act(&sandbox, OWNER, &enqueue).unwrap();
-    let merge = heard(&sandbox)
-        .into_iter()
-        .find_map(|event| match event {
-            Watched::Previewed { merge, .. } => Some(merge),
-            _ => None,
-        })
-        .expect("the change is previewed as it joins the queue");
-    let failed = Op::Status {
-        repo: "project".into(),
-        commit: merge,
-        context: "gates".into(),
-        state: forge::CheckState::Failed,
-        url: None,
-    };
-    act(&sandbox, STRANGER, &failed).unwrap();
-    let Some(Watched::LeftQueue {
-        repo,
-        n,
-        into,
-        why,
-        queued_by,
-    }) = heard(&sandbox).pop()
-    else {
-        panic!("{:#?}", heard(&sandbox));
-    };
-    assert_eq!(
-        (repo.as_str(), n, into.as_slice(), queued_by),
-        ("project", 1, b"refs/heads/main".as_slice(), person(OWNER))
-    );
-    assert!(why.contains("gates failed"), "{why}");
-}
-
-#[test]
 fn a_watcher_hears_a_dispatch_at_the_commit_its_ref_names_and_one_forge_cannot_place_is_refused() {
     let sandbox = watched();
     let mut source = MemoryObjects::new(Hash::Sha1);

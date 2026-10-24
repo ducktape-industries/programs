@@ -525,9 +525,7 @@ pub(crate) fn forged(ctx: &ExecCtx, event: forge::Watched) -> Result<(), Error> 
             };
             fire(ctx, key, fired)
         }
-        forge::Watched::Opened { .. }
-        | forge::Watched::Previewed { .. }
-        | forge::Watched::Dispatched { .. } => Ok(()),
+        forge::Watched::Opened { .. } | forge::Watched::Dispatched { .. } => Ok(()),
         forge::Watched::Reviewed {
             repo,
             n,
@@ -546,17 +544,6 @@ pub(crate) fn forged(ctx: &ExecCtx, event: forge::Watched) -> Result<(), Error> 
                 n,
             };
             fire(ctx, key, Fired::Reviewed { repo, n, how })
-        }
-        forge::Watched::LeftQueue {
-            repo, n, into, why, ..
-        } => {
-            let into = String::from_utf8_lossy(&into).into_owned();
-            let how = format!("left the merge queue of {into}: {why}");
-            let key = Key::Change {
-                repo: repo.clone(),
-                n,
-            };
-            fire(ctx, key, Fired::LeftQueue { repo, n, how })
         }
         forge::Watched::Closed { repo, n, by } => {
             let how = format!("was closed by {}", who(Some(&by)));

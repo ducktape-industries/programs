@@ -1,12 +1,9 @@
-//! The program: forge watched from `init`, then one match over every op and one over every
-//! query, each handed to its rule.
+//! Exact receipt writes and reads, without outbound scheduling.
 use ::program::schema::Return;
 use ::program::tools::{Described, Tools};
-use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
+use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
-use crate::rules::{
-    Patched, Reported, report, report_patch, reports, retell, verdict, wanted, watched,
-};
+use crate::rules::{Patched, Reported, report, report_patch, reports};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct ForgeReach;
@@ -22,11 +19,7 @@ impl Program for ForgeReach {
         Tools::of::<Op, Query>()
     }
 
-    fn init(ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
-        let watch = forge::Op::Watch {
-            deliver: crate::watching(),
-        };
-        ctx.emit(forge::PROGRAM, &watch, Wanted::None);
+    fn init(_ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
         Ok(())
     }
 
@@ -36,7 +29,6 @@ impl Program for ForgeReach {
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {
-            Op::Watched(event) => watched(ctx, event),
             Op::Report {
                 repo,
                 commit,
@@ -44,7 +36,7 @@ impl Program for ForgeReach {
                 state,
                 url,
                 reach,
-                change,
+                change: _,
             } => report(
                 ctx,
                 Reported {
@@ -54,12 +46,11 @@ impl Program for ForgeReach {
                     state,
                     url,
                     reach,
-                    change,
                 },
             ),
             Op::ReportPatch {
                 repo,
-                n,
+                n: _,
                 commit,
                 context,
                 state,
@@ -68,14 +59,13 @@ impl Program for ForgeReach {
                 ctx,
                 Patched {
                     repo,
-                    n,
                     commit,
                     context,
                     state,
                     url,
                 },
             ),
-            Op::Retell { repo, n } => retell(ctx, &repo, n),
+            Op::Retell { .. } => Err(::program::wrong_state("result carry is retired")),
         }
     }
 
@@ -84,8 +74,9 @@ impl Program for ForgeReach {
             Query::Reports { repo, commit, page } => {
                 Reply::Reports(reports(ctx, &repo, &commit, &page)?)
             }
-            Query::Verdict { repo, n } => Reply::Verdict(verdict(ctx, &repo, n)?),
-            Query::Wanted { reporter, page } => Reply::Wanted(wanted(ctx, reporter, &page)?),
+            Query::Wanted { .. } => {
+                return Err(::program::wrong_state("automatic re-request is retired"));
+            }
         })
     }
 }

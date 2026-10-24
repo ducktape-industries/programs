@@ -122,11 +122,7 @@ pub(crate) fn writable(ctx: &QueryCtx, op: &Op) -> Result<(), Error> {
 pub(crate) fn changes_settings(op: &Op) -> bool {
     matches!(
         op,
-        Op::Configure { .. }
-            | Op::Protect { .. }
-            | Op::RequireChecks { .. }
-            | Op::SetTrain { .. }
-            | Op::Archive { .. }
+        Op::Configure { .. } | Op::Protect { .. } | Op::SetTrain { .. } | Op::Archive { .. }
     )
 }
 
@@ -134,15 +130,12 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
     match op {
         Op::Configure { repo, .. }
         | Op::Protect { repo, .. }
-        | Op::RequireChecks { repo, .. }
         | Op::SetTrain { repo, .. }
         | Op::Push { repo, .. }
         | Op::Merge { repo, .. }
         | Op::Stage { repo, .. }
         | Op::SquashMerge { repo, .. }
         | Op::DeleteBranch { repo, .. }
-        | Op::Enqueue { repo, .. }
-        | Op::Dequeue { repo, .. }
         | Op::Rebase { repo, .. }
         | Op::Archive { repo, .. }
         | Op::Dispatch { repo, .. } => Some(repo),
@@ -158,7 +151,6 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
         | Op::ChangeRepoint { .. }
         | Op::ReviewSubmit { .. }
         | Op::Watch { .. }
-        | Op::Preview { .. }
         | Op::Status { .. }
         | Op::AdoptOwners { .. }
         | Op::Migrate { .. } => None,
@@ -169,7 +161,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
     let needs = match op {
         Op::Configure { repo, .. }
         | Op::Protect { repo, .. }
-        | Op::RequireChecks { repo, .. }
         | Op::SetTrain { repo, .. }
         | Op::Archive { repo, .. } => {
             vec![Need::write(settings_key(repo))]
@@ -179,8 +170,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Stage { repo, .. }
         | Op::SquashMerge { repo, .. }
         | Op::DeleteBranch { repo, .. }
-        | Op::Enqueue { repo, .. }
-        | Op::Dequeue { repo, .. }
         | Op::Dispatch { repo, .. } => {
             vec![Need::write(repo_key(repo))]
         }
@@ -210,7 +199,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::ChangeOpen { .. }
         | Op::ReviewSubmit { .. }
         | Op::Watch { .. }
-        | Op::Preview { .. }
         | Op::Status { .. }
         | Op::AdoptOwners { .. }
         | Op::Migrate { .. } => Vec::new(),
@@ -271,9 +259,6 @@ pub(crate) fn push(
     .map_err(refusal_of)?;
     if outcome.unpack_error.is_none() {
         objects.flush()?;
-    }
-    for (reference, _) in &outcome.moves {
-        crate::checks::refuse_push(ctx, name, reference)?;
     }
     for (reference, update) in &outcome.moves {
         match update {

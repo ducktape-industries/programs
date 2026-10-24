@@ -998,29 +998,6 @@
       }
     ],
     [
-      "Formed",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "members",
-                "Vec<TrainMember>"
-              ],
-              [
-                "alone",
-                "bool"
-              ],
-              [
-                "height",
-                "u64"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "GitSignature",
       {
         "struct": {
@@ -1449,29 +1426,9 @@
               "Op__Watch"
             ],
             [
-              18,
-              "Preview",
-              "Op__Preview"
-            ],
-            [
               19,
               "Status",
               "Op__Status"
-            ],
-            [
-              20,
-              "RequireChecks",
-              "Op__RequireChecks"
-            ],
-            [
-              21,
-              "Enqueue",
-              "Op__Enqueue"
-            ],
-            [
-              22,
-              "Dequeue",
-              "Op__Dequeue"
             ],
             [
               23,
@@ -1860,25 +1817,6 @@
       }
     ],
     [
-      "Op__Dequeue",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Op__Dispatch",
       {
         "struct": {
@@ -1899,29 +1837,6 @@
               [
                 "at",
                 "Revision"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Op__Enqueue",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "expected_head",
-                "String"
               ]
             ]
           }
@@ -1984,25 +1899,6 @@
               [
                 "last",
                 "Option<String>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Op__Preview",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
               ]
             ]
           }
@@ -2076,29 +1972,6 @@
               [
                 "expected_head",
                 "String"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Op__RequireChecks",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "branch",
-                "Vec<u8>"
-              ],
-              [
-                "required",
-                "Option<Required>"
               ]
             ]
           }
@@ -2336,26 +2209,6 @@
       }
     ],
     [
-      "Option<Formed>",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "None",
-              "()"
-            ],
-            [
-              1,
-              "Some",
-              "Formed"
-            ]
-          ]
-        }
-      }
-    ],
-    [
       "Option<MergedHeads>",
       {
         "enum": {
@@ -2376,26 +2229,6 @@
       }
     ],
     [
-      "Option<PreviewInfo>",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "None",
-              "()"
-            ],
-            [
-              1,
-              "Some",
-              "PreviewInfo"
-            ]
-          ]
-        }
-      }
-    ],
-    [
       "Option<Principal>",
       {
         "enum": {
@@ -2410,26 +2243,6 @@
               1,
               "Some",
               "Principal"
-            ]
-          ]
-        }
-      }
-    ],
-    [
-      "Option<Required>",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "None",
-              "()"
-            ],
-            [
-              1,
-              "Some",
-              "Required"
             ]
           ]
         }
@@ -2710,29 +2523,6 @@
       }
     ],
     [
-      "PageResponse<QueueEntry>",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "height",
-                "u64"
-              ],
-              [
-                "items",
-                "Vec<QueueEntry>"
-              ],
-              [
-                "next",
-                "Option<Vec<u8>>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "PageResponse<RefInfo>",
       {
         "struct": {
@@ -2791,29 +2581,6 @@
               [
                 "items",
                 "Vec<RepoInfo>"
-              ],
-              [
-                "next",
-                "Option<Vec<u8>>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "PageResponse<RequiredBranch>",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "height",
-                "u64"
-              ],
-              [
-                "items",
-                "Vec<RequiredBranch>"
               ],
               [
                 "next",
@@ -2909,37 +2676,6 @@
               ],
               [
                 "from",
-                "u64"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "PreviewInfo",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "into_head",
-                "String"
-              ],
-              [
-                "from_head",
-                "String"
-              ],
-              [
-                "merge",
-                "String"
-              ],
-              [
-                "height",
                 "u64"
               ]
             ]
@@ -3091,24 +2827,9 @@
               "Query__DiffStat"
             ],
             [
-              18,
-              "Preview",
-              "Query__Preview"
-            ],
-            [
               19,
               "Statuses",
               "Query__Statuses"
-            ],
-            [
-              20,
-              "Required",
-              "Query__Required"
-            ],
-            [
-              21,
-              "Queue",
-              "Query__Queue"
             ],
             [
               22,
@@ -3139,11 +2860,6 @@
               27,
               "ReviewRequests",
               "Query__ReviewRequests"
-            ],
-            [
-              28,
-              "Train",
-              "Query__Train"
             ],
             [
               29,
@@ -3450,25 +3166,6 @@
       }
     ],
     [
-      "Query__Preview",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Query__Protected",
       {
         "struct": {
@@ -3477,29 +3174,6 @@
               [
                 "repo",
                 "String"
-              ],
-              [
-                "page",
-                "PageRequest"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Query__Queue",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "branch",
-                "Vec<u8>"
               ],
               [
                 "page",
@@ -3583,25 +3257,6 @@
       }
     ],
     [
-      "Query__Required",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "page",
-                "PageRequest"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Query__ReviewRequests",
       {
         "struct": {
@@ -3663,25 +3318,6 @@
       }
     ],
     [
-      "Query__Train",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "branch",
-                "Vec<u8>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Query__Tree",
       {
         "struct": {
@@ -3721,33 +3357,6 @@
               [
                 "request",
                 "Vec<u8>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "QueueEntry",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "head",
-                "String"
-              ],
-              [
-                "by",
-                "Principal"
-              ],
-              [
-                "height",
-                "u64"
               ]
             ]
           }
@@ -3892,24 +3501,9 @@
               "Reply__DiffStat"
             ],
             [
-              16,
-              "Preview",
-              "Reply__Preview"
-            ],
-            [
               17,
               "Statuses",
               "Reply__Statuses"
-            ],
-            [
-              18,
-              "Required",
-              "Reply__Required"
-            ],
-            [
-              19,
-              "Queue",
-              "Reply__Queue"
             ],
             [
               20,
@@ -3935,11 +3529,6 @@
               24,
               "ReviewRequests",
               "Reply__ReviewRequests"
-            ],
-            [
-              25,
-              "Train",
-              "Reply__Train"
             ],
             [
               26,
@@ -4227,25 +3816,6 @@
       }
     ],
     [
-      "Reply__Preview",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "height",
-                "u64"
-              ],
-              [
-                "preview",
-                "Option<PreviewInfo>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Reply__Protected",
       {
         "struct": {
@@ -4258,25 +3828,6 @@
               [
                 "page",
                 "PageResponse<Vec<u8>>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Reply__Queue",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "height",
-                "u64"
-              ],
-              [
-                "page",
-                "PageResponse<QueueEntry>"
               ]
             ]
           }
@@ -4364,25 +3915,6 @@
       }
     ],
     [
-      "Reply__Required",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "height",
-                "u64"
-              ],
-              [
-                "page",
-                "PageResponse<RequiredBranch>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Reply__ReviewRequests",
       {
         "struct": {
@@ -4445,29 +3977,6 @@
               [
                 "page",
                 "PageResponse<CommitStatus>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Reply__Train",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "height",
-                "u64"
-              ],
-              [
-                "train",
-                "Option<Train>"
-              ],
-              [
-                "formed",
-                "Option<Formed>"
               ]
             ]
           }
@@ -4548,44 +4057,6 @@
       }
     ],
     [
-      "Required",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "reporter",
-                "Principal"
-              ],
-              [
-                "contexts",
-                "Vec<String>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "RequiredBranch",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "branch",
-                "Vec<u8>"
-              ],
-              [
-                "required",
-                "Required"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Returns<Op>",
       {
         "struct": {
@@ -4621,10 +4092,6 @@
               ],
               [
                 "ChangeRepoint",
-                "OpReply"
-              ],
-              [
-                "Preview",
                 "OpReply"
               ],
               [
@@ -4941,25 +4408,6 @@
       }
     ],
     [
-      "TrainMember",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "merge",
-                "String"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "TreeInfo",
       {
         "struct": {
@@ -5152,19 +4600,6 @@
       }
     ],
     [
-      "Vec<QueueEntry>",
-      {
-        "sequence": {
-          "elements": "QueueEntry",
-          "length_range": {
-            "end": 4294967295,
-            "start": 0
-          },
-          "length_width": 4
-        }
-      }
-    ],
-    [
       "Vec<QueuedCommit>",
       {
         "sequence": {
@@ -5217,19 +4652,6 @@
       }
     ],
     [
-      "Vec<RequiredBranch>",
-      {
-        "sequence": {
-          "elements": "RequiredBranch",
-          "length_range": {
-            "end": 4294967295,
-            "start": 0
-          },
-          "length_width": 4
-        }
-      }
-    ],
-    [
       "Vec<Review>",
       {
         "sequence": {
@@ -5260,19 +4682,6 @@
       {
         "sequence": {
           "elements": "String",
-          "length_range": {
-            "end": 4294967295,
-            "start": 0
-          },
-          "length_width": 4
-        }
-      }
-    ],
-    [
-      "Vec<TrainMember>",
-      {
-        "sequence": {
-          "elements": "TrainMember",
           "length_range": {
             "end": 4294967295,
             "start": 0

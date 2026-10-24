@@ -1,5 +1,4 @@
-// actions over forge on a MockChain: a push runs the workflows that name its branch, a change
-// opened and updated runs what `on.change` names, and a check is claimed, reported and rerun.
+//! Explicit source checks over forge: pushes and manual triggers, claims, reports and reruns.
 use ::program::code;
 use ::program::{Error, ExecCtx, HashKind, MockChain, Origin, Program, QueryCtx, Reply as Wanted};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -372,23 +371,6 @@ impl World {
         self.chain.at(height, height * 1000);
     }
 
-    fn preview(&self, n: u64) -> Oid {
-        self.tick();
-        let asked = forge::Query::Preview {
-            repo: REPO.into(),
-            n,
-        };
-        let reply = self.chain.query(forge::PROGRAM, &asked).unwrap();
-        let forge::Reply::Preview {
-            preview: Some(made),
-            ..
-        } = reply
-        else {
-            panic!("change {n} has no Preview: {reply:?}");
-        };
-        Oid::from_hex(Hash::Sha1, &made.merge).unwrap()
-    }
-
     fn statuses(&self, commit: Oid) -> Vec<(String, forge::CheckState)> {
         let asked = forge::Query::Statuses {
             repo: REPO.into(),
@@ -462,82 +444,6 @@ fn a_push_to_a_branch_a_workflow_names_queues_a_check_per_job_and_offers_it() {
     let other = world.commit(&[root], &[("gates.toml", GATES)]);
     world.push(None, other, "other");
     assert!(world.checks(other).is_empty(), "on.push names main alone");
-}
-
-#[test]
-fn a_change_runs_what_on_change_names_on_its_preview_each_time_its_source_moves_never_its_target() {
-    let mut world = world();
-    let root = world.commit(&[], &[("changes.toml", CHANGES)]);
-    world.push(None, root, "main");
-    assert!(world.checks(root).is_empty());
-    let feature = world.commit(&[root], &[("changes.toml", CHANGES)]);
-    world.push(None, feature, "feature");
-    let open = forge::Op::ChangeOpen {
-        repo: REPO.into(),
-        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
-        into: b"refs/heads/main".to_vec(),
-        title: "Feature".into(),
-        body: String::new(),
-        reviewers: Vec::new(),
-    };
-    world.forge(&open).unwrap();
-    assert!(
-        world.checks(feature).is_empty(),
-        "checks run on the Preview, not the head"
-    );
-    let first = world.preview(1);
-    let opened = world.checks(first);
-    assert_eq!(jobs(&opened), [("review", State::Queued)]);
-    assert_eq!(world.run(opened[0].run).event, Event::Preview { n: 1 });
-    let pending = ("changes.toml#review".to_owned(), forge::CheckState::Pending);
-    assert_eq!(world.statuses(first), [pending]);
-    let later = world.commit(&[feature], &[("changes.toml", CHANGES)]);
-    world.push(Some(feature), later, "feature");
-    let second = world.preview(1);
-    assert_ne!(second, first, "the source moved");
-    assert_eq!(jobs(&world.checks(second)), [("review", State::Queued)]);
-    let moved = world.commit(&[root], &[("changes.toml", CHANGES)]);
-    world.push(Some(root), moved, "main");
-    assert_eq!(
-        world.preview(1),
-        second,
-        "a move of the target previews nothing"
-    );
-    assert_eq!(
-        jobs(&world.checks(second)),
-        [("review", State::Superseded)],
-        "a check of a Preview on the target's old head decides nothing"
-    );
-    let again = world.commit(&[later], &[("changes.toml", CHANGES)]);
-    world.push(Some(later), again, "feature");
-    let third = world.preview(1);
-    assert_ne!(third, second, "the source moved");
-    let asked = forge::Query::Preview {
-        repo: REPO.into(),
-        n: 1,
-    };
-    let reply = world.chain.query(forge::PROGRAM, &asked).unwrap();
-    let forge::Reply::Preview {
-        preview: Some(made),
-        ..
-    } = reply
-    else {
-        panic!("change 1 has no Preview: {reply:?}");
-    };
-    assert_eq!(
-        made.into_head,
-        moved.to_hex(),
-        "on the target's newest head"
-    );
-    assert_eq!(jobs(&world.checks(third)), [("review", State::Queued)]);
-    let close = forge::Op::ChangeClose {
-        repo: REPO.into(),
-        n: 1,
-    };
-    world.forge(&close).unwrap();
-    let last = world.commit(&[again], &[("changes.toml", CHANGES)]);
-    world.push(Some(again), last, "feature");
-    assert_eq!(world.preview(1), third, "the change is closed");
 }
 
 #[test]
@@ -807,35 +713,6 @@ fn a_channel_that_refuses_the_line_leaves_the_report_standing() {
 }
 
 #[test]
-fn a_change_that_does_not_preview_makes_an_errored_run_that_says_why() {
-    let mut world = world();
-    let changes = [("changes.toml", CHANGES)];
-    let root = world.commit_files(&[], &changes, &[("a", b"1\n")]);
-    world.push(None, root, "main");
-    let feature = world.commit_files(&[root], &changes, &[("a", b"2\n")]);
-    world.push(None, feature, "feature");
-    let moved = world.commit_files(&[root], &changes, &[("a", b"3\n")]);
-    world.push(Some(root), moved, "main");
-    let open = forge::Op::ChangeOpen {
-        repo: REPO.into(),
-        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
-        into: b"refs/heads/main".to_vec(),
-        title: "Feature".into(),
-        body: String::new(),
-        reviewers: Vec::new(),
-    };
-    world.forge(&open).unwrap();
-    world.tick();
-    let run = world.run(1);
-    assert_eq!(run.event, Event::Preview { n: 1 });
-    let ran = (run.commit.as_str(), run.workflow.as_str());
-    assert_eq!(ran, (feature.to_hex().as_str(), "refs/changes/1/merge"));
-    let error = run.error.unwrap();
-    assert!(error.starts_with("change 1 does not preview: "), "{error}");
-    assert!(world.checks(feature).is_empty());
-}
-
-#[test]
 fn an_account_registers_as_a_runner_hears_no_offer_and_claims_and_reports_what_it_finds_queued() {
     let mut world = world();
     let root = world.commit(&[], &[("changes.toml", CLAUDE)]);
@@ -908,44 +785,6 @@ fn an_account_registers_as_a_runner_hears_no_offer_and_claims_and_reports_what_i
 }
 
 #[test]
-fn a_change_opened_before_actions_watched_joins_on_its_first_preview() {
-    let mut world = world();
-    let root = world.commit(&[], &[("changes.toml", CHANGES)]);
-    world.push(None, root, "main");
-    let feature = world.commit(&[root], &[("changes.toml", CHANGES)]);
-    world.push(None, feature, "feature");
-    let open = forge::Op::ChangeOpen {
-        repo: REPO.into(),
-        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
-        into: b"refs/heads/main".to_vec(),
-        title: "Feature".into(),
-        body: String::new(),
-        reviewers: Vec::new(),
-    };
-    world.forge(&open).unwrap();
-    world.tick();
-    let actions = world.chain.host(PROGRAM);
-    let ctx = actions.exec(::program::MockHost::env(PROGRAM));
-    crate::state::SOURCES.remove(&ctx, &(REPO.to_owned(), b"refs/heads/feature".to_vec()));
-    drop(ctx);
-    let previewed = forge::Op::Preview {
-        repo: REPO.into(),
-        n: 1,
-    };
-    let moved = world.commit(&[root], &[("changes.toml", CHANGES)]);
-    world.push(Some(root), moved, "main");
-    world.forge(&previewed).unwrap();
-    let first = world.preview(1);
-    let later = world.commit(&[feature], &[("changes.toml", CHANGES)]);
-    world.push(Some(feature), later, "feature");
-    assert_ne!(
-        world.preview(1),
-        first,
-        "the adopted change previews again as its source moves"
-    );
-}
-
-#[test]
 fn a_runner_that_refuses_its_offer_errs_the_check_saying_why() {
     let mut world = world();
     world.runner(&["pods"]);
@@ -991,97 +830,6 @@ fn a_queued_check_ends_errored_unclaimed_but_passes_only_once_claimed() {
     assert_eq!(
         world.act(&Op::Claim { check: 2 }).unwrap_err().code,
         code::WRONG_STATE
-    );
-}
-
-const PAIR: &str = r#"
-[on]
-change = ["opened", "updated"]
-
-[[jobs]]
-id = "review"
-runs-on = ["pods"]
-image = "toolchain"
-steps = ["make review"]
-
-[[jobs]]
-id = "lint"
-runs-on = ["pods"]
-image = "toolchain"
-steps = ["make lint"]
-"#;
-
-fn ends(checks: &[CheckRow]) -> Vec<(State, &str)> {
-    checks
-        .iter()
-        .map(|check| (check.state, check.summary.as_str()))
-        .collect()
-}
-
-fn paired(world: &mut World) -> (Oid, Oid) {
-    let root = world.commit(&[], &[("pair.toml", PAIR)]);
-    world.push(None, root, "main");
-    let feature = world.commit(&[root], &[("pair.toml", PAIR)]);
-    world.push(None, feature, "feature");
-    let open = forge::Op::ChangeOpen {
-        repo: REPO.into(),
-        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
-        into: b"refs/heads/main".to_vec(),
-        title: "Feature".into(),
-        body: String::new(),
-        reviewers: Vec::new(),
-    };
-    world.forge(&open).unwrap();
-    (root, feature)
-}
-
-#[test]
-fn a_newer_preview_and_then_the_close_supersede_the_changes_open_checks() {
-    let mut world = world();
-    let (_, feature) = paired(&mut world);
-    let first = world.preview(1);
-    world.act(&Op::Claim { check: 1 }).unwrap();
-    let later = world.commit(&[feature], &[("pair.toml", PAIR)]);
-    world.push(Some(feature), later, "feature");
-    let second = world.preview(1);
-    let why = format!("superseded by Preview {} of #1", &second.to_hex()[..12]);
-    assert_eq!(
-        ends(&world.checks(first)),
-        [(State::Superseded, why.as_str()); 2]
-    );
-    let errored = forge::CheckState::Errored;
-    let told = world.statuses(first);
-    assert!(told.iter().all(|(_, state)| *state == errored), "{told:?}");
-    assert_eq!(ends(&world.checks(second)), [(State::Queued, ""); 2]);
-    let close = forge::Op::ChangeClose {
-        repo: REPO.into(),
-        n: 1,
-    };
-    world.forge(&close).unwrap();
-    assert_eq!(
-        ends(&world.checks(second)),
-        [(State::Superseded, "change #1 closed"); 2]
-    );
-}
-
-#[test]
-fn a_change_that_merges_supersedes_its_open_checks() {
-    let mut world = world();
-    let (root, feature) = paired(&mut world);
-    let preview = world.preview(1);
-    let merge = forge::Op::SquashMerge {
-        repo: REPO.into(),
-        into: b"refs/heads/main".to_vec(),
-        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
-        expected_into: root.to_hex(),
-        expected_from: feature.to_hex(),
-        message: None,
-        change: Some(1),
-    };
-    world.forge(&merge).unwrap();
-    assert_eq!(
-        ends(&world.checks(preview)),
-        [(State::Superseded, "change #1 merged"); 2]
     );
 }
 
@@ -1726,49 +1474,14 @@ fn a_keeping_run_whose_build_passed_keeps_its_queued_publish_past_a_newer_push()
 }
 
 #[test]
-fn a_keeping_run_gives_way_only_on_its_own_line_and_a_changes_end_supersedes_its_untaken_preview() {
+fn a_keeping_run_gives_way_only_on_its_own_branch() {
     let mut world = world();
     let files = [("keeping.toml", KEEPING)];
     let root = world.commit(&[], &files);
     world.push(None, root, "main");
     let dev = world.commit(&[root], &files);
     world.push(None, dev, "dev");
-    let untaken = [State::Queued, State::Waiting];
-    assert_eq!(
-        states(&world.checks(root)),
-        untaken,
-        "a push to dev leaves main's untaken run"
-    );
-    for branch in ["one", "two"] {
-        let head = world.commit(&[root], &files);
-        world.push(None, head, branch);
-        let open = forge::Op::ChangeOpen {
-            repo: REPO.into(),
-            from: forge::Revision::Ref(format!("refs/heads/{branch}").into_bytes()),
-            into: b"refs/heads/main".to_vec(),
-            title: branch.into(),
-            body: String::new(),
-            reviewers: Vec::new(),
-        };
-        world.forge(&open).unwrap();
-    }
-    let first = world.preview(1);
-    let second = world.preview(2);
-    assert_eq!(
-        states(&world.checks(first)),
-        untaken,
-        "another change's Preview leaves this one's"
-    );
-    let close = forge::Op::ChangeClose {
-        repo: REPO.into(),
-        n: 1,
-    };
-    world.forge(&close).unwrap();
-    assert_eq!(
-        ends(&world.checks(first)),
-        [(State::Superseded, "change #1 closed"); 2]
-    );
-    assert_eq!(states(&world.checks(second)), untaken);
+    assert_eq!(states(&world.checks(root)), [State::Queued, State::Waiting]);
 }
 
 fn seat_agent(chain: &MockChain) {
@@ -2051,330 +1764,55 @@ fn a_dispatched_run_that_errs_before_it_queues_says_so_in_the_workflow_channel()
     );
 }
 
-fn two_changes_into_main(world: &mut World) -> (Oid, [Oid; 2]) {
-    let root = world.commit(&[], &[("pair.toml", PAIR)]);
+#[test]
+fn opening_and_updating_a_change_never_schedules_synthetic_checks() {
+    let mut world = world();
+    let root = world.commit(&[], &[("changes.toml", CHANGES)]);
     world.push(None, root, "main");
-    let mut heads = Vec::new();
-    for branch in ["one", "two"] {
-        let head = world.commit(&[root], &[("pair.toml", PAIR)]);
-        world.push(None, head, branch);
-        let open = forge::Op::ChangeOpen {
+    let feature = world.commit(&[root], &[("changes.toml", CHANGES)]);
+    world.push(None, feature, "feature");
+    world
+        .forge(&forge::Op::ChangeOpen {
             repo: REPO.into(),
-            from: forge::Revision::Ref(format!("refs/heads/{branch}").into_bytes()),
+            from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
             into: b"refs/heads/main".to_vec(),
-            title: branch.into(),
+            title: "Feature".into(),
             body: String::new(),
             reviewers: Vec::new(),
-        };
-        world.forge(&open).unwrap();
-        heads.push(head);
-    }
-    (root, [heads[0], heads[1]])
-}
-
-fn require_pair_on_main(world: &World) {
-    let require = forge::Op::RequireChecks {
-        repo: REPO.into(),
-        branch: b"refs/heads/main".to_vec(),
-        required: Some(forge::Required {
-            reporter: forge::Principal::Account(903),
-            contexts: vec!["pair.toml#review".into(), "pair.toml#lint".into()],
-        }),
-    };
-    world.forge(&require).unwrap();
-}
-
-fn enqueue(world: &World, n: u64, head: Oid) {
-    let enqueue = forge::Op::Enqueue {
-        repo: REPO.into(),
-        n,
-        expected_head: head.to_hex(),
-    };
-    world.forge(&enqueue).unwrap();
-}
-
-fn pass_every_check(world: &World, commit: Oid) {
-    for check in world.checks(commit) {
-        if check.state == State::Queued {
-            world.act(&Op::Claim { check: check.id }).unwrap();
-        }
-        let passed = Op::Report {
-            check: check.id,
-            state: State::Passed,
-            summary: "exit code 0".into(),
-            log: None,
-        };
-        world.act(&passed).unwrap();
-    }
-}
-
-fn of_job(checks: &[CheckRow], job: &str) -> CheckRow {
-    checks
-        .iter()
-        .find(|check| check.job.id == job)
-        .cloned()
-        .unwrap_or_else(|| panic!("no {job} check in {checks:?}"))
-}
-
-#[test]
-fn a_queue_merge_supersedes_the_unstarted_checks_of_previews_built_on_the_old_tip() {
-    let mut world = world();
-    let (_, [one, _]) = two_changes_into_main(&mut world);
-    require_pair_on_main(&world);
-    let first = world.preview(1);
-    let stale = world.preview(2);
-    let lint = of_job(&world.checks(stale), "lint");
-    world.act(&Op::Claim { check: lint.id }).unwrap();
-    enqueue(&world, 1, one);
-    pass_every_check(&world, first);
-    let merged = world.preview(2);
-    assert_eq!(
-        merged, stale,
-        "change 2 is in no queue: nothing previews it again"
-    );
-    let checks = world.checks(stale);
-    let review = of_job(&checks, "review");
-    assert_eq!(review.state, State::Superseded, "{checks:?}");
-    assert!(
-        review.summary.starts_with("superseded: main moved to "),
-        "{}",
-        review.summary
-    );
-    assert!(
-        review
-            .summary
-            .ends_with(", past the tip this Preview was built on"),
-        "{}",
-        review.summary
-    );
-    assert_eq!(
-        of_job(&checks, "lint").state,
-        State::Running,
-        "a started check runs on"
-    );
-    let told = world.statuses(stale);
-    let errored = ("pair.toml#review".to_owned(), forge::CheckState::Errored);
-    assert!(told.contains(&errored), "{told:?}");
-}
-
-#[test]
-fn a_queue_merge_leaves_the_checks_of_the_next_fronts_fresh_preview_queued() {
-    let mut world = world();
-    let (_, [one, two]) = two_changes_into_main(&mut world);
-    require_pair_on_main(&world);
-    let first = world.preview(1);
-    let stale = world.preview(2);
-    enqueue(&world, 1, one);
-    enqueue(&world, 2, two);
-    pass_every_check(&world, first);
-    let fresh = world.preview(2);
-    assert_ne!(
-        fresh, stale,
-        "the queue previewed change 2 on main's new tip"
-    );
-    assert_eq!(states(&world.checks(fresh)), [State::Queued, State::Queued]);
-    for check in world.checks(stale) {
-        let told = message(&world, format!("actions-superseded-{}", check.id));
-        assert!(
-            told.is_none(),
-            "the replaced Preview's checks end by Previewed, with no line in the room: {told:?}"
-        );
-    }
-    let checks = world.checks(stale);
-    assert!(
-        checks.iter().all(|check| check.state == State::Superseded),
-        "{checks:?}"
-    );
-}
-
-fn message(world: &World, message_id: String) -> Option<chat::MsgRow> {
-    let asked = chat::Query::MessageById { message_id };
-    match world.chain.query(chat::PROGRAM, &asked).unwrap() {
-        chat::Reply::Message(row) => row,
-        other => panic!("MessageById answers Message: {other:?}"),
-    }
-}
-
-#[test]
-fn a_move_of_any_target_supersedes_the_unstarted_checks_of_previews_on_its_old_tip_and_says_so_once_in_the_change_room()
- {
-    let mut world = world();
-    let (root, [one, _]) = two_changes_into_main(&mut world);
-    world.push(None, root, "side");
-    let three = world.commit(&[root], &[("pair.toml", PAIR)]);
-    world.push(None, three, "three");
-    let open = forge::Op::ChangeOpen {
-        repo: REPO.into(),
-        from: forge::Revision::Ref(b"refs/heads/three".to_vec()),
-        into: b"refs/heads/side".to_vec(),
-        title: "three".into(),
-        body: String::new(),
-        reviewers: Vec::new(),
-    };
-    world.forge(&open).unwrap();
-    world.preview(1);
-    let stale = world.preview(2);
-    let elsewhere = world.preview(3);
-    let merge = forge::Op::SquashMerge {
-        repo: REPO.into(),
-        into: b"refs/heads/main".to_vec(),
-        from: forge::Revision::Ref(b"refs/heads/one".to_vec()),
-        expected_into: root.to_hex(),
-        expected_from: one.to_hex(),
-        message: None,
-        change: Some(1),
-    };
-    world.forge(&merge).unwrap();
-    assert_eq!(world.preview(2), stale, "nothing previews change 2 again");
-    let checks = world.checks(stale);
-    assert_eq!(states(&checks), [State::Superseded, State::Superseded]);
-    let why = &checks[0].summary;
-    assert!(why.starts_with("superseded: main moved to "), "{why}");
-    assert!(
-        why.ends_with(", past the tip this Preview was built on"),
-        "{why}"
-    );
-    let told = world.statuses(stale);
-    let errored = forge::CheckState::Errored;
-    assert!(told.iter().all(|(_, state)| *state == errored), "{told:?}");
-    assert_eq!(
-        states(&world.checks(elsewhere)),
-        [State::Queued, State::Queued],
-        "a change into another branch keeps its checks"
-    );
-    let [first, second] = [checks[0].id, checks[1].id];
-    let row =
-        message(&world, format!("actions-superseded-{first}")).expect("the change room hears it");
-    assert_eq!(row.channel_id, "forge:project:2");
-    let notice = row.notice().expect("the line is a notice");
-    assert_eq!(notice.concerns, [OWNER_ACCOUNT], "the change's author");
-    world.runner(&["pods"]);
-    let still_queued: Vec<u64> = world
-        .checks(elsewhere)
-        .iter()
-        .map(|check| check.id)
-        .collect();
-    assert_eq!(
-        world.offers(),
-        still_queued,
-        "a runner registering now is offered only checks still queued"
-    );
-    let named = format!("checks {first} and {second} superseded: main moved to ");
-    assert!(notice.detail.starts_with(&named), "{}", notice.detail);
-    assert!(
-        message(&world, format!("actions-superseded-{second}")).is_none(),
-        "one line for the change"
-    );
-}
-
-fn moved(repo: &str, branch: &str, old: Oid, new: Oid) -> Op {
-    Op::Watched(forge::Watched::Moved {
-        repo: repo.into(),
-        reference: format!("refs/heads/{branch}").into_bytes(),
-        old: Some(old.to_hex()),
-        new: Some(new.to_hex()),
-        by: None,
-    })
-}
-
-#[test]
-fn a_move_to_the_tip_a_current_preview_was_built_on_leaves_its_checks_queued() {
-    let mut world = world();
-    let (root, _) = paired(&mut world);
-    let stale = world.preview(1);
-    let tip = world.commit(&[root], &[("pair.toml", PAIR)]);
-    world.push(Some(root), tip, "main");
-    let repreview = Op::Preview {
-        repo: REPO.into(),
-        n: 1,
-    };
-    world.act(&repreview).unwrap();
-    let fresh = world.preview(1);
-    assert_ne!(fresh, stale, "the change is previewed on main's new tip");
-    let forge = Origin::Program(forge::PROGRAM.into());
-    world
-        .chain
-        .submit(forge, PROGRAM, &moved(REPO, "main", root, tip))
+        })
         .unwrap();
-    let checks = world.checks(fresh);
-    assert_eq!(states(&checks), [State::Queued, State::Queued]);
-    for check in checks {
-        let told = message(&world, format!("actions-superseded-{}", check.id));
-        assert!(told.is_none(), "{told:?}");
-    }
-}
-
-const NEEDING: &str = r#"
-[on]
-change = ["opened", "updated"]
-
-[[jobs]]
-id = "lint"
-runs-on = ["pods"]
-image = "toolchain"
-steps = ["make lint"]
-
-[[jobs]]
-id = "publish"
-runs-on = ["pods"]
-image = "toolchain"
-needs = ["lint"]
-steps = ["make publish"]
-
-[[jobs]]
-id = "review"
-runs-on = ["pods"]
-image = "toolchain"
-steps = ["make review"]
-"#;
-
-#[test]
-fn a_target_move_ends_waiting_checks_and_leaves_running_and_ended_ones_as_they_are() {
-    let mut world = world();
-    let root = world.commit(&[], &[("needing.toml", NEEDING)]);
-    world.push(None, root, "main");
-    let feature = world.commit(&[root], &[("needing.toml", NEEDING)]);
-    world.push(None, feature, "feature");
-    let open = forge::Op::ChangeOpen {
-        repo: REPO.into(),
-        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
-        into: b"refs/heads/main".to_vec(),
-        title: "Feature".into(),
-        body: String::new(),
-        reviewers: Vec::new(),
-    };
-    world.forge(&open).unwrap();
-    let preview = world.preview(1);
-    let checks = world.checks(preview);
-    let [lint, publish, review] = ["lint", "publish", "review"].map(|job| of_job(&checks, job));
-    assert_eq!(publish.state, State::Waiting);
-    end(&world, review.id, State::Passed);
-    world.act(&Op::Claim { check: lint.id }).unwrap();
-    let tip = world.commit(&[root], &[("needing.toml", NEEDING)]);
-    world.push(Some(root), tip, "main");
-    assert_eq!(world.check(publish.id).state, State::Superseded);
-    assert_eq!(
-        world.check(lint.id).state,
-        State::Running,
-        "a started check runs on"
+    world.tick();
+    assert!(world.checks(feature).is_empty());
+    assert!(
+        world
+            .runs(Event::Preview { n: 1 }, PageRequest::first(1))
+            .items
+            .is_empty()
     );
-    assert_eq!(
-        world.check(review.id).state,
-        State::Passed,
-        "an ended check stays"
+    let later = world.commit(&[feature], &[("changes.toml", CHANGES)]);
+    world.push(Some(feature), later, "feature");
+    world.tick();
+    assert!(world.checks(later).is_empty());
+    assert!(
+        world
+            .runs(Event::Preview { n: 1 }, PageRequest::first(1))
+            .items
+            .is_empty()
     );
-    let passed = Op::Report {
-        check: lint.id,
-        state: State::Passed,
-        summary: String::new(),
-        log: None,
-    };
-    world.act(&passed).unwrap();
-    assert_eq!(
-        world.check(publish.id).state,
-        State::Superseded,
-        "a need passing later brings back no superseded check"
-    );
-    world.runner(&["pods"]);
-    assert!(world.offers().is_empty(), "{:?}", world.offers());
+    let refused = world
+        .act(&Op::Preview {
+            repo: REPO.into(),
+            n: 1,
+        })
+        .unwrap_err();
+    assert_eq!(refused.code, code::WRONG_STATE);
+    world
+        .act(&Op::Trigger {
+            repo: REPO.into(),
+            commit: later.to_hex(),
+        })
+        .unwrap();
+    assert_eq!(jobs(&world.checks(later)), [("review", State::Queued)]);
+    assert_eq!(world.run(1).event, Event::Manual);
+    assert!(world.checks(feature).is_empty());
 }

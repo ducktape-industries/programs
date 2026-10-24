@@ -1,6 +1,6 @@
 # actions
 
-Checks for forge repositories: each workflow file at a pushed or previewed
+Checks for forge repositories: each matching workflow file at a pushed, dispatched or explicitly triggered
 commit starts a run, whose jobs are queued as checks and offered to the
 runners whose labels cover them; each check's state reaches forge as its
 commit's status. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
@@ -15,7 +15,7 @@ commit's status. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 | `Claim { check }` | any account, while the check is queued; only the accounts its job's `runners` names, when it names any |
 | `Report { check, state, summary, log }` | the account that claimed the check, while it is running; any account while it is queued, to end it errored or superseded (as claiming it first would let it), or only those `runners` names |
 | `Rerun { check }` | any account, once the check is neither queued nor waiting |
-| `Preview { repo, n }` | anyone |
+| `Preview { repo, n }` | retired; always refuses |
 | `Outputs { check, files }` | the account that claimed the check, while it is running; who sent them is kept |
 
 Every query is answered for anyone.
@@ -46,44 +46,21 @@ same notice as `actions-run-<run>`, group `run <run>`, detail
 that does not parse (jobs that need each other in a loop among them) names no channel, so its errored run tells nobody; its errored forge status
 is what says so. A channel that refuses a notice leaves the report standing.
 
-## When a change's checks run
+## Exact-source execution
 
-A workflow whose `on.change` names `opened` or `updated` runs on each Preview of a change: actions
-asks forge for one the block after the change opens and after each push to its source, and forge
-makes one for the change at the front of a merge queue. A move of the target previews nothing, so
-a change's checks say how it did on the target head its Preview was built on (forge
-`Query::Preview`'s `into_head`, the Preview commit's parent). A merge queue checks the change
-again on the target's tip before it lands, and the target's own `on.push` workflows check each
-landing.
-
-A check of a Preview built on an older tip of its target can decide nothing: a merge lands the
-change on the target's current tip, and a merge queue (forge `RequireChecks`) merges only a Preview
-of that tip. So when a target moves, in any repository and whether or not
-it requires checks, every check of the current Preview of an open change into it, built on another
-tip (forge `Query::Preview`'s `into_head`), that has not started yet ends superseded (`superseded:
-<branch> moved to <commit>, past the tip this Preview was built on`), leaving the runners to checks
-a merge can use. A started check runs on. A Preview built on the new tip keeps its checks, and a
-run on a Preview forge has since replaced is left to that newer Preview, whose `Previewed` ends it. This is
-decided on forge's `Moved` of the target, never by polling: actions reads its own runs first and
-asks forge `Change` and `Preview` only for a run with a check not yet started.
-
-Each change whose checks it ends is told once, in the change's room (forge's `Change.channel`), by
-one chat notice (`Notify`), message id `actions-superseded-<first check>`: kind `check`, group
-`check <first check>`, subject `Preview checks of <repo>#<n>`, status Note, detail `<checks N and
-M> superseded: <branch> moved to <commit>, past the tip this Preview was built on. The change's
-next push, rebase or turn at the front of a merge queue previews it again.`, no link, and concerns
-the change's author. The queue previews its front again on the new tip, and a change that moves is
-previewed again as before.
+Opening or updating a change schedules nothing.
+`Trigger` names the exact source commit to test; no synthetic merge commit is created.
+Results belong to that commit and never prove another source or target pair.
+Push and dispatch workflows still run on their event's exact commit.
+The legacy `Preview` operation always refuses.
 
 ## Repository overview
 
-CI on forge. `actions` watches forge: a push, or a change's Preview (forge `Preview`,
-asked for from actions' own run the block after a change opens or its source or target
-moves, its open `Preview` op; a change it holds no rows for joins on its first Preview;
-one forge refuses, a conflict, makes an errored run that says why), reads
-`.forge/workflows/*.toml` at that commit (`on.push` branches, `on.change`
-opened/updated, `on.dispatch` (the `event_type`s of forge `Dispatch` that run it, at the
-commit the dispatch names, each job given the payload as `DISPATCH_PAYLOAD`),
+CI on forge.
+`actions` watches pushes and dispatches, reads `.forge/workflows/*.toml` at that exact commit and starts matching workflows (`on.push` branches and `on.dispatch` event types).
+Manual `Trigger` reads the named commit.
+Each dispatched job receives its payload as `DISPATCH_PAYLOAD`.
+Legacy `on.change` metadata does not schedule work.
 `on.trigger` (false: `Trigger` passes the file over), `on.supersede` ("unstarted",
 below), `[notify] channel`, `[[jobs]]` with `id`, `runs-on`, `image` (for a runner that
 makes a container; none for one that is its own environment), `steps`, `env`, `inputs`,
@@ -108,11 +85,10 @@ job a check needs, the passed check that met it, so a runner places a check's in
 from the network alone; and a red check of a push or a dispatch, or such a run that errs
 before it queues a check, is told in the workflow's channel (a workflow file that does
 not parse names none). `Runs { repo, event, page }` lists a repository's runs of one
-event, oldest first: a branch's pushes (`Push`), a change's Previews (`Preview`) or the
+event, oldest first: a branch's pushes (`Push`), historical Preview records or the
 runs triggered by hand (`Manual`); runs recorded before actions kept that index are not
 listed. A check still queued or running ends superseded, posting nothing, when the next
-push to its branch, the next Preview of its change or the next dispatch of its event
-type starts, or its change merges or closes; forge hears it as errored. A workflow with
+push to its branch or the next dispatch of its event type starts; forge hears it as errored. A workflow with
 `on.supersede = "unstarted"` gives way on its line only while no runner has claimed a
 check of its run: a run a runner took goes on to its end, its waiting and queued jobs
 included. `Trigger { repo, commit }` runs every workflow at a commit but those with
@@ -135,5 +111,4 @@ never errored, tried again when one of its pods ends or at a `Sweep`, and while 
 check waits it books itself a `Sweep` a whole egress wait (`DEFAULT_WAIT`) out; a 4xx
 still errs the check at once; `Waiting` lists only the checks still queued, so one that
 ended elsewhere is not counted before its retry drops it; waiting checks take free room
-oldest first, except that a check on the Preview a merge queue's front waits on (forge
-`Required`, that branch's `Queue`, then the change's `Preview`) goes before every other
+oldest first.

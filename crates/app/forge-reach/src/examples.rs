@@ -2,15 +2,6 @@
 //! them: what an agent edits rather than build one from the schema.
 use crate::{CheckState, Op, PageRequest, Query};
 
-pub(crate) fn watched() -> Op {
-    Op::Watched(forge::Watched::Previewed {
-        repo: "programs".into(),
-        n: 12,
-        merge: "1".repeat(40),
-        by: forge::Principal::Account(17),
-    })
-}
-
 pub(crate) fn report() -> Op {
     Op::Report {
         repo: "programs".into(),
@@ -38,13 +29,6 @@ pub(crate) fn report_patch() -> Op {
     }
 }
 
-pub(crate) fn retell() -> Op {
-    Op::Retell {
-        repo: "programs".into(),
-        n: 12,
-    }
-}
-
 pub(crate) fn reports() -> Query {
     Query::Reports {
         repo: "programs".into(),
@@ -56,19 +40,16 @@ pub(crate) fn reports() -> Query {
     }
 }
 
-pub(crate) fn verdict() -> Query {
-    Query::Verdict {
+pub(crate) fn retell() -> Op {
+    Op::Retell {
         repo: "programs".into(),
-        n: 12,
+        n: 1,
     }
 }
 
 pub(crate) fn wanted() -> Query {
     Query::Wanted {
         reporter: 23,
-        page: PageRequest {
-            after: None,
-            limit: Some(20),
-        },
+        page: PageRequest::first(1),
     }
 }

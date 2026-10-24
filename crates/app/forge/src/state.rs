@@ -11,8 +11,8 @@ use gitcore::{Hash, Oid};
 use store::{Item, Kind, Map, Owned, Set};
 
 use crate::contract::{
-    Bounds, Change, ChangeState, CommitStatus, PreviewInfo, Principal, QueueEntry, Repo, Required,
-    Review, Revision, Train, Watched, valid_repo_name,
+    Bounds, Change, ChangeState, CommitStatus, Principal, Repo, Review, Revision, Watched,
+    valid_repo_name,
 };
 use crate::objects::hash_of;
 
@@ -63,20 +63,8 @@ pub const ARCHIVING: Map<u64, (String, u64)> = Map::new("x/");
 // The lines forge posted to say chat refused an archive, by the message's seq, until chat
 // answers them (in the same frame).
 pub const LOGGING: Set<u64> = Set::new("l/");
-// Each change's latest Preview.
-pub const PREVIEWS: Map<(String, u64), PreviewInfo> = Map::new("m/");
 // Every status a reporter gave a commit: by repository, commit, reporter and context.
 pub const STATUSES: Map<(String, String, Principal, String), CommitStatus> = Map::new("s/");
-// The branches that move only by a merge whose Preview is green.
-pub const REQUIRED: Map<(String, Vec<u8>), Required> = Map::new("q/");
-// Each branch's merge queue, in the order its changes joined: by repository, branch and place.
-pub const QUEUE: Map<(String, Vec<u8>, u64), QueueEntry> = Map::new("e/");
-// Index: the branch and place each queued change holds.
-pub const QUEUED: Map<(String, u64), (Vec<u8>, u64)> = Map::new("g/");
-// The last place a queue gave out.
-pub const QUEUE_SEQ: Item<u64> = Item::new("queue-seq");
-pub const TRAINS: Map<(String, Vec<u8>), Train> = Map::new("y/");
-pub const FORMED: Map<(String, Vec<u8>), HeldTrain> = Map::new("z/");
 // The archived repositories, by name. `ACTIVITY` holds none of them, so `Repos` lists none.
 pub const ARCHIVED: Set<String> = Set::new("h/");
 pub const REPOS_DEFAULTING_TO_OWNER: Set<String> = Set::new("d/");
@@ -393,20 +381,6 @@ pub struct Authorship {
 
 impl Kind for Authorship {
     const KIND: &'static str = "forge.change";
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct HeldTrain {
-    pub members: Vec<HeldMember>,
-    pub alone: bool,
-    pub height: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct HeldMember {
-    pub seq: u64,
-    pub n: u64,
-    pub merge: String,
 }
 
 // The authorship of change `n` of `repo`, written again: a no-op for a change that has none.

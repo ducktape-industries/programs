@@ -62,8 +62,6 @@ pub fn watching() -> Vec<u8> {
 }
 
 // Errored: the runner or what it runs on broke, so the check says nothing of the code.
-// Superseded: a newer push to its branch, a newer Preview of its change, or the change's merge
-// or close made it moot before it ended, so it says nothing of the code either.
 // Waiting: a job it needs has not passed yet, so no runner is offered it.
 // Skipped: a job it needs ended other than passed, so it never ran.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -297,9 +295,6 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Watched(forge::Watched::Merged { repo, n, .. }) => {
             (format!("Hear change {repo}#{n} merge"), Vec::new())
         }
-        Op::Watched(forge::Watched::Previewed { repo, n, .. }) => {
-            (format!("Hear change {repo}#{n} previewed"), Vec::new())
-        }
         Op::Watched(forge::Watched::Dispatched {
             repo, event_type, ..
         }) => (
@@ -309,10 +304,6 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Watched(forge::Watched::Reviewed { repo, n, .. }) => {
             (format!("Hear change {repo}#{n} reviewed"), Vec::new())
         }
-        Op::Watched(forge::Watched::LeftQueue { repo, n, .. }) => (
-            format!("Hear change {repo}#{n} leave its merge queue"),
-            Vec::new(),
-        ),
         Op::Trigger { repo, commit } => (
             format!("Run the workflows of {repo}"),
             vec![field("commit", Value::text(commit))],

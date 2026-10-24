@@ -9,9 +9,9 @@ use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 use crate::change_queries::{change, changes, review_requests};
 use crate::changes::{
     Draft, Edit, MergeRequest, RebaseRequest, SquashRequest, close, edit, merge_heads, open,
-    preview, rebase, repoint, squash, submit_review,
+    rebase, repoint, squash, submit_review,
 };
-use crate::checks::{Report, preview_of, require, required, status, statuses};
+use crate::checks::{Report, status, statuses};
 use crate::contract::*;
 use crate::ops::{
     configure, create, delete_branch, init, needs, protect, push, resource, stage, touch,
@@ -20,7 +20,6 @@ use crate::queries::{
     advertise, closure, history, listing, protected_branches, ref_names, refs, repos, shallow,
     upload,
 };
-use crate::queue::{dequeue, enqueue, settle};
 use crate::reads::{blob, comparison, comparisons, diff, log, tree};
 use crate::state::{load_bounds, load_repo};
 use crate::watchers::watch;
@@ -56,20 +55,6 @@ impl Program for Forge {
     /// active.
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         let repo = op.repo().map(str::to_owned);
-        // an op that moves a ref, ends or re-points a change, reports a status or changes what
-        // a branch requires moves the repository's merge queues on
-        let settles = matches!(
-            op,
-            Op::Push { .. }
-                | Op::Merge { .. }
-                | Op::SquashMerge { .. }
-                | Op::Rebase { .. }
-                | Op::ChangeRepoint { .. }
-                | Op::ChangeClose { .. }
-                | Op::Status { .. }
-                | Op::RequireChecks { .. }
-                | Op::SetTrain { .. }
-        );
         let actor = &Principal::Account(ctx.sender_account()?);
         let governed = crate::ops::governed(ctx, &op).map(str::to_owned);
         let changes_settings = crate::ops::changes_settings(&op);
@@ -181,7 +166,6 @@ impl Program for Forge {
                 branch,
                 protected,
             } => protect(ctx, &repo, &branch, protected).map(|()| None),
-            Op::Preview { repo, n } => preview(ctx, actor, &repo, n).map(Some),
             Op::Status {
                 repo,
                 commit,
@@ -197,22 +181,11 @@ impl Program for Forge {
                 };
                 status(ctx, actor, &repo, report).map(|()| None)
             }
-            Op::RequireChecks {
-                repo,
-                branch,
-                required,
-            } => require(ctx, &repo, &branch, required).map(|()| None),
-            Op::Enqueue {
-                repo,
-                n,
-                expected_head,
-            } => enqueue(ctx, actor, &repo, n, &expected_head).map(|()| None),
-            Op::Dequeue { repo, n } => dequeue(ctx, &repo, n).map(|()| None),
-            Op::SetTrain {
-                repo,
-                branch,
-                train,
-            } => crate::queue::set_train(ctx, &repo, &branch, train).map(|()| None),
+            Op::SetTrain { .. } => {
+                return Err(::program::wrong_state(
+                    "merge scheduling is retired; merge the exact reviewed source and target heads",
+                ));
+            }
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(ctx, &kind, after, limit).map(|()| None)
             }
@@ -234,9 +207,6 @@ impl Program for Forge {
         }?;
         if let Some(repo) = &governed {
             crate::state::kept(ctx, repo, changes_settings)?;
-        }
-        if settles && let Some(repo) = &repo {
-            settle(ctx, repo)?;
         }
         if let Some(reply) = reply {
             ctx.set_return_data(abi::encode(&reply));
@@ -380,21 +350,9 @@ impl Program for Forge {
                 None,
                 &listing(page)?,
             )?)?,
-            Query::Preview { repo, n } => Reply::Preview {
-                height,
-                preview: preview_of(ctx, repo, *n)?,
-            },
             Query::Statuses { repo, commit, page } => Reply::Statuses {
                 height,
                 page: statuses(ctx, repo, commit, &listing(page)?)?,
-            },
-            Query::Required { repo, page } => Reply::Required {
-                height,
-                page: required(ctx, repo, &listing(page)?)?,
-            },
-            Query::Queue { repo, branch, page } => Reply::Queue {
-                height,
-                page: crate::queue::queue(ctx, repo, branch, &listing(page)?)?,
             },
             Query::Archived { repo } => Reply::Archived {
                 height,
@@ -404,14 +362,6 @@ impl Program for Forge {
                 height,
                 page: crate::queries::archived_repos(ctx, &listing(page)?)?,
             },
-            Query::Train { repo, branch } => {
-                let (train, formed) = crate::queue::train(ctx, repo, branch)?;
-                Reply::Train {
-                    height,
-                    train,
-                    formed,
-                }
-            }
             Query::Bounds => Reply::Bounds { height, bounds },
         })
     }

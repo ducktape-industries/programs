@@ -1131,54 +1131,6 @@ fn a_dispatch_ends_no_wake_and_forge_stays_heard() {
 }
 
 #[test]
-fn a_change_forge_takes_out_of_its_merge_queue_ends_its_wakes_saying_why() {
-    let mut world = world();
-    let create = forge::Op::Create {
-        repo: "notes".into(),
-        hash: HashKind::Sha1,
-    };
-    world.forge_op(&create);
-    let open = forge::Op::ChangeOpen {
-        repo: "notes".into(),
-        from: forge::Revision::Ref(b"refs/heads/dev".to_vec()),
-        into: b"refs/heads/main".to_vec(),
-        title: "dev".into(),
-        body: String::new(),
-        reviewers: Vec::new(),
-    };
-    world.forge_op(&open);
-    let change = WaitFor::Change {
-        repo: "notes".into(),
-        n: 1,
-    };
-    let moved = world.wake_on(ADA, change).unwrap();
-    let settled = WaitFor::Settled {
-        repo: "notes".into(),
-        n: 1,
-        until: Until::Merged,
-    };
-    let merged = world.wake_on(ADA, settled).unwrap();
-    let ada = world.ada;
-    let left = forge::Watched::LeftQueue {
-        repo: "notes".into(),
-        n: 1,
-        into: b"refs/heads/main".to_vec(),
-        why: "it does not preview: README.md conflicts".into(),
-        queued_by: Principal::Account(ada),
-    };
-    world.forged(left);
-    world.after(1_000);
-    world.after(0);
-    let why = "change 1 in notes left the merge queue of refs/heads/main: it does not preview: \
-               README.md conflicts";
-    let told = [
-        format!("Wake {moved} is over: {why}."),
-        format!("Wake {merged} is over: {why}."),
-    ];
-    assert_eq!(world.told(ada), told);
-}
-
-#[test]
 fn a_review_ends_a_change_wake_and_leaves_a_settled_one_to_its_merge() {
     let mut world = world();
     let create = forge::Op::Create {

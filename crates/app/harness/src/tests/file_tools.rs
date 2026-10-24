@@ -9,24 +9,26 @@ use super::*;
 use crate::schema::tests::{code_with, listed};
 
 const MERGE: &str = r#"name = "forge_merge"
-description = "Squash-merge a forge change into its target branch, refusing if either side moved since it was read."
+description = "Squash-merge a forge change only at the caller's exact reviewed source and target heads; refuse if either moved."
 
 [input]
 repo = { type = "string", description = "repository, e.g. programs" }
 number = { type = "integer", description = "the change's number" }
+expected_from = { type = "string", description = "exact reviewed and tested source commit, full oid" }
+expected_into = { type = "string", description = "exact reviewed and tested target commit, full oid" }
 
 [[step]]
 query = "forge"
-body = { Change = { repo = "$repo", n = "$number", page = {} } }
+body = { change = { repo = "$repo", n = "$number", page = { limit = 1 } } }
 as = "change"
 
 [[step]]
 op = "forge"
-body = { SquashMerge = { repo = "$repo", change = "$number", from = "$change.Change.change.from", into = "$change.Change.change.into", expected_from = "$change.Change.source_head", expected_into = "$change.Change.target_head" } }
+body = { squash_merge = { repo = "$repo", change = "$number", from = "$change.change.change.from", into = "$change.change.change.into", expected_from = "$expected_from", expected_into = "$expected_into" } }
 as = "merged"
 
 [returns]
-text = "Merged #$number → $merged.Merged.oid"
+text = "Merged #$number → $merged.merged.oid"
 "#;
 
 const CHANNEL: &str = r#"name = "channel_name"
@@ -90,7 +92,7 @@ fn a_tool_file_is_a_tool_on_the_next_model_call_and_one_that_does_not_load_says_
         .replace("change = \"$number\"", "number = \"$number\"");
     let typo = MERGE
         .replace("forge_merge", "typo")
-        .replace("$change.Change.source_head", "$chnge.Change.source_head");
+        .replace("$change.change.change.from", "$chnge.change.change.from");
     let files = [
         ("/shared/tools/forge_merge.toml", MERGE.to_owned()),
         ("/shared/tools/broken.toml", broken),
@@ -113,7 +115,10 @@ fn a_tool_file_is_a_tool_on_the_next_model_call_and_one_that_does_not_load_says_
         description.ends_with("(tool file /shared/tools/forge_merge.toml)"),
         "{description}"
     );
-    assert_eq!(merge["input_schema"]["required"], json!(["number", "repo"]));
+    assert_eq!(
+        merge["input_schema"]["required"],
+        json!(["expected_from", "expected_into", "number", "repo"])
+    );
     assert_eq!(
         merge["input_schema"]["properties"]["number"]["type"],
         json!("integer")
@@ -123,7 +128,7 @@ fn a_tool_file_is_a_tool_on_the_next_model_call_and_one_that_does_not_load_says_
     let left_out = [
         "- File tools left out: ",
         "tool broken: step 2 (op forge): at op.squash_merge: there is no field number",
-        "tool typo: step 2 (op forge): $chnge.Change.source_head names no input and no earlier step's `as`",
+        "tool typo: step 2 (op forge): $chnge.change.change.from names no input and no earlier step's `as`",
         "tool files_read: files_read is harness's own tool, which a file does not take the place of",
     ];
     for line in left_out {
@@ -158,7 +163,9 @@ fn forge_merge_squash_merges_a_change_and_forge_change_names_the_commit_it_made(
     turn(chain, 7, &[("o1", "forge_change_open", open)]);
     answered(chain, thread, "o1");
 
-    let merge = json!({ "repo": "notes", "number": 1 });
+    let merge = json!({ "repo": "notes", "number": 1,
+        "expected_from": head(chain, "notes", "dev"),
+        "expected_into": head(chain, "notes", "main") });
     turn(chain, 9, &[("f1", "forge_merge", merge.clone())]);
     let main = head(chain, "notes", "main");
     assert_eq!(
@@ -188,13 +195,52 @@ fn forge_merge_squash_merges_a_change_and_forge_change_names_the_commit_it_made(
 }
 
 #[test]
+fn the_merge_file_does_not_replace_a_callers_stale_evidence_with_fresh_heads() {
+    for moved in ["dev", "main"] {
+        let world = tooled();
+        let chain = &world.chain;
+        commit(chain, ADA, "/shared/tools/forge_merge.toml", MERGE);
+        let thread = world.opened("m1", "merge exact evidence", Some(WINDOW));
+        seeded(&world, thread);
+        let open = json!({ "repo": "notes", "from": "dev", "into": "main", "title": "exact", "body": "tested pair" });
+        turn(chain, 7, &[("o1", "forge_change_open", open)]);
+        answered(chain, thread, "o1");
+        let merge = json!({ "repo": "notes", "number": 1,
+            "expected_from": head(chain, "notes", "dev"),
+            "expected_into": head(chain, "notes", "main") });
+        let edit = json!({ "repo": "notes", "branch": moved,
+            "files": [{ "path": "moved", "content": "new head" }], "message": "move" });
+        turn(chain, 9, &[("m1", "forge_commit", edit)]);
+        answered(chain, thread, "m1");
+        let from = head(chain, "notes", "dev");
+        let into = head(chain, "notes", "main");
+        turn(chain, 11, &[("f1", "forge_merge", merge)]);
+        let why = refusal(chain, thread, "f1");
+        assert!(why.starts_with("step 2 (op forge): "), "{why}");
+        assert!(why.contains("not expected_"), "{why}");
+        assert_eq!(head(chain, "notes", "dev"), from);
+        assert_eq!(head(chain, "notes", "main"), into);
+        let asked = forge::Query::Change {
+            repo: "notes".into(),
+            n: 1,
+            page: PageRequest::first(1),
+        };
+        let forge::Reply::Change { change, .. } = chain.query(forge::PROGRAM, &asked).unwrap()
+        else {
+            panic!("Change answers Change")
+        };
+        assert_eq!(change.state, forge::ChangeState::Open);
+    }
+}
+
+#[test]
 fn a_call_whose_input_fits_no_field_of_the_file_is_refused_before_it_runs() {
     let world = tooled();
     let chain = &world.chain;
     commit(chain, ADA, "/shared/tools/forge_merge.toml", MERGE);
     let thread = world.opened("m1", "merge", Some(WINDOW));
     chain.at(3, 0);
-    let input = json!({ "repo": "notes", "number": "one", "why": "no" });
+    let input = json!({ "repo": "notes", "number": "one", "why": "no", "expected_from": "a", "expected_into": "b" });
     model_says(
         chain,
         json!([tool_use("f1", "forge_merge", input)]),

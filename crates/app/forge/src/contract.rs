@@ -3,8 +3,8 @@ use ::program::{BlobId, HashKind};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 use crate::state::{
-    ACTIVITY, ARCHIVED, AUTHORED, BOUNDS, CHANGES, FORMED, INVOLVED, PREVIEWS, PROTECTED, QUEUE,
-    REFS, REPOS, REQUIRED, REVIEWS, STATUSES, TRAINS,
+    ACTIVITY, ARCHIVED, AUTHORED, BOUNDS, CHANGES, INVOLVED, PROTECTED, REFS, REPOS, REVIEWS,
+    STATUSES,
 };
 
 pub use crate::read_contract::*;
@@ -159,12 +159,8 @@ pub enum Op {
         branch: Vec<u8>,
         protected: bool,
     },
-    #[tool_op(description = "From a program only: be told of every ref forge moves and every change it opens, reviews, closes, merges or takes out of a merge queue, each as deliver followed by the borsh of what happened. An empty deliver stops it.", example = crate::examples::watch)]
+    #[tool_op(description = "From a program only: be told of every ref forge moves and every change it opens, reviews, closes or merges, each as deliver followed by the borsh of what happened. An empty deliver stops it.", example = crate::examples::watch)]
     Watch { deliver: Vec<u8> },
-    // forge builds change `n`'s squash on its target's head, as `SquashMerge` would land it, and
-    // points `refs/changes/<n>/merge` at it: the commit a gated merge's checks run on.
-    #[tool_op(description = "Build, without moving the target, the squash change n would land on its target's current head, and point refs/changes/<n>/merge at it: the commit required checks run on. A change among the first length of a merge train's queue answers the Preview the queue made on the change ahead, and builds nothing. Anyone may. Returns the preview.", returns = OpReply, example = crate::examples::preview)]
-    Preview { repo: String, n: u64 } = 18,
     /// The sender's status of a commit in one context (e.g. `ci/test`).
     #[tool_op(description = "Report your status of a commit in one context (such as ci/test): Pending, Passed, Failed or Errored, with an optional url. Recorded as yours; anyone may report.", example = crate::examples::status)]
     Status {
@@ -173,31 +169,13 @@ pub enum Op {
         context: String,
         state: CheckState,
         url: Option<String>,
-    },
-    // `branch` moves only by a merge of a change whose Preview the reporter marks Passed in
-    // every context; None drops the requirement.
-    #[tool_op(description = "Make branch move only by merging a change whose Preview the reporter marks Passed in every context; null drops the requirement. Whoever the repository's policy admits.", example = crate::examples::require)]
-    RequireChecks {
-        repo: String,
-        branch: Vec<u8>,
-        required: Option<Required>,
-    },
-    // Change `n`, still at `expected_head`, joins its target's merge queue: it lands, as its
-    // Preview's commit, in the op that marks that Preview green in every required context.
-    #[tool_op(description = "Put change n, still at expected_head, in its target's merge queue: it lands as its Preview's commit when that Preview turns green in every required context. Whoever the repository's policy admits.", example = crate::examples::enqueue)]
-    Enqueue {
-        repo: String,
-        n: u64,
-        expected_head: String,
-    },
-    #[tool_op(description = "Take change n out of its target's merge queue. Whoever the repository's policy admits.", example = crate::examples::dequeue)]
-    Dequeue { repo: String, n: u64 },
+    } = 19,
     #[tool_op(description = "One-time backfill of owners for forge's rows with no owner record, or left on their owner's built-in Open, linked as the access program enforces them now. It walks on by itself, one page a block from after; returns the key the next page starts after, or null when that was the last.", returns = Option<Vec<u8>>, example = crate::examples::adopt)]
     AdoptOwners {
         kind: String,
         after: Option<Vec<u8>>,
         limit: u64,
-    },
+    } = 23,
     // An archived repository leaves `Repos`, refuses every op but this one and still answers
     // every read and clone; `archived: false` restores it.
     #[tool_op(description = "Archive a repository (it leaves Repos and refuses every op but this one, while every read and clone still answers) or restore it with archived false. Whoever its policy admits.", example = crate::examples::archive)]
@@ -215,7 +193,7 @@ pub enum Op {
         first: Option<::program::ProgramId>,
         last: Option<::program::ProgramId>,
     } = 27,
-    #[tool_op(description = "Set branch's merge train: its queue previews up to length changes stacked, each squashed onto the one ahead, and lands them together once the last one's Preview is Passed in every context tip names and each change's own Preview is Passed in every other required context; a red tip sends the front on alone. Every change in the train's reach is previewed in one frame, so a train of any length forms at the same depth. A train takes the changes eligible by the end of the block it forms in, then holds them until its verdict. null drops it, back to one change at a time. Whoever the repository's policy admits.", example = crate::examples::set_train)]
+    #[tool_op(description = "Retired merge-train wire tag. Always refuses without writing; use an exact-head SquashMerge.", example = crate::examples::set_train)]
     SetTrain {
         repo: String,
         branch: Vec<u8>,
@@ -240,12 +218,8 @@ impl Op {
             | Op::ChangeRepoint { repo, .. }
             | Op::DeleteBranch { repo, .. }
             | Op::Protect { repo, .. }
-            | Op::Preview { repo, .. }
             | Op::Status { repo, .. }
-            | Op::RequireChecks { repo, .. }
             | Op::SetTrain { repo, .. }
-            | Op::Enqueue { repo, .. }
-            | Op::Dequeue { repo, .. }
             | Op::Archive { repo, .. }
             | Op::Dispatch { repo, .. } => Some(repo),
             Op::Watch { .. } | Op::AdoptOwners { .. } | Op::Migrate { .. } => None,
@@ -413,11 +387,6 @@ pub enum Query {
         head: String,
         page: PageRequest,
     },
-    // change `n`'s latest Preview
-    #[reads(PREVIEWS)]
-    #[ask(Reply::Preview { height: u64, preview: Option<PreviewInfo> })]
-    #[tool_query(description = "Change n's latest Preview: the heads it read and the squash it made, or null.", example = crate::examples::preview_of)]
-    Preview { repo: String, n: u64 },
     // every status of a commit, by reporter, then context
     #[reads(STATUSES)]
     #[ask(Reply::Statuses { height: u64, page: PageResponse<CommitStatus> })]
@@ -426,26 +395,12 @@ pub enum Query {
         repo: String,
         commit: String,
         page: PageRequest,
-    },
-    // a repository's branches with required checks, in byte-name order
-    #[reads(REQUIRED)]
-    #[ask(Reply::Required { height: u64, page: PageResponse<RequiredBranch> })]
-    #[tool_query(description = "A repository's branches with required checks, each with its reporter and contexts.", example = crate::examples::required)]
-    Required { repo: String, page: PageRequest },
-    // a branch's merge queue, first in line first
-    #[reads(QUEUE)]
-    #[ask(Reply::Queue { height: u64, page: PageResponse<QueueEntry> })]
-    #[tool_query(description = "A branch's merge queue, first in line first, each change with its head when it joined and who queued it.", example = crate::examples::queue)]
-    Queue {
-        repo: String,
-        branch: Vec<u8>,
-        page: PageRequest,
-    },
+    } = 19,
     // whether a repository is archived
     #[reads(ARCHIVED)]
     #[ask(Reply::Archived { height: u64, archived: bool })]
     #[tool_query(description = "Whether a repository is archived.", example = crate::examples::archived)]
-    Archived { repo: String },
+    Archived { repo: String } = 22,
     // the archived repositories, in name order: what `Repos` leaves out
     #[reads(ARCHIVED, REPOS)]
     #[ask(Reply::ArchivedRepos { height: u64, page: PageResponse<RepoInfo> })]
@@ -479,14 +434,10 @@ pub enum Query {
         principal: Principal,
         page: PageRequest,
     },
-    #[reads(TRAINS, FORMED)]
-    #[ask(Reply::Train { height: u64, train: Option<Train>, formed: Option<Formed> })]
-    #[tool_query(description = "A branch's merge train: its length and tip contexts, and the changes it formed, first in line first, each with its Preview's commit (the last is the train's tip), whether a red tip sent the front on alone, and the block it formed in.", example = crate::examples::train)]
-    Train { repo: String, branch: Vec<u8> },
     #[reads(BOUNDS)]
     #[ask(Reply::Bounds { height: u64, bounds: Bounds })]
     #[tool_query(description = "The founded bounds (page size, walk and byte limits), with no repository named.", example = crate::examples::bounds)]
-    Bounds,
+    Bounds = 29,
 }
 
 impl Query {
@@ -515,8 +466,6 @@ impl Query {
             | Query::RefNames { page, .. }
             | Query::DiffStat { page, .. }
             | Query::Statuses { page, .. }
-            | Query::Required { page, .. }
-            | Query::Queue { page, .. }
             | Query::ArchivedRepos { page } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
@@ -524,12 +473,10 @@ impl Query {
             | Query::Blob { .. }
             | Query::Compare { .. }
             | Query::Closure { .. }
-            | Query::Preview { .. }
             | Query::Archived { .. }
             | Query::History { .. }
             | Query::Shallow { .. }
             | Query::Compares { .. }
-            | Query::Train { .. }
             | Query::Bounds => None,
         }
     }
@@ -549,8 +496,6 @@ impl Query {
             | Query::RefNames { page, .. }
             | Query::DiffStat { page, .. }
             | Query::Statuses { page, .. }
-            | Query::Required { page, .. }
-            | Query::Queue { page, .. }
             | Query::ArchivedRepos { page } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
@@ -558,12 +503,10 @@ impl Query {
             | Query::Blob { .. }
             | Query::Compare { .. }
             | Query::Closure { .. }
-            | Query::Preview { .. }
             | Query::Archived { .. }
             | Query::History { .. }
             | Query::Shallow { .. }
             | Query::Compares { .. }
-            | Query::Train { .. }
             | Query::Bounds => None,
         }
     }
@@ -677,26 +620,14 @@ pub enum Reply {
         total_files: u64,
         page: PageResponse<FileStat>,
     },
-    Preview {
-        height: u64,
-        preview: Option<PreviewInfo>,
-    },
     Statuses {
         height: u64,
         page: PageResponse<CommitStatus>,
-    },
-    Required {
-        height: u64,
-        page: PageResponse<RequiredBranch>,
-    },
-    Queue {
-        height: u64,
-        page: PageResponse<QueueEntry>,
-    },
+    } = 17,
     Archived {
         height: u64,
         archived: bool,
-    },
+    } = 20,
     ArchivedRepos {
         height: u64,
         page: PageResponse<RepoInfo>,
@@ -720,15 +651,10 @@ pub enum Reply {
         height: u64,
         page: PageResponse<ChangeSummary>,
     },
-    Train {
-        height: u64,
-        train: Option<Train>,
-        formed: Option<Formed>,
-    },
     Bounds {
         height: u64,
         bounds: Bounds,
-    },
+    } = 26,
 }
 
 #[derive(
@@ -962,6 +888,8 @@ pub enum OpReply {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
 pub enum Watched {
     Moved {
         repo: String,
@@ -978,18 +906,11 @@ pub enum Watched {
         head: String,
         by: Principal,
     },
-    // change `n`'s Preview made a new commit, `merge`
-    Previewed {
-        repo: String,
-        n: u64,
-        merge: String,
-        by: Principal,
-    },
     Closed {
         repo: String,
         n: u64,
         by: Principal,
-    },
+    } = 3,
     Merged {
         repo: String,
         n: u64,
@@ -1003,20 +924,13 @@ pub enum Watched {
         verdict: Verdict,
         by: Principal,
     },
-    LeftQueue {
-        repo: String,
-        n: u64,
-        into: Vec<u8>,
-        why: String,
-        queued_by: Principal,
-    },
     Dispatched {
         repo: String,
         event_type: String,
         payload: Vec<u8>,
         commit: String,
         by: Principal,
-    },
+    } = 7,
 }
 
 // A commit's status in one context, as its reporter sees it; Errored means the checker or what
@@ -1040,19 +954,6 @@ impl CheckState {
     }
 }
 
-// What a branch with required checks needs: `reporter`'s Passed in each context.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct Required {
-    pub reporter: Principal,
-    pub contexts: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct RequiredBranch {
-    pub branch: Vec<u8>,
-    pub required: Required,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct CommitStatus {
     pub reporter: Principal,
@@ -1062,42 +963,10 @@ pub struct CommitStatus {
     pub height: u64,
 }
 
-// A Preview: the two heads it read and the squash it made of them.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct PreviewInfo {
-    pub n: u64,
-    pub into_head: String,
-    pub from_head: String,
-    pub merge: String,
-    pub height: u64,
-}
-
-// A change in a merge queue: its head when it joined and who queued it.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct QueueEntry {
-    pub n: u64,
-    pub head: String,
-    pub by: Principal,
-    pub height: u64,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Train {
     pub length: u64,
     pub tip: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct Formed {
-    pub members: Vec<TrainMember>,
-    pub alone: bool,
-    pub height: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct TrainMember {
-    pub n: u64,
-    pub merge: String,
 }
 
 pub const PACK_KIND: &str = "pack";

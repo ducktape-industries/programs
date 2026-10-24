@@ -54,17 +54,6 @@ fn a_merge_takes_the_other_branch_whole_and_the_given_files_resolve_its_conflict
     let open = json!({ "repo": "notes", "from": "feature", "into": "main", "title": "feature" });
     turn(chain, 11, &[("o1", "forge_change_open", open)]);
     assert_eq!(answered(chain, thread, "o1")["number"], json!(1));
-    let preview = forge::Op::Preview {
-        repo: "notes".into(),
-        n: 1,
-    };
-    let conflicted = chain
-        .submit(signed(ADA), forge::PROGRAM, &preview)
-        .unwrap_err();
-    assert!(
-        conflicted.code == code::WRONG_STATE && format!("{conflicted:?}").contains("README.md"),
-        "{conflicted:?}"
-    );
 
     let unresolved = json!({
         "repo": "notes",
@@ -124,13 +113,8 @@ fn a_merge_takes_the_other_branch_whole_and_the_given_files_resolve_its_conflict
             comparison.behind,
             comparison.base.clone()
         ),
-        (Mergeability::FastForward, 0, Some(main))
+        (Mergeability::FastForward, 0, Some(main.clone()))
     );
-    let made = chain.submit(signed(ADA), forge::PROGRAM, &preview).unwrap();
-    let forge::OpReply::Previewed { oid, .. } = abi::decode(&made).unwrap() else {
-        panic!("a preview answers Previewed")
-    };
-    assert_eq!(commit_at(chain, &oid).tree, commit_at(chain, &merge).tree);
 }
 
 #[test]

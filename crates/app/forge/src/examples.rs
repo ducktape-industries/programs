@@ -160,10 +160,6 @@ pub(crate) fn watch() -> Op {
     Op::Watch { deliver: vec![0] }
 }
 
-pub(crate) fn preview() -> Op {
-    Op::Preview { repo: repo(), n: 1 }
-}
-
 pub(crate) fn status() -> Op {
     Op::Status {
         repo: repo(),
@@ -172,30 +168,6 @@ pub(crate) fn status() -> Op {
         state: CheckState::Passed,
         url: None,
     }
-}
-
-pub(crate) fn require() -> Op {
-    let required = Required {
-        reporter: Principal::Account(37),
-        contexts: vec!["ci/test".into()],
-    };
-    Op::RequireChecks {
-        repo: repo(),
-        branch: main(),
-        required: Some(required),
-    }
-}
-
-pub(crate) fn enqueue() -> Op {
-    Op::Enqueue {
-        repo: repo(),
-        n: 1,
-        expected_head: oid(),
-    }
-}
-
-pub(crate) fn dequeue() -> Op {
-    Op::Dequeue { repo: repo(), n: 1 }
 }
 
 pub(crate) fn set_train() -> Op {
@@ -385,37 +357,11 @@ pub(crate) fn diff_stat() -> Query {
     }
 }
 
-pub(crate) fn preview_of() -> Query {
-    Query::Preview { repo: repo(), n: 1 }
-}
-
 pub(crate) fn statuses() -> Query {
     Query::Statuses {
         repo: repo(),
         commit: oid(),
         page: page(),
-    }
-}
-
-pub(crate) fn required() -> Query {
-    Query::Required {
-        repo: repo(),
-        page: page(),
-    }
-}
-
-pub(crate) fn queue() -> Query {
-    Query::Queue {
-        repo: repo(),
-        branch: main(),
-        page: page(),
-    }
-}
-
-pub(crate) fn train() -> Query {
-    Query::Train {
-        repo: repo(),
-        branch: main(),
     }
 }
 

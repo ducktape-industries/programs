@@ -1,7 +1,5 @@
-//! The replay fixtures forge-view renders from: every reply is what the rules
-//! answered over `MemorySandbox`, the same bytes the wasm answers over the
-//! host. `FORGE_REGENERATE_FIXTURES=1` rewrites `fixtures/replies.{bin,idx}`;
-//! otherwise the run must reproduce them byte for byte.
+//! Actual program reply bytes replayed by forge-view.
+//! FORGE_REGENERATE_FIXTURES=1 rewrites fixtures/replies.{bin,idx}.
 mod common;
 #[path = "../fixtures/loader.rs"]
 mod loader;
@@ -573,21 +571,6 @@ fn replay(tape: &mut Tape) {
     let story = Story::pushed(&mut checked);
     checked.execute(&story.open("Checked change")).unwrap();
     checked.advance();
-    let previewed = Query::Preview {
-        repo: REPO.into(),
-        n: 1,
-    };
-    tape.capture(&checked, "preview-none", previewed.clone());
-    let OpReply::Previewed { oid: merge, .. } = tape.output(
-        &mut checked,
-        "op-preview",
-        Op::Preview {
-            repo: REPO.into(),
-            n: 1,
-        },
-    ) else {
-        panic!();
-    };
     let reviewer: &[u8] = b"reviewer";
     for (actor, commit, context, state, url) in [
         (
@@ -604,14 +587,6 @@ fn replay(tape: &mut Tape) {
             CheckState::Pending,
             None,
         ),
-        (
-            TESTER,
-            &merge,
-            "build.sh#lane",
-            CheckState::Failed,
-            Some("desktop:20261021-081734-2"),
-        ),
-        (reviewer, &merge, "ci.toml#ci", CheckState::Errored, None),
     ] {
         checked.actor = actor.to_vec();
         checked
@@ -625,22 +600,12 @@ fn replay(tape: &mut Tape) {
             .unwrap();
     }
     checked.advance();
-    tape.capture(&checked, "preview", previewed);
     tape.capture(
         &checked,
         "statuses",
         Query::Statuses {
             repo: REPO.into(),
             commit: story.feature.clone(),
-            page: PageRequest::first(128),
-        },
-    );
-    tape.capture(
-        &checked,
-        "statuses-merge",
-        Query::Statuses {
-            repo: REPO.into(),
-            commit: merge,
             page: PageRequest::first(128),
         },
     );

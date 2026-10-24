@@ -173,7 +173,6 @@ pub fn describe(op: &Op) -> Description {
             vec![field("branch", text(branch))],
         ),
         Op::Watch { deliver } => return watching(deliver),
-        Op::Preview { repo, n } => ("Preview change", repo, vec![change(n)]),
         Op::Status {
             repo,
             commit,
@@ -189,50 +188,7 @@ pub fn describe(op: &Op) -> Description {
                 field("state", Value::text(state.word())),
             ],
         ),
-        Op::RequireChecks {
-            repo,
-            branch,
-            required,
-        } => {
-            let mut fields = vec![field("branch", text(branch))];
-            if let Some(required) = required {
-                fields.push(field("reporter", principal(&required.reporter)));
-                let contexts = required.contexts.iter().map(Value::text).collect();
-                fields.push(field("contexts", Value::List(contexts)));
-            }
-            let verb = match required {
-                Some(_) => "Require checks",
-                None => "Drop required checks",
-            };
-            (verb, repo, fields)
-        }
-        Op::SetTrain {
-            repo,
-            branch,
-            train,
-        } => {
-            let mut fields = vec![field("branch", text(branch))];
-            if let Some(train) = train {
-                fields.push(field("length", Value::count(train.length)));
-                let tip = train.tip.iter().map(Value::text).collect();
-                fields.push(field("tip", Value::List(tip)));
-            }
-            let verb = match train {
-                Some(_) => "Set merge train",
-                None => "Drop merge train",
-            };
-            (verb, repo, fields)
-        }
-        Op::Enqueue {
-            repo,
-            n,
-            expected_head,
-        } => (
-            "Queue change",
-            repo,
-            vec![change(n), field("head", Value::text(expected_head))],
-        ),
-        Op::Dequeue { repo, n } => ("Take change out of the queue", repo, vec![change(n)]),
+        Op::SetTrain { repo, .. } => ("Refuse retired merge train", repo, Vec::new()),
         Op::Dispatch {
             repo, event_type, ..
         } => (

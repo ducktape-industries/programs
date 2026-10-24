@@ -193,6 +193,55 @@ fn a_moved_head_is_stale() {
     assert!(error.message.contains(&named), "{}", error.message);
 }
 
+fn changed_head_refuses_both_merge_operations_without_writes(reference: &str) {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let (main, feature) = diverged(&mut store);
+    let original = if reference == MAIN { main } else { feature };
+    let moved = file_commit(&mut store, &[original], 5, &[("new", b"moved\n")]);
+    let sandbox = seeded(&store, main, feature);
+    let n = opened(&sandbox);
+    push(
+        &sandbox,
+        OWNER,
+        "project",
+        &[(original, moved, reference)],
+        &[],
+    )
+    .unwrap();
+    let operations = [
+        squash((main, feature), None, Some(n)),
+        Op::Merge {
+            repo: "project".into(),
+            into: MAIN.as_bytes().to_vec(),
+            from: forge::Revision::Ref(FEATURE.as_bytes().to_vec()),
+            expected_into: main.to_hex(),
+            expected_from: feature.to_hex(),
+            result: feature.to_hex(),
+            change: Some(n),
+        },
+    ];
+    let refs = refs_of(&sandbox, "project");
+    let change = change_of(&sandbox, n);
+    let blobs = sandbox.blob_count();
+    for operation in operations {
+        let error = refused(&sandbox, OWNER, &operation);
+        assert_eq!(error.code, code::STALE);
+        assert_eq!(refs_of(&sandbox, "project"), refs);
+        assert_eq!(change_of(&sandbox, n), change);
+        assert_eq!(sandbox.blob_count(), blobs);
+    }
+}
+
+#[test]
+fn a_source_move_after_reading_inputs_refuses_merge_and_squash_atomically() {
+    changed_head_refuses_both_merge_operations_without_writes(FEATURE);
+}
+
+#[test]
+fn a_target_move_after_reading_inputs_refuses_merge_and_squash_atomically() {
+    changed_head_refuses_both_merge_operations_without_writes(MAIN);
+}
+
 #[test]
 fn a_target_the_repository_lacks_is_not_found_naming_it() {
     let mut store = MemoryObjects::new(Hash::Sha1);
@@ -307,11 +356,6 @@ fn a_change_stacked_on_a_squashed_change_lands_with_only_its_own_edits() {
     let (main, upper) = stacked(&mut store, b"1\nlow\n3\n");
     let sandbox = seeded(&store, main, upper);
     let n = opened(&sandbox);
-    let preview = Op::Preview {
-        repo: "project".into(),
-        n,
-    };
-    act(&sandbox, OWNER, &preview).unwrap();
     let output = act(&sandbox, OWNER, &squash((main, upper), None, Some(n))).unwrap();
     let (_, commit) = squashed(&sandbox, &output);
     assert_eq!(commit.parents, [main]);

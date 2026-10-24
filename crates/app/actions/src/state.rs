@@ -10,16 +10,9 @@ pub const CHECKS: Map<u64, CheckRow> = Map::new("c/");
 pub const BY_COMMIT: Set<(String, String, u64)> = Set::new("k/");
 // Index: each check of a run, its reruns included.
 pub const BY_RUN: Set<(u64, u64)> = Set::new("b/");
-// Index: the runs whose open checks the next run on their line supersedes, by repository and
-// line: a push's branch, or a change's Preview ref (`refs/changes/<n>/merge`).
 pub const LINES: Set<(String, Vec<u8>, u64)> = Set::new("l/");
 // Index: the checks no runner has claimed.
 pub const QUEUED: Set<u64> = Set::new("q/");
-// The open change whose source a repository's ref is.
-pub const SOURCES: Map<(String, Vec<u8>), u64> = Map::new("o/");
-// The Previews actions asked forge for, by the message's seq, until forge answers in the
-// frame that asked.
-pub const PREVIEWING: Map<u64, (String, u64)> = Map::new("p/");
 // The offers actions sent runners, by the message's seq, each naming its check and runner, until
 // the runner answers in the frame that offered.
 pub const OFFERING: Map<u64, (u64, String)> = Map::new("f/");

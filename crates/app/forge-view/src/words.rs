@@ -11,7 +11,7 @@ use forge::{
 };
 use view::design;
 
-use crate::select::{CheckedOn, path_of};
+use crate::select::path_of;
 use crate::state::ReviewRefusal;
 
 pub(crate) fn path_text(path: &[u8]) -> String {
@@ -336,14 +336,9 @@ pub(crate) const VERDICTS: [(Verdict, &str, &str); 3] = [
 pub(crate) const CHECKS: &str = "Checks";
 pub(crate) const READING_CHECKS: &str = "Reading the checks…";
 pub(crate) const NO_CHECKS: &str = "Nothing has reported on this commit yet.";
-pub(crate) const STALE: &str = "stale";
-pub(crate) const STALE_PREVIEW: &str = "Made before this change or its target moved: a merge needs a new preview, so these are not the checks it will read.";
 
-pub(crate) fn checked_on(on: CheckedOn, commit: &str) -> String {
-    match on {
-        CheckedOn::Head => format!("On the head {}", design::short_hex(commit)),
-        CheckedOn::Preview { .. } => format!("On the merge preview {}", design::short_hex(commit)),
-    }
+pub(crate) fn checked_on(commit: &str) -> String {
+    format!("On the head {}", design::short_hex(commit))
 }
 
 pub(crate) fn reported(reporter: &str, context: &str) -> String {

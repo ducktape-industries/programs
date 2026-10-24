@@ -5,13 +5,12 @@ use ::program::{
     Error, ExecCtx, MessageId, Outcome, Principal, QueryCtx, Reply, code, corrupt, invalid,
     not_found, unauthorized, unexpected_reply, wrong_state,
 };
-use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
-use std::collections::BTreeMap;
+use forge::{CheckState, Content, EntryKind, Watched};
 use store::Item;
 
 use crate::state::{
     ASKS, BY_COMMIT, BY_EVENT, BY_RUN, CHECKS, KEEP_STARTED, LAST_CHECK, LAST_RUN, LINES, MET,
-    NAMED, NEEDS, OFFERING, OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES, TIME_LIMITS,
+    NAMED, NEEDS, OFFERING, OUTPUTS, QUEUED, RUNNERS, RUNS, TIME_LIMITS,
 };
 use crate::workflow::{self, Planned};
 use crate::{
@@ -32,7 +31,6 @@ const DISPATCH_PAYLOAD: &str = "DISPATCH_PAYLOAD";
 pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
     ctx.env().sent_by(forge::PROGRAM)?;
     match event {
-        Watched::Moved { reference, .. } if reference.starts_with(b"refs/changes/") => Ok(()),
         Watched::Moved {
             repo,
             reference,
@@ -40,46 +38,14 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             by,
             ..
         } => {
-            let source = (repo.clone(), reference.clone());
-            if let Some(n) = SOURCES.get(ctx, &source)? {
-                match still_open(ctx, &repo, n)? {
-                    true => schedule_preview_next_block(ctx, &repo, n)?,
-                    false => SOURCES.remove(ctx, &source),
-                }
-            }
             let why = format!(
                 "superseded by a push of {} to {}",
                 short(&commit),
                 branch(&reference)
             );
             supersede_earlier_runs(ctx, &repo, &reference, &why)?;
-            supersede_previews_on_an_old_tip(ctx, &repo, &reference, &commit)?;
             start_matching_workflows(ctx, &started(&repo, &commit, Event::Push { reference }, by))
         }
-        Watched::Moved { new: None, .. } => Ok(()),
-        Watched::Closed { repo, n, .. } => {
-            let why = format!("change #{n} closed");
-            supersede_earlier_runs(ctx, &repo, preview_ref(n).as_bytes(), &why)
-        }
-        Watched::Merged { repo, n, .. } => {
-            let why = format!("change #{n} merged");
-            supersede_earlier_runs(ctx, &repo, preview_ref(n).as_bytes(), &why)
-        }
-        Watched::Opened { repo, n, from, .. } => {
-            if let Revision::Ref(reference) = from {
-                SOURCES.put(ctx, &(repo.clone(), reference), &n);
-            }
-            schedule_preview_next_block(ctx, &repo, n)
-        }
-        Watched::Previewed {
-            repo, n, merge, by, ..
-        } => {
-            adopt_untracked_change(ctx, &repo, n)?;
-            let why = format!("superseded by Preview {} of #{n}", short(&merge));
-            supersede_earlier_runs(ctx, &repo, preview_ref(n).as_bytes(), &why)?;
-            start_matching_workflows(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by)))
-        }
-        Watched::Reviewed { .. } | Watched::LeftQueue { .. } => Ok(()),
         Watched::Dispatched {
             repo,
             event_type,
@@ -87,6 +53,7 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             commit,
             by,
         } => dispatched(ctx, &repo, event_type, payload, &commit, by),
+        _ => Ok(()),
     }
 }
 
@@ -113,52 +80,6 @@ fn dispatched(
     start_matching_workflows(ctx, &started)
 }
 
-fn schedule_preview_next_block(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
-    let env = ctx.env();
-    let scheduler = env.role(abi::role::SCHEDULER)?.clone();
-    let height = env
-        .height
-        .checked_add(1)
-        .ok_or_else(|| Error::new(code::EXHAUSTED, "the height is exhausted"))?;
-    let op = crate::Op::Preview {
-        repo: repo.to_owned(),
-        n,
-    };
-    let schedule = abi::role::scheduler::Op::Schedule {
-        height,
-        target: env.program.clone(),
-        payload: abi::encode(&op),
-    };
-    ctx.emit(scheduler, &schedule, Reply::None);
-    Ok(())
-}
-
-pub(crate) fn previewing(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
-    let op = forge::Op::Preview {
-        repo: repo.to_owned(),
-        n,
-    };
-    let sent = ctx.emit(forge::PROGRAM, &op, Reply::Wanted);
-    PREVIEWING.put(ctx, &sent.seq, &(repo.to_owned(), n));
-    Ok(())
-}
-
-fn adopt_untracked_change(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
-    let asked = forge::Query::Change {
-        repo: repo.to_owned(),
-        n,
-        page: PageRequest::first(1),
-    };
-    let change = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
-        forge::Reply::Change { change, .. } => change,
-        other => return Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
-    };
-    if let Revision::Ref(reference) = change.from {
-        SOURCES.put(ctx, &(repo.to_owned(), reference), &n);
-    }
-    Ok(())
-}
-
 pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
     if let Some((check, runner)) = OFFERING.get(ctx, &id.seq)? {
         OFFERING.remove(ctx, &id.seq);
@@ -167,20 +88,6 @@ pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Resul
         }
         return Ok(());
     }
-    let Some((repo, n)) = PREVIEWING.get(ctx, &id.seq)? else {
-        return Ok(());
-    };
-    PREVIEWING.remove(ctx, &id.seq);
-    let Outcome::Rejected(refused) = outcome else {
-        return Ok(());
-    };
-    let Some(head) = open_change_head(ctx, &repo, n)? else {
-        return Ok(());
-    };
-    let why = format!("change {n} does not preview: {}", refused.message);
-    let preview = preview_ref(n);
-    let started = started(&repo, &head, Event::Preview { n }, None);
-    record(ctx, &started, &preview, Named::default(), Some(why))?;
     Ok(())
 }
 
@@ -207,31 +114,11 @@ fn refused_offer(ctx: &ExecCtx, id: u64, runner: &str, why: &str) -> Result<(), 
     Ok(())
 }
 
-fn open_change_head(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error> {
-    let asked = forge::Query::Change {
-        repo: repo.to_owned(),
-        n,
-        page: PageRequest::first(1),
-    };
-    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
-        Ok(forge::Reply::Change {
-            change,
-            source_head,
-            ..
-        }) => Ok(source_head.filter(|_| change.state == ChangeState::Open)),
-        Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
-        Err(refused) if refused.code == code::NOT_FOUND => Ok(None),
-        Err(refused) => Err(refused),
-    }
-}
-
 fn report_commit_status(ctx: &ExecCtx, check: &CheckRow) {
     let state = match check.state {
         State::Queued | State::Running | State::Waiting => CheckState::Pending,
         State::Passed => CheckState::Passed,
         State::Failed => CheckState::Failed,
-        // forge has no word for a superseded or skipped check, and a merge reads only the newest
-        // Preview's
         State::Errored | State::Superseded | State::Skipped => CheckState::Errored,
     };
     let op = forge::Op::Status {
@@ -257,20 +144,6 @@ fn started<'a>(repo: &'a str, commit: &'a str, event: Event, by: Option<Principa
 pub(crate) fn trigger(ctx: &ExecCtx, repo: &str, commit: &str) -> Result<(), Error> {
     let by = Principal::Account(ctx.sender_account()?);
     start_matching_workflows(ctx, &started(repo, commit, Event::Manual, Some(by)))
-}
-
-fn still_open(ctx: &QueryCtx, repo: &str, n: u64) -> Result<bool, Error> {
-    let asked = forge::Query::Change {
-        repo: repo.to_owned(),
-        n,
-        page: PageRequest::first(1),
-    };
-    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
-        Ok(forge::Reply::Change { change, .. }) => Ok(change.state == ChangeState::Open),
-        Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
-        Err(refused) if refused.code == code::NOT_FOUND => Ok(false),
-        Err(refused) => Err(refused),
-    }
 }
 
 fn start_matching_workflows(ctx: &ExecCtx, started: &Started) -> Result<(), Error> {
@@ -735,144 +608,10 @@ fn supersede_earlier_runs(ctx: &ExecCtx, repo: &str, line: &[u8], why: &str) -> 
     Ok(())
 }
 
-fn supersede_previews_on_an_old_tip(
-    ctx: &ExecCtx,
-    repo: &str,
-    branch_ref: &[u8],
-    tip: &str,
-) -> Result<(), Error> {
-    let why = format!(
-        "superseded: {} moved to {}, past the tip this Preview was built on",
-        branch(branch_ref),
-        short(tip)
-    );
-    let mut told: BTreeMap<u64, (forge::Change, Vec<u64>)> = BTreeMap::new();
-    for (_, line, run) in LINES.scan(ctx, LINES.prefix_of(&repo.to_owned()))? {
-        let Some(n) = previewed_change(&line) else {
-            continue;
-        };
-        let unstarted: Vec<CheckRow> = of_run(ctx, run)?
-            .into_iter()
-            .filter(|check| matches!(check.state, State::Queued | State::Waiting))
-            .collect();
-        if unstarted.is_empty() {
-            continue;
-        }
-        let Some(change) = open_change(ctx, repo, n)? else {
-            continue;
-        };
-        if change.into != branch_ref {
-            continue;
-        }
-        let Some(row) = RUNS.get(ctx, &run)? else {
-            continue;
-        };
-        let Some(on) = built_on(ctx, repo, n, &row.commit)? else {
-            continue;
-        };
-        if on == tip {
-            continue;
-        }
-        let ids = &mut told.entry(n).or_insert_with(|| (change, Vec::new())).1;
-        for mut check in unstarted {
-            check.state = State::Superseded;
-            check.finished = Some(ctx.env().height);
-            check.summary = why.clone();
-            QUEUED.remove(ctx, &check.id);
-            CHECKS.put(ctx, &check.id, &check);
-            report_commit_status(ctx, &check);
-            ids.push(check.id);
-        }
-    }
-    for (n, (change, ids)) in told {
-        tell_superseded_in_room(ctx, repo, n, &change, &ids, &why);
-    }
-    Ok(())
-}
-
-fn tell_superseded_in_room(
-    ctx: &ExecCtx,
-    repo: &str,
-    n: u64,
-    change: &forge::Change,
-    ids: &[u64],
-    why: &str,
-) {
-    let Some(first) = ids.first() else {
-        return;
-    };
-    let post = chat::Op::Notify {
-        channel_id: change.channel.clone(),
-        message_id: format!("actions-superseded-{first}"),
-        thread: None,
-        notice: chat::Notice {
-            kind: "check".into(),
-            group: format!("check {first}"),
-            subject: format!("Preview checks of {repo}#{n}"),
-            link: None,
-            status: chat::message::Status::Note,
-            detail: format!(
-                "{} {why}. The change's next push, rebase or turn at the front of a merge queue previews it again.",
-                checks_named(ids)
-            ),
-            concerns: change.author.account().into_iter().collect(),
-        },
-    };
-    ctx.emit(chat::PROGRAM, &post, Reply::Wanted);
-}
-
-fn checks_named(ids: &[u64]) -> String {
-    let words: Vec<String> = ids.iter().map(u64::to_string).collect();
-    match words.as_slice() {
-        [one] => format!("check {one}"),
-        [before @ .., last] => format!("checks {} and {last}", before.join(", ")),
-        [] => String::new(),
-    }
-}
-
-fn previewed_change(line: &[u8]) -> Option<u64> {
-    std::str::from_utf8(line)
-        .ok()?
-        .strip_prefix("refs/changes/")?
-        .strip_suffix("/merge")?
-        .parse()
-        .ok()
-}
-
-fn open_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<forge::Change>, Error> {
-    let asked = forge::Query::Change {
-        repo: repo.to_owned(),
-        n,
-        page: PageRequest::first(1),
-    };
-    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
-        Ok(forge::Reply::Change { change, .. }) => {
-            let open = change.state == ChangeState::Open;
-            Ok(open.then_some(change))
-        }
-        Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
-        Err(refused) if refused.code == code::NOT_FOUND => Ok(None),
-        Err(refused) => Err(refused),
-    }
-}
-
-fn built_on(ctx: &QueryCtx, repo: &str, n: u64, merge: &str) -> Result<Option<String>, Error> {
-    let asked = forge::Query::Preview {
-        repo: repo.to_owned(),
-        n,
-    };
-    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
-        forge::Reply::Preview { preview, .. } => Ok(preview
-            .filter(|preview| preview.merge == merge)
-            .map(|preview| preview.into_head)),
-        other => Err(unexpected_reply(forge::PROGRAM, "Preview", &other)),
-    }
-}
-
 fn superseding_ref(event: &Event) -> Option<Vec<u8>> {
     match event {
         Event::Push { reference } => Some(reference.clone()),
-        Event::Preview { n } => Some(preview_ref(*n).into_bytes()),
+        Event::Preview { .. } => None,
         Event::Dispatch { event_type } => Some(dispatch_line(event_type)),
         Event::Opened { .. } | Event::Updated { .. } | Event::Manual => None,
     }
@@ -880,10 +619,6 @@ fn superseding_ref(event: &Event) -> Option<Vec<u8>> {
 
 fn dispatch_line(event_type: &str) -> Vec<u8> {
     format!("dispatch/{event_type}").into_bytes()
-}
-
-fn preview_ref(n: u64) -> String {
-    format!("refs/changes/{n}/merge")
 }
 
 fn short(commit: &str) -> &str {

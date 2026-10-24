@@ -4,8 +4,8 @@ use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
 
 use crate::rules::{
-    asks, check, checks, claim, needs, outputs, outputs_of, previewing, queued, register, replied,
-    report, rerun, run, runners, runs, time_limit, trigger, watched,
+    asks, check, checks, claim, needs, outputs, outputs_of, queued, register, replied, report,
+    rerun, run, runners, runs, time_limit, trigger, watched,
 };
 use crate::{Op, PROGRAM, Query, Reply};
 
@@ -42,13 +42,13 @@ impl Program for Actions {
                 log,
             } => report(ctx, check, state, summary, log),
             Op::Rerun { check } => rerun(ctx, check),
-            Op::Preview { repo, n } => previewing(ctx, &repo, n),
+            Op::Preview { .. } => Err(::program::wrong_state(
+                "Preview is retired; trigger checks on an explicit source commit",
+            )),
             Op::Outputs { check, files } => outputs(ctx, check, files),
         }
     }
 
-    // A runner that refuses an offer errs its check, and a Preview forge refuses makes an errored
-    // run, each saying why (`rules::replied`).
     fn reply(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
         replied(ctx, id, outcome)
     }

@@ -1,73 +1,29 @@
 # forge-reach
 
-A check's result carried to a change's Preview when nothing the check read changed, the way a GitHub Checks app reports on a pull request. forge knows nothing of it: forge-reach watches forge, reads it through forge's own queries, and reports forge `Status` as its own account. A network that wants it deploys it and names its account as a branch's `RequireChecks` reporter; one that doesn't never runs it.
+Exact-commit check and patch-review receipts.
+The program stores each result under its reporting account, repository, commit and context.
+It neither watches forge nor carries, forwards, enqueues or re-requests results.
+Each successful Report or ReportPatch sends Forge Watch with an empty delivery prefix as this program, removing any previous subscription before Forge retires its event interface.
+A Set does not rerun init; installation is followed by a real receipt write, whose unsubscribe is verified before producer retirement.
 
-A reporter (a lane, a CI runner) reports its result for a commit together with its reach: the paths in the repository its check read (a crate's folder, `Cargo.lock`, `""` for the whole tree). When forge makes a change's Preview, forge-reach takes every result reported for the change's head (or for the Preview's own commit), and for each compares the tree entry at every reached path between the reported commit and the Preview. All the same: it reports the reported state on the Preview. One differs: it reports `Pending`, with a url to the change's verdict (`duck://<chain>/forge-reach/<repo>/<n>`), which names the paths that differ. Comparing the results rather than what dev changed since the merge base also catches a 3-way merge that rewrote a reached file. A re-gate needs no rebase: run the check on the Preview's commit (`refs/changes/<n>/merge`) and report that commit.
+## Who may call each op
 
-A result survives a Rebase or a push when the patch is the same. forge-reach keeps every commit that has been a change's head or Preview (each Preview heard, and each Report that names the change). A reporter with no result on the Preview's head or commit has its newest result on any of those earlier commits taken instead, and it carries only when both hold: every reached path is the same at that commit and at the Preview, and the patch is the same, meaning forge `DiffStat` from the commit's merge base with the Preview's target head names the same paths, with the same status, as `DiffStat` from that target head to the Preview, and each of those paths holds the same entry (kind and blob) at the merge base as at the target head, and at the commit as at the Preview. A new head that edits a file the patch already touched therefore changes the patch, and so does a target that edited a patched file since. Otherwise it is `Pending`, naming the paths that differ (`""` when forge can't tell the patch). A result of the change's patch rather than of a tree (`ReportPatch`, as a review is) compares no paths: it carries to every Preview of the head it names whatever the target did since, and to a later head (a Rebase, a push) only while the patch is the same, so a review needs a fresh report only when the change itself changes. A merge's breakage is the lane's to catch, on the Preview it runs on.
+- `Report { repo, commit, context, state, url, reach, change }`: any account, recorded as the sender. A full lowercase commit id, nonblank context and nonempty valid relative read paths are required; `""` names the whole tree. Repeating a result replaces its state, URL and reach, and replaces the same identity's patch result. `change` is descriptive input, not a scheduling instruction.
+- `ReportPatch { repo, n, commit, context, state, url }`: any account, recorded as the sender. The commit and context follow the same validation. It replaces the same identity's tree result. `n` is descriptive input; results never carry between commits.
 
-A merge train (forge `SetTrain`) lands every member on its tip's results in the train's `tip` contexts, and the tip's Preview stands on the Preview of the member ahead of it, not on the branch. So on a branch whose train names `tip` contexts, forge-reach asks forge `Compare` for the merge base of the Preview with the branch: when it isn't the Preview's target head, the Preview is stacked, and a result in a `tip` context reported on any other commit carries there only when its patch from its merge base with that branch base is the same as the Preview's patch from it, which holds every member ahead as well (`""` when forge can't tell). A lane reported on the tip change's own head therefore turns `Pending` on the tip, naming the paths the members ahead change, and is asked again there, where a lane's diff from the branch reaches the whole train. A result reported on the tip's own commit, a result in a context `tip` doesn't name, and a result of a patch (a review) carry as on any Preview.
+## Query
 
-The status's context is `<reporter account>/<context>`, so a branch's `RequireChecks { reporter: forge-reach's account, contexts: ["23/build.sh#lane"] }` already says whose results it trusts; forge-reach keeps no list of its own.
-
-## Automatic enqueue
-
-A `Passed` `Report` or `ReportPatch` on an open change's current source head also sends forge `Enqueue` for that head when the target branch requires forge-reach as its status reporter and includes that report's `<reporter account>/<context>` among its required contexts. The branch's requirements choose the reporters; forge-reach has no account or context list of its own. It does not wait for the other checks before queueing: forge's queue still requires every configured check on the Preview before merging. A report on an earlier head or on a Preview does not enqueue the change, and an already queued change keeps its place.
-
-A `ReportPatch` or a `Report` naming a change reads that change's current head directly. A `Report` naming no change reads the repository's refs and open changes, page by page through the existing forge queries, and queues each open change whose current source is the reported commit. Empty filtered pages do not end that read.
-
-Enqueue uses the repository's existing write policy as forge-reach's own account. The repository must permit it; no permission is inferred from a passed check. A refused enqueue leaves the report stored, and reporting the pass again tries again. The reply is absorbed, as with a refused check notice. Only new reports trigger enqueue; existing reports are not replayed when the program is deployed or a repository's policy changes.
-
-## A result asked for again
-
-A result that went stale on a Preview is asked for again there, so its reporter can run its check on the Preview's commit with no hand step. forge-reach keeps a wanted row for a Preview's commit, a reporter and a context while all of these hold: the change's target branch has `RequireChecks` naming forge-reach as reporter and listing the context; the reporter's result was `Passed` and is `Pending` on this Preview because a path differs; and every other context the branch requires is `Passed` on this Preview or is itself asked again there. So a lane and a review that went stale on one Preview are each asked (neither waits on the other), while a context that failed, or has no result yet, stops the asks. A review reported with `ReportPatch` turns `Pending` only when the change's own patch moves, so a row means the target moved under a change that is otherwise ready. Its reporter reads the rows with `Wanted` and reports the Preview's commit; that report, a newer Preview of the change, or its merge or close drops the row. A Preview's commit is asked for once: the row is the same row however often it is told.
-
-When forge-reach first writes a row, it tells the reporter: a chat `Notify` in the change's room (the `channel` forge `Change` answers) that concerns the reporter's account alone, kind `check`, group `<reporter>/<context> <Preview commit>`, status Running, detail `<reporter>/<context> wanted again on Preview <commit>: its result on <commit reported> no longer carries`, and the verdict's link. Its message id is `forge-reach:` and the hex sha256 of the row's key, so the same row written again on the same Preview is the same message, which chat refuses. A notice chat refuses (an archived room, that id) never fails the op that wrote the row: forge-reach wants an answer only of these notices, and its `reply` takes every answer.
-
-When a change merges into a branch that requires forge-reach, forge-reach previews the other open changes into that branch whose results in every context the branch requires were `Passed`, each at the next block through the scheduler role, so their stale results are asked for again before anyone reaches them. A change that can't be previewed (a conflict) is left as it is.
-
-Known limit: forge's `RequireChecks` names one reporter per branch, so a branch that requires forge-reach can't require actions' statuses beside it. The fix, if a network needs both, is forge's `RequireChecks` taking several reporters, never a relay inside forge-reach.
+`Reports { repo, commit, page }` returns exact results by reporter and context, tree results followed by patch results with empty reach.
+Pagination is bound to the repository and commit; a cursor for another identity is refused.
 
 ## Tables
 
 | prefix | key | row |
 | --- | --- | --- |
-| `r/` | repo, commit, reporter, context | the reported state, url and height |
-| `p/` | repo, commit, reporter, context, path | one reached path |
-| `s/` | repo, commit, reporter, context | a result of a change's patch at that head: the state, url and height |
-| `v/` | repo, change | the head and the commit of the change's latest Preview heard |
-| `h/` | repo, commit, change | a commit that is an open change's latest Preview's head or commit |
-| `c/` | repo, change, commit | a commit that has been an open change's head or Preview, or that a Report named for it |
-| `w/` | reporter, repo, Preview commit, context | the change whose Preview asks the reporter's result again |
-| `u/` | repo, Preview commit, reporter, context | the same row, found from the Preview |
+| `r/` | repo, commit, reporter, context | tree result state, URL and height |
+| `p/` | repo, commit, reporter, context, path | declared read path |
+| `s/` | repo, commit, reporter, context | patch result state, URL and height |
 
-## Who may call each op
-
-- `Report { repo, commit, context, state, url, reach, change }`: any account; recorded as the sender's (`sender_account`). The commit is its full lowercase hex id, the context is not blank, and the reach names at least one path, each relative to the root with no empty, `.` or `..` segment (`""` alone is the whole tree). Saying it again replaces the state, url and reach. With `change`, it keeps the commit as one of that change's heads (`c/`) and reports on that change's latest Preview at once; without it, on the latest Preview of every open change whose head or Preview commit is the reported commit (`h/`), so a reporter that knows no change (the pods service's lane line) is carried to a Preview made before it reported.
-- `ReportPatch { repo, n, commit, context, state, url }`: any account; recorded as the sender's. The commit is its full lowercase hex id and the context is not blank. It keeps the commit as one of change `n`'s heads (`c/`) and reports on its latest Preview at once. It replaces a `Report` of the same commit, reporter and context, and a later `Report` of them replaces it, so one result stands per context.
-- `Watched(event)`: forge only (`sent_by(forge)`), as forge's `Watch` delivers it; forge-reach sends `Watch` from its `init`. A `Previewed` event keeps that Preview's head and commit (`v/`, `h/`, `c/`), reports on it and keeps or drops its wanted rows (`w/`, `u/`); `Merged` and `Closed` drop what was kept for the change, and `Merged` also schedules a forge `Preview`, as forge-reach, of each other change it would ask again (above); every other event is heard and dropped. forge tells a Preview only when it makes a new commit (a Preview of heads already previewed answers the one made), which is why a later report must find the Preview itself.
-
-- `Retell { repo, n }`: any account. It reads change `n`'s latest Preview from forge and does what a `Previewed` event of it does: keeps its head and commit and reports on it. Nothing is written when the change has no Preview. forge previews the next queue front in the very frame that merges the one before it, and a chain of merges in one frame nests deep enough that the kernel refuses a watcher's delivery. forge sends it wanting a reply, so the refusal comes back to forge as that reply and the merge stands, but forge-reach never hears that Preview and the front carries no status of forge-reach's. A Retell sent as a frame of its own reports on it.
-
-## Queries
-
-- `Reports { repo, commit, page }`: every result reported for a commit, each with its reach: the results of a tree first, then the results of a change's patch (`ReportPatch`), each with an empty reach, which no `Report` has.
-- `Verdict { repo, n }`: for change `n`'s latest Preview, each result reported for its head or its commit, or else the reporter's newest result on an earlier head of the change: the status context, the commit reported, the state reported, the state forge-reach reports, and the paths that differ (reached paths, else paths the two patches change differently); null while the change has no Preview.
-- `Wanted { reporter, page }`: the Previews that ask a reporter's result again, each as its repository, change, Preview commit and context (the context as the reporter reported it, without its account).
-
-## Cost
-
-Each result on a Preview costs, per reached path, one forge `Tree` read of the path's parent folder at the reported commit and one at the Preview (a page at a time, at forge's founded page size), or one read of the root for `""`. A result reported for the Preview's own commit, or of the patch at the Preview's head, compares nothing. A result taken from an earlier head whose reach holds also costs one forge `Compare` and its `DiffStat` pages, and the Preview's own `DiffStat` pages once per Verdict, and, at each of a patch's two sides, one `Tree` listing (a page at a time) of each folder holding a path that patch changes, however many of its files the patch changes. A Preview with a result gone stale also reads the change (forge `Change`, whose room a first ask posts its notice to), the repository's required checks a page at a time (forge `Required`) and forge-reach's own account (identity `OfProgram`). A merge reads the same for the merged change, and forge `Change` once for each other open change whose kept results all passed. A passed report also reads identity `OfProgram` and the repository's `Required` pages. If its context is required of forge-reach, a named change costs one forge `Change` read; an unnamed report reads `Refs` and `Changes` page by page instead. Each matching open change on a qualifying branch reads that branch's `Queue` pages until its entry is found or the pages end, and emits `Enqueue` only if absent. Each Verdict also reads the change (forge `Change`) and its branch's train (forge `Train`); where the train names `tip` contexts it costs one forge `Compare` of the Preview with the branch, and on a stacked Preview each `tip`-context result reported elsewhere costs what an earlier head's does, with the Preview's own patch from the branch read once per Verdict. A `Retell` costs what a `Previewed` event does.
-
-## Repository overview
-
-A check's result carried to a change's Preview when nothing it read changed, as a GitHub
-Checks app reports on a pull request; forge knows nothing of it. A reporter (a lane, a
-CI runner) sends `Report` with the commit, its context, state and url, and its reach:
-the paths its check read (`""` is the whole tree). On each forge Preview (forge's
-`Watch` event, or a `Report` naming the change) it compares every reached path between
-the reported commit and the Preview through forge's `Tree` reads, and sends forge
-`Status` as its own account in `<reporter>/<context>`: the reported state when all are
-the same, `Pending` with a link to `Verdict { repo, n }` (the paths that differ) when
-one is not. A branch requires it by naming its account as `RequireChecks`' reporter;
-deployed per network, never founded. README: its contract
+Retired operation tag0 and query/reply tag1 are gaps, never reused.
+Terminal operation `Retell` tag3 and query/reply `Wanted` tag2 remain wire tombstones; both requests always refuse and cannot schedule work.
+No checks or reviews on another source or target are inferred from stored receipts.

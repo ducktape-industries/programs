@@ -1513,11 +1513,6 @@
               "Watched__Opened"
             ],
             [
-              2,
-              "Previewed",
-              "Watched__Previewed"
-            ],
-            [
               3,
               "Closed",
               "Watched__Closed"
@@ -1531,11 +1526,6 @@
               5,
               "Reviewed",
               "Watched__Reviewed"
-            ],
-            [
-              6,
-              "LeftQueue",
-              "Watched__LeftQueue"
             ],
             [
               7,
@@ -1593,37 +1583,6 @@
               ],
               [
                 "by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__LeftQueue",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "into",
-                "Vec<u8>"
-              ],
-              [
-                "why",
-                "String"
-              ],
-              [
-                "queued_by",
                 "Principal"
               ]
             ]
@@ -1713,33 +1672,6 @@
               ],
               [
                 "head",
-                "String"
-              ],
-              [
-                "by",
-                "Principal"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Watched__Previewed",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "repo",
-                "String"
-              ],
-              [
-                "n",
-                "u64"
-              ],
-              [
-                "merge",
                 "String"
               ],
               [

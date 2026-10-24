@@ -19,7 +19,7 @@ use crate::Stage;
 use crate::actions::MergeBlock;
 use crate::id;
 use crate::markdown;
-use crate::select::{ChangeEvent, CheckedOn, Standings};
+use crate::select::{ChangeEvent, Standings};
 use crate::state::{ChangeTab, Sheet, change_key, verdict_label};
 use crate::words::{self, path_text};
 use ::markdown::phone as document;
@@ -1268,17 +1268,7 @@ fn checks(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Vec<AnyElement> {
         .into_any_element(),
     ];
     for group in &groups {
-        let key = group.on.key();
-        let stale = group.on == CheckedOn::Preview { stale: true };
-        let flag = stale.then(|| {
-            parts::badge(
-                id("forge-checks-preview-stale"),
-                words::STALE,
-                Tint::Warn,
-                ladder,
-                theme,
-            )
-        });
+        let key = "head";
         let head = div()
             .id(id(format!("forge-checks-{key}")))
             .flex()
@@ -1287,21 +1277,10 @@ fn checks(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Vec<AnyElement> {
             .px(design::space::BLOCK)
             .pt(design::space::MD)
             .child(
-                parts::caption(words::checked_on(group.on, &group.commit), ladder, theme)
+                parts::caption(words::checked_on(&group.commit), ladder, theme)
                     .font_family(design::fonts::FAMILY_MONO),
-            )
-            .children(flag);
-        drawn.push(head.into_any_element());
-        if stale {
-            let why = parts::notice(
-                id("forge-checks-preview-stale-why"),
-                words::STALE_PREVIEW,
-                Tone::Warning,
-                ladder,
-                theme,
             );
-            drawn.push(why.into_any_element());
-        }
+        drawn.push(head.into_any_element());
         let Some(query) = forge.statuses_query(&group.commit) else {
             continue;
         };

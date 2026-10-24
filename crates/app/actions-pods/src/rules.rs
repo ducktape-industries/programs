@@ -10,7 +10,6 @@ use abi::role::programs as role;
 use actions::{Asks, CheckRow, Output, PageRequest, State};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
 use store::{Item, Map, Set};
 
 use crate::{LogRead, Op, PROGRAM, PodRow, Progress, RunRow, SERVICE};
@@ -103,7 +102,9 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
     let taken = pods_counting_against_quota(&ctx, &row);
     let free = concurrent(&ctx)?.saturating_sub(taken);
     let ahead = waiting_ahead_of(&ctx, &row)?;
-    if ahead.len() as u64 >= free {
+    let older_waits_for_quota = ahead.iter().any(|older| FULL.has(&ctx, older));
+    let must_wait = older_waits_for_quota || ahead.len() as u64 >= free;
+    if must_wait {
         WAITING.insert(&ctx, &check);
         let unbooked = ahead.iter().any(|older| !OFFERED.has(&ctx, older));
         let room_idles = free > 0 && unbooked;
@@ -211,82 +212,13 @@ fn waiting_ahead_of(ctx: &Ctx, check: &CheckRow) -> Result<Vec<u64>, Error> {
             _ => WAITING.remove(ctx, &id),
         }
     }
-    let repos: BTreeSet<&str> = queued
-        .iter()
-        .chain([check])
-        .map(|row| row.repo.as_str())
-        .collect();
-    let awaited = merge_queue_fronts(ctx, &repos);
-    let place = |row: &CheckRow| {
-        let a_merge_queue_waits = awaited.contains(&(row.repo.clone(), row.commit.clone()));
-        (!a_merge_queue_waits, row.queued, row.id)
-    };
+    let place = |row: &CheckRow| (row.queued, row.id);
     let own = place(check);
     Ok(queued
         .iter()
         .filter(|other| place(other) < own)
-        .filter(|other| !FULL.has(ctx, &other.id))
         .map(|other| other.id)
         .collect())
-}
-
-fn merge_queue_fronts(ctx: &QueryCtx, repos: &BTreeSet<&str>) -> BTreeSet<(String, String)> {
-    let mut fronts = BTreeSet::new();
-    for repo in repos {
-        for branch in branches_with_required_checks(ctx, repo) {
-            let previewed =
-                front_of_queue(ctx, repo, branch).and_then(|n| preview_of(ctx, repo, n));
-            fronts.extend(previewed.map(|merge| (repo.to_string(), merge)));
-        }
-    }
-    fronts
-}
-
-fn branches_with_required_checks(ctx: &QueryCtx, repo: &str) -> Vec<Vec<u8>> {
-    let mut branches = Vec::new();
-    let mut page = PageRequest::default();
-    loop {
-        let asked = forge::Query::Required {
-            repo: repo.to_owned(),
-            page,
-        };
-        let Ok(forge::Reply::Required { page: answered, .. }) =
-            ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)
-        else {
-            return branches;
-        };
-        branches.extend(answered.items.into_iter().map(|row| row.branch));
-        let Some(next) = answered.next else {
-            return branches;
-        };
-        page = PageRequest {
-            after: Some(next),
-            limit: None,
-        };
-    }
-}
-
-fn front_of_queue(ctx: &QueryCtx, repo: &str, branch: Vec<u8>) -> Option<u64> {
-    let asked = forge::Query::Queue {
-        repo: repo.to_owned(),
-        branch,
-        page: PageRequest::first(1),
-    };
-    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
-        Ok(forge::Reply::Queue { page, .. }) => page.items.first().map(|entry| entry.n),
-        _ => None,
-    }
-}
-
-fn preview_of(ctx: &QueryCtx, repo: &str, n: u64) -> Option<String> {
-    let asked = forge::Query::Preview {
-        repo: repo.to_owned(),
-        n,
-    };
-    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
-        Ok(forge::Reply::Preview { preview, .. }) => preview.map(|preview| preview.merge),
-        _ => None,
-    }
 }
 
 fn pods_counting_against_quota(ctx: &QueryCtx, check: &CheckRow) -> u64 {

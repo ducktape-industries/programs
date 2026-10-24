@@ -4,7 +4,7 @@ use view::prelude::*;
 
 use crate::Forge;
 use crate::Stage;
-use crate::select::{ChangeEvent, CheckGroup, CheckedOn, Picture};
+use crate::select::{ChangeEvent, CheckGroup, Picture};
 use crate::state::verdict_verb;
 use crate::ui::components::{badge, button, empty_state, id, quiet};
 use crate::ui::scroller;
@@ -356,37 +356,18 @@ fn checks(forge: &Forge, theme: &Theme, ladder: &Ladder) -> Option<AnyElement> {
 }
 
 fn check_group(forge: &Forge, group: &CheckGroup, theme: &Theme, ladder: &Ladder) -> AnyElement {
-    let key = group.on.key();
-    let stale = group.on == CheckedOn::Preview { stale: true };
-    let mut head = div()
+    let key = "head";
+    let head = div()
         .id(id(format!("forge-checks-{key}")))
         .flex()
         .items_center()
         .gap(design::space::SM)
         .child(
-            design::mono(words::checked_on(group.on, &group.commit))
+            design::mono(words::checked_on(&group.commit))
                 .text_size(design::text::CAPTION)
                 .text_color(theme.muted),
         );
-    if stale {
-        head = head.child(badge(
-            id("forge-checks-preview-stale"),
-            words::STALE,
-            ladder,
-            theme.warning,
-            theme.warning_soft,
-        ));
-    }
-    let mut column = div().flex().flex_col().gap(design::space::XS).child(head);
-    if stale {
-        column = column.child(
-            div()
-                .id(id("forge-checks-preview-stale-why"))
-                .text_size(design::text::SECONDARY)
-                .text_color(theme.warning)
-                .child(words::STALE_PREVIEW),
-        );
-    }
+    let column = div().flex().flex_col().gap(design::space::XS).child(head);
     let Some(query) = forge.statuses_query(&group.commit) else {
         return column.into_any_element();
     };
