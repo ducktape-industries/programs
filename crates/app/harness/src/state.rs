@@ -65,6 +65,7 @@ pub const WAIT_WAKES: Map<u64, u64> = Map::new("wait-wake/");
 pub const WAKE_WAITS: Map<u64, u64> = Map::new("wake-wait/");
 pub const FLIGHTS: Map<u64, Flight> = Map::new("flight/");
 pub const RETRIES: Map<u64, Retry> = Map::new("retry/");
+pub const MODEL_FAILURES: Map<u64, u32> = Map::new("model-failures/");
 pub const RETRY_SINCE: Map<u64, u64> = Map::new("retry-since/");
 pub const SWEEP_AT: Item<u64> = Item::new("sweep-at");
 pub const REPORTS: Map<(AccountNumber, u64), String> = Map::new("report/");

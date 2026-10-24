@@ -58,11 +58,20 @@ service from front matter or a kept model, and no previous answering account, pi
 call. A service whose known accounts for the conversation's provider all have unexpired
 rejected or full budget windows is skipped; unread accounts remain eligible and each
 reported reset reopens its capacity. If every served service is rejected, harness's own
-retry waits for the earliest account reset without sending a request; a new input or a
-`Resume` asks once anyway, and an answer on any service of the route, for its provider,
+retry waits for the earliest account reset without sending a request; within its remaining
+retry allowance, a new input or a `Resume` asks once anyway, and an answer on any service of the route, for its provider,
 pulls a waiting conversation in at the next block. A 429, a 5xx, a broken stream or an
 unreachable service moves the call to the next untried eligible service; an exhausted
 route waits for the reported reset, or uses the retry policy when no reset was reported.
+Each run permits an initial attempt and three automatic retries. Consecutive failures consume
+that allowance across service moves and ordinary Resume calls. The fourth failure stops model
+requests, keeps the last error in paged `FinalErrors` with its notice/frame provenance, and
+retains the conversation's context and pending input. Scheduler/board wakes, notifications and
+unrelated service successes cannot replenish exhaustion. A valid answered turn resets the
+allowance. `Retry { thread }` explicitly picks up an exhausted open conversation of an active
+agent with a fresh allowance; anyone may as with `Resume`, which cannot release exhaustion.
+Old retry rows adopt their consumed attempt count when harness updates, and rows already beyond
+the allowance stop without another request. No automatic caller invokes `Retry`.
 A call a harness update or a node restart cut off stays where it was. A retry whose
 booking the scheduler refused (a frame at the kernel's nesting cap) keeps its row, and
 the next answer on its route books it, or `Op::Sweep`, a standing run every

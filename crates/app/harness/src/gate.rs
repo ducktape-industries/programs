@@ -44,6 +44,7 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Unbook { .. }
         | Op::RunBooked
         | Op::Resume { .. }
+        | Op::Retry { .. }
         | Op::Report { .. }
         | Op::Settle { .. }
         | Op::Watch { .. }

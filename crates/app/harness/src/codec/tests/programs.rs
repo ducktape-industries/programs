@@ -490,6 +490,7 @@ fn harness_round_trips() {
             data: b"data".to_vec(),
         },
     });
+    harness.op(&crate::Op::Retry { thread: 144 });
     harness.query(&crate::Query::Tools);
     harness.query(&crate::Query::Threads {
         agent: 3,

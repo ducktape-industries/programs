@@ -2100,6 +2100,11 @@
               40,
               "RetirePromises",
               "Op__RetirePromises"
+            ],
+            [
+              41,
+              "Retry",
+              "Op__Retry"
             ]
           ]
         }
@@ -2364,6 +2369,21 @@
               ],
               [
                 "limit",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__Retry",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "thread",
                 "u64"
               ]
             ]

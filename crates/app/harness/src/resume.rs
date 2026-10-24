@@ -13,13 +13,15 @@ use crate::conversations::{binding, conversation};
 use crate::routes;
 use crate::schema::code_of;
 use crate::state::{
-    ASKED, AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES,
-    RUNNING, Retry, STREAMING, THREADS, WATCHES,
+    ASKED, AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, MODEL_FAILURES, PARTIALS, REPORTING,
+    REPORTS, RETRIES, RUNNING, Retry, STREAMING, THREADS, WATCHES,
 };
 use crate::tools::Write;
 use crate::turns::{append, bound, conclude, converse, give_up, say, settle};
 use crate::wire;
 use crate::{Asking, Body, CallState, Flow, Op, Partial, Place, ThreadRow, heard_as, streamed_as};
+
+pub(crate) const AUTOMATIC_RETRIES: u32 = 3;
 
 const RETRY_AFTER: &str = "retry-after";
 const RESET: &str = "anthropic-ratelimit-unified-5h-reset";
@@ -364,7 +366,77 @@ pub(crate) fn moved(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn waits(ctx: &QueryCtx, id: u64) -> Result<bool, Error> {
+fn stop(ctx: &ExecCtx, row: &mut ThreadRow, text: String) -> Result<(), Error> {
+    let text = format!(
+        "{text}; stopped after {AUTOMATIC_RETRIES} automatic retries (initial attempt plus retries). Context is retained; inspect FinalErrors and frames, then explicitly call Retry {{ thread: {} }} for a fresh allowance. Resume and background wakes do not replenish it.",
+        row.id
+    );
+    append(ctx, row, Body::Notice { text: text.clone() });
+    crate::failures::failed(ctx, row, text)?;
+    RETRIES.remove(ctx, &row.id);
+    routes::untried(ctx, row.id);
+    THREADS.put(ctx, &row.id, row);
+    Ok(())
+}
+
+fn prior_failure(ctx: &QueryCtx, row: &ThreadRow, retry: &Retry) -> Result<String, Error> {
+    let whole = FRAMES.prefix_of(&row.id);
+    let mut end = whole.end;
+    loop {
+        let scan = Range::new(whole.start.clone(), end).reverse().limit(1);
+        let Some((key, frame)) = FRAMES.scan(ctx, scan)?.pop() else {
+            break;
+        };
+        if frame.height < retry.since {
+            break;
+        }
+        let at_failure = frame.height == retry.since;
+        if let Body::Notice { text } = frame.body {
+            let retry_notice = text.rsplit_once(" (attempt ").is_some_and(|(_, attempt)| {
+                attempt
+                    .strip_suffix(')')
+                    .is_some_and(|count| count.parse::<u32>().is_ok())
+            });
+            let model_failure = at_failure && retry_notice;
+            if model_failure {
+                return Ok(format!("{text} (model failure notice frame {})", frame.seq));
+            }
+        }
+        end = Some(FRAMES.key(&key));
+    }
+    if let Some(error) = crate::state::FINAL_ERRORS.get(ctx, &(row.agent, row.id))? {
+        return Ok(format!(
+            "{} (model failure notice frame {})",
+            error.text, error.frame
+        ));
+    }
+    Ok(format!(
+        "the existing model retry allowance was exhausted at block {}; no model-failure notice remains",
+        retry.since
+    ))
+}
+
+fn adopt(ctx: &ExecCtx, id: u64) -> Result<u32, Error> {
+    if let Some(count) = MODEL_FAILURES.get(ctx, &id)? {
+        return Ok(count);
+    }
+    let Some(retry) = RETRIES.get(ctx, &id)? else {
+        return Ok(0);
+    };
+    let count = retry.attempt;
+    MODEL_FAILURES.put(ctx, &id, &count);
+    if count > AUTOMATIC_RETRIES {
+        let mut row = thread(ctx, id)?;
+        let text = prior_failure(ctx, &row, &retry)?;
+        stop(ctx, &mut row, text)?;
+    }
+    Ok(count)
+}
+
+pub(crate) fn waits(ctx: &ExecCtx, id: u64) -> Result<bool, Error> {
+    if adopt(ctx, id)? > AUTOMATIC_RETRIES {
+        return Ok(true);
+    }
     let env = ctx.env();
     let Some(retry) = RETRIES.get(ctx, &id)? else {
         return Ok(false);
@@ -441,9 +513,11 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
     };
     let env = ctx.env();
     let (height, now) = (env.height, env.time);
-    let attempt = RETRIES
-        .get(ctx, &id)?
-        .map_or(1, |retry| retry.attempt.saturating_add(1));
+    let attempt = adopt(ctx, id)?.saturating_add(1);
+    MODEL_FAILURES.put(ctx, &id, &attempt);
+    if attempt > AUTOMATIC_RETRIES {
+        return stop(ctx, &mut row, failure.text);
+    }
     let until = failure.wait.and_then(|wait| wait.until(now));
     let moved = failure.moves && routes::failed(ctx, id)?;
     let until = until.filter(|_| !moved);
@@ -539,7 +613,9 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
     crate::providers::forget_unreported(ctx)?;
     let mut fronts = crate::kept::Fronts::default();
     let mut wakes = Vec::new();
-    for (id, mut row) in THREADS.all(ctx)? {
+    for (id, _) in THREADS.all(ctx)? {
+        adopt(ctx, id)?;
+        let mut row = thread(ctx, id)?;
         row.open_calls = CALLS
             .scan(ctx, CALLS.prefix_of(&id))?
             .into_iter()
@@ -765,8 +841,31 @@ async fn post(ctx: &Ctx, row: &ThreadRow, place: &Place, why: &str) {
     let _ = ctx.call_raw(chat::PROGRAM, abi::encode(&op)).await;
 }
 
+pub(crate) async fn retry(ctx: Ctx, id: u64) -> Result<(), Error> {
+    let row = thread(&ctx, id)?;
+    if row.closed {
+        return Err(wrong_state("a closed conversation cannot be retried"));
+    }
+    let active = running(&ctx, row.agent)?.is_some();
+    if !active {
+        return Err(wrong_state(
+            "a conversation whose agent is not active cannot be retried",
+        ));
+    }
+    let exhausted = adopt(&ctx, id)? > AUTOMATIC_RETRIES;
+    if !exhausted {
+        return Err(wrong_state(
+            "Retry picks up an exhausted conversation; use Resume for an outstanding attempt",
+        ));
+    }
+    MODEL_FAILURES.remove(&ctx, &id);
+    RETRIES.remove(&ctx, &id);
+    resume(ctx, id).await
+}
+
 pub(crate) async fn resume(ctx: Ctx, id: u64) -> Result<(), Error> {
     thread(&ctx, id)?;
+    adopt(&ctx, id)?;
     rewatch(&ctx, id).await;
     repace(&ctx, id).await;
     let_go(&ctx, id);

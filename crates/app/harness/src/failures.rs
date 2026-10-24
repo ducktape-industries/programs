@@ -71,6 +71,7 @@ fn put(
 
 pub(crate) fn cleared(ctx: &ExecCtx, thread: &ThreadRow) -> Result<(), Error> {
     let key = (thread.agent, thread.id);
+    crate::state::MODEL_FAILURES.remove(ctx, &thread.id);
     if FINAL_ERRORS.get(ctx, &key)?.is_some() {
         FINAL_ERRORS.remove(ctx, &key);
     }

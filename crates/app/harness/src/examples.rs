@@ -51,6 +51,10 @@ pub(crate) fn resume() -> Op {
     Op::Resume { thread: 144 }
 }
 
+pub(crate) fn retry() -> Op {
+    Op::Retry { thread: 144 }
+}
+
 pub(crate) fn unwait() -> Op {
     Op::Unwait { wait: 42 }
 }

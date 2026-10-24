@@ -1,3 +1,4 @@
+//! Scheduled model retries retain their input and respect a finite allowance.
 use super::*;
 use crate::state::THREADS;
 use crate::wire::tests::{TOOL_USE, events};
@@ -465,11 +466,11 @@ fn harness_own_wakes_never_ask_again_about_input_a_turn_gave_up_on() {
 }
 
 #[test]
-fn the_wait_stops_doubling_at_the_wait_egress_gives_one_request() {
+fn the_wait_doubles_within_the_automatic_retry_allowance() {
     let world = world();
     let chain = &world.chain;
     let thread = world.opened("m1", "hello", Some(WINDOW));
-    let past = egress::DEFAULT_WAIT.ilog2() + 2;
+    let past = crate::resume::AUTOMATIC_RETRIES;
     let mut height = 3;
     chain.at(height, 0);
     for attempt in 1..=past {

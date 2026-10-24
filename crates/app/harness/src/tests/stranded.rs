@@ -1,3 +1,4 @@
+//! Cut-off calls recover independently of the conversation model retry allowance.
 use ::program::schema::interface;
 use programs::Programs;
 
@@ -501,4 +502,48 @@ fn an_acked_exec_an_update_cut_off_arrives_failed_as_new_input_and_is_not_run_ag
     assert!(messages.contains(&why), "{messages}");
     assert!(messages.contains(AGAIN), "{messages}");
     assert_eq!(pods_request(chain).id, request.id, "nothing is sent again");
+}
+
+#[test]
+fn exhaustion_allows_resume_to_recover_a_cut_off_tool_without_asking_the_model() {
+    let world = listed_world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "list the pods", Some(WINDOW));
+    turn(chain, 3, "n1", "network_call", pods_get("/v1/pods"));
+    let request = pods_request(chain);
+    let mut height = 5;
+    for failure in 1..=4 {
+        chain.at(height, 0);
+        let (model, _) = open_request(chain);
+        answer(
+            chain,
+            model.id,
+            Answer::Failed("model transport unavailable".into()),
+        );
+        if failure < 4 {
+            height += (1u64 << (failure - 1)) + 1;
+        }
+    }
+    assert!(assigned(chain, SERVICE).is_empty());
+    chain.cancel_parked(PROGRAM);
+    updated(chain, height + 1);
+    chain
+        .submit(signed(BO), PROGRAM, &Op::Resume { thread })
+        .unwrap();
+    assert!(
+        assigned(chain, SERVICE).is_empty(),
+        "a code swap cannot replenish exhaustion"
+    );
+    let deadline = request.made + egress::DEFAULT_WAIT;
+    chain.at(deadline + 2, 0);
+    chain
+        .submit(signed(BO), PROGRAM, &Op::Resume { thread })
+        .unwrap();
+    assert_eq!(results(chain, thread, "n1"), 1);
+    assert!(result_of(chain, thread, "n1").1);
+    assert!(assigned(chain, SERVICE).is_empty());
+    assert!(matches!(
+        state(chain, thread, "n1"),
+        CallState::Done { failed: true, .. }
+    ));
 }

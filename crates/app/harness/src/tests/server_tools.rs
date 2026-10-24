@@ -1,3 +1,4 @@
+//! Server-tool continuations preserve use/result order and hold later input until answered.
 use super::*;
 
 fn searcher() -> Config {
@@ -349,4 +350,62 @@ fn a_summary_never_ends_between_a_server_tools_use_and_its_result() {
             );
         }
     }
+}
+
+#[test]
+fn exhausted_paused_continuation_keeps_its_tool_use_and_held_input_for_explicit_pickup() {
+    let world = world();
+    let chain = &world.chain;
+    commit(chain, ADA, CONFIG, &md(&searcher()));
+    let thread = world.opened("m1", "fetch it", Some(WINDOW));
+    world.mention("m2", "and this too");
+    chain.at(3, 0);
+    let all = searched_and_fetched();
+    let blocks = all.as_array().unwrap();
+    model_says(chain, json!(blocks[3..4].to_vec()), "pause_turn");
+    let mut height = 4;
+    for failure in 1..=4 {
+        chain.at(height, 0);
+        let (request, _) = open_request(chain);
+        answer(
+            chain,
+            request.id,
+            Answer::Output(response(
+                429,
+                json!({"error":{"type":"rate_limit_error","message":"pool rejected"}}),
+            )),
+        );
+        if failure < 4 {
+            height += (1u64 << (failure - 1)) + 1;
+        }
+    }
+    assert_eq!(held(chain, thread).len(), 1);
+    assert!(thread_row(chain, thread).paused());
+    chain
+        .submit(signed(BO), PROGRAM, &Op::Resume { thread })
+        .unwrap();
+    assert!(assigned(chain, SERVICE).is_empty());
+    chain
+        .submit(signed(BO), PROGRAM, &Op::Retry { thread })
+        .unwrap();
+    let (request, _) = open_request(chain);
+    let sent = provider_body(chain, &request)["messages"].to_string();
+    assert!(
+        sent.contains("[web_fetch"),
+        "unpinned continuation retains the tool text: {sent}"
+    );
+    assert!(frames(chain, thread).iter().any(|body| matches!(body, Body::Turn { said, .. } if format!("{said:?}").contains("srvtoolu_2"))), "the raw use stays in retained context");
+    assert!(
+        !sent.contains("and this too"),
+        "input cannot split a tool use/result: {sent}"
+    );
+    chain.at(height + 1, 0);
+    model_says(chain, json!(blocks[4..].to_vec()), "end_turn");
+    assert!(held(chain, thread).is_empty());
+    let (request, _) = open_request(chain);
+    assert!(
+        provider_body(chain, &request)["messages"]
+            .to_string()
+            .contains("and this too")
+    );
 }

@@ -105,7 +105,7 @@ pub enum Op {
     Unbook { entry: u64 },
     #[tool_op(description = "Harness's own scheduled entry only: runs a booked op at its block.")]
     RunBooked,
-    #[tool_op(description = "Kick a conversation that stopped: it asks its model again where a lost or failed call left it idle. Anyone may.", example = examples::resume)]
+    #[tool_op(description = "Kick a conversation that stopped, without replenishing an exhausted retry allowance. Use Retry explicitly for exhaustion. Anyone may.", example = examples::resume)]
     Resume { thread: u64 },
     #[tool_op(
         description = "Harness's own: posts the lines it kept for a manager about its agents' conversations."
@@ -155,6 +155,8 @@ pub enum Op {
     Renew { thread: u64 },
     #[tool_op(description = "Retire legacy promise records and only their indexed scheduled callbacks, at most limit ids after the cursor. No work is marked fulfilled or dropped. Anyone may. Returns the last retired id when more remain, otherwise null.", returns = Option<u64>, example = examples::retire_promises)]
     RetirePromises { after: Option<u64>, limit: u64 },
+    #[tool_op(description = "Explicitly pick up an exhausted conversation with a fresh initial attempt and three automatic retries, preserving its context. Anyone may, as with Resume; closed conversations or inactive agents cannot be retried. Background Resume does not replenish exhaustion.", example = examples::retry)]
+    Retry { thread: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1447,6 +1449,10 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Retire at most {limit} legacy promise ids after {after:?}"),
             vec![field("limit", Value::count(*limit))],
         ),
+        Op::Retry { thread } => (
+            format!("Retry exhausted conversation {thread} with a fresh allowance"),
+            vec![field("thread", Value::count(*thread))],
+        ),
         Op::Renew { thread } => (
             format!("Renew conversation {thread} at its place"),
             vec![field("thread", Value::count(*thread))],
@@ -1503,6 +1509,7 @@ fn op_variants_only_append() {
             "Sweep",
             "Renew",
             "RetirePromises",
+            "Retry",
         ]
     );
 }

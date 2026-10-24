@@ -140,6 +140,7 @@ impl Awaiting for Harness {
             Op::Unbook { entry } => unbook(&ctx, entry).await,
             Op::RunBooked => run_booked(&ctx).await,
             Op::Resume { thread } => resume::resume(ctx, thread).await,
+            Op::Retry { thread } => resume::retry(ctx, thread).await,
             Op::Report { manager } => resume::report(ctx, manager).await,
             Op::Settle { thread } => due(ctx, thread).await,
             Op::Watch { watch } => crate::watches::watch(ctx, watch).await,

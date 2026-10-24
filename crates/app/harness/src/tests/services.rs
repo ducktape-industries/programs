@@ -392,8 +392,7 @@ fn a_429_on_the_threads_account_asks_again_next_block_naming_none_and_the_thread
 }
 
 #[test]
-fn a_429_with_no_account_named_moves_to_the_next_service_and_one_on_every_service_waits_for_the_reset_until_an_input()
- {
+fn a_429_moves_services_and_reset_waits_do_not_replenish_the_allowance() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
@@ -441,13 +440,26 @@ fn a_429_with_no_account_named_moves_to_the_next_service_and_one_on_every_servic
     );
     chain.at(15, until);
     chain.at(16, until);
-    let reopened = [SERVICE, TWO].map(|service| requests_at(chain, service, model_wire::TURN));
-    let [one]: [RequestRow; 1] = reopened.concat().try_into().unwrap();
-    assert_eq!(
-        pinned_to(chain, &one),
-        None,
-        "the reported reset reopens capacity"
-    );
+    for service in [SERVICE, TWO] {
+        assert!(
+            none_open(chain, service, model_wire::TURN),
+            "reset cannot replenish exhaustion"
+        );
+    }
+    let Reply::FinalErrors(page) = chain
+        .query(
+            PROGRAM,
+            &Query::FinalErrors {
+                agent: world.agent,
+                page: PageRequest::default(),
+            },
+        )
+        .unwrap()
+    else {
+        panic!("final errors")
+    };
+    assert_eq!(page.items.len(), 1);
+    assert!(page.items[0].text.contains("3 automatic retries"));
 }
 
 #[test]
