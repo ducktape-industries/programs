@@ -680,9 +680,6 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             ),
             harness::Query::Bookings { .. } => harness::Reply::Bookings(page(Vec::new())),
             harness::Query::Booking { .. } => harness::Reply::Booking(None),
-            harness::Query::Promises { .. } => harness::Reply::Promises(page(Vec::new())),
-            harness::Query::Promise { .. } => harness::Reply::Promise(None),
-            harness::Query::Asked { .. } => harness::Reply::Promises(page(Vec::new())),
             harness::Query::ThreadCard { thread } => {
                 let row = net.threads.iter().find(|row| row.id == thread);
                 let setup =

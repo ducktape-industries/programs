@@ -1,411 +1,302 @@
-use super::schedule::{answered, refused, turn};
+use super::schedule::{answered, schemed, turn};
 use super::*;
-use crate::promises::REPEAT;
+use crate::promises::{ASKING, ENTRIES, PROMISES, PROMISING, PromiseRow};
 
-fn promise(text: &str, blocks: u64) -> Value {
-    json!({ "text": text, "channel": "general", "seq": 1, "in": blocks })
-}
-
-fn promised(chain: &MockChain, thread: u64, call: &str) -> u64 {
-    answered(chain, thread, call)["promise"].as_u64().unwrap()
-}
-
-fn told(chain: &MockChain, thread: u64) -> Vec<String> {
-    frames(chain, thread)
-        .into_iter()
-        .chain(held(chain, thread))
-        .filter_map(|body| match body {
-            Body::Post {
-                author: Principal::Root,
-                text,
-            } => Some(text),
-            _ => None,
-        })
-        .collect()
-}
-
-fn open(chain: &MockChain, agent: AccountNumber) -> Vec<PromiseRow> {
-    let asked = Query::Promises {
-        agent,
-        page: PageRequest::default(),
+fn seed(chain: &MockChain, id: u64, agent: AccountNumber, asker: AccountNumber, thread: u64) {
+    let row = PromiseRow {
+        id,
+        owed_by: agent,
+        asked_by: asker,
+        thread,
+        channel: "general".into(),
+        seq: 1,
+        text: "legacy unfinished work".into(),
+        made: 1,
+        due: 40,
+        next: 40,
+        closed: None,
     };
-    let Reply::Promises(page) = chain.query(&harness(), &asked).unwrap() else {
-        panic!("harness answers promises")
-    };
-    page.items
+    let host = chain.host(PROGRAM);
+    let mut host = host.borrow_mut();
+    host.state.insert(PROMISES.key(&id), abi::encode(&row));
+    host.state.insert(PROMISING.key(&(agent, id)), Vec::new());
+    host.state.insert(ASKING.key(&(asker, id)), Vec::new());
 }
 
-fn asked(chain: &MockChain, agent: AccountNumber) -> Vec<u64> {
-    let asked = Query::Asked {
-        agent,
-        page: PageRequest::default(),
-    };
-    let Reply::Promises(page) = chain.query(&harness(), &asked).unwrap() else {
-        panic!("harness answers asks")
-    };
-    page.items.iter().map(|row| row.id).collect()
-}
-
-fn owed(chain: &MockChain, agent: AccountNumber) -> Vec<u64> {
-    open(chain, agent).iter().map(|row| row.id).collect()
-}
-
-fn ask(text: &str, owed_by: AccountNumber, blocks: u64) -> Value {
-    let mut asked = promise(text, blocks);
-    asked["owed_by"] = json!(owed_by);
-    asked
-}
-
-fn row(chain: &MockChain, promise: u64) -> Option<PromiseRow> {
-    let asked = Query::Promise { promise };
-    let Reply::Promise(found) = chain.query(&harness(), &asked).unwrap() else {
-        panic!("harness answers a promise")
-    };
-    found
-}
-
-fn said(chain: &MockChain, at: u64, text: &str) {
-    chain.at(at, 0);
-    model_says(chain, json!([{ "type": "text", "text": text }]), "end_turn");
+fn retire(chain: &MockChain, after: Option<u64>, limit: u64) -> Option<u64> {
+    abi::decode(
+        &chain
+            .submit(signed(ADA), PROGRAM, &Op::RetirePromises { after, limit })
+            .unwrap(),
+    )
+    .unwrap()
 }
 
 #[test]
-fn a_promise_wakes_its_conversation_when_due_and_again_each_interval_until_it_is_kept() {
+fn retirement_pages_only_legacy_ids_and_never_marks_work_completed() {
     let world = world();
     let chain = &world.chain;
-    let thread = world.opened("m1", "report back in a while", Some(WINDOW));
-    turn(
-        &world,
-        3,
-        &[("p1", "promise", promise("post the report", 7))],
-    );
-    let id = promised(chain, thread, "p1");
-    said(chain, 5, "Promised.");
-    said(chain, 6, "It is recorded.");
-    let [made] = open(chain, world.agent)
-        .try_into()
-        .expect("one open promise");
-    assert_eq!(
-        (made.id, made.owed_by, made.asked_by, made.thread),
-        (id, world.agent, world.agent, thread)
-    );
-    assert_eq!((made.channel.as_str(), made.seq), ("general", 1));
-    assert_eq!(made.text, "post the report");
-    assert_eq!(
-        (made.due, made.next, made.closed.clone()),
-        (made.made + 7, made.made + 7, None)
-    );
-    assert_eq!(row(chain, id), Some(made.clone()));
-
-    chain.at(made.due - 1, 0);
-    assert!(
-        told(chain, thread).is_empty(),
-        "nothing wakes before it is due"
-    );
-    chain.at(made.due + 1, 0);
-    let [first] = told(chain, thread).try_into().expect("one wake");
-    let due = format!("Promise {id} is due: post the report");
-    assert!(first.starts_with(&due), "{first}");
-    let again = format!("comes back at block {}", made.due + REPEAT);
-    assert!(first.contains(&again), "{first}");
-    assert!(first.contains("Your open promises:"), "{first}");
-    assert_eq!(row(chain, id).unwrap().next, made.due + REPEAT);
-    said(chain, made.due + 2, "Not yet.");
-
-    chain.at(made.due + REPEAT - 1, 0);
-    let wakes = told(chain, thread);
-    assert_eq!(
-        wakes.len(),
-        1,
-        "nothing comes back before the repeat: {wakes:?}"
-    );
-    chain.at(made.due + REPEAT + 1, 0);
-    let wakes = told(chain, thread);
-    assert_eq!(wakes.len(), 2, "it comes back while it is open: {wakes:?}");
-    assert!(wakes[1].starts_with(&due), "{}", wakes[1]);
-    let keep = json!({ "promise": id, "kept": true, "how": "posted it in general" });
-    let kept_at = made.due + REPEAT + 2;
-    turn(&world, kept_at, &[("k1", "promise_keep", keep)]);
-    assert_eq!(answered(chain, thread, "k1"), json!({ "ok": true }));
-    said(chain, kept_at + 2, "Kept.");
-    let closed = row(chain, id).unwrap().closed.expect("it is closed");
-    assert!(closed.kept, "{closed:?}");
-    assert_eq!(closed.how, "posted it in general");
-    assert!(open(chain, world.agent).is_empty());
-
-    chain.at(made.due + 2 * REPEAT + 1, 0);
-    assert_eq!(told(chain, thread).len(), 2, "a kept promise wakes no one");
-}
-
-#[test]
-fn only_its_agent_closes_a_promise_and_only_harness_own_entry_makes_it_due() {
-    let world = world();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "promise something", Some(WINDOW));
-    turn(&world, 3, &[("p1", "promise", promise("ship it", 20))]);
-    let id = promised(chain, thread, "p1");
-    let keep = Op::Keep {
-        promise: id,
-        kept: false,
-        how: "not mine".into(),
-    };
-    let error = chain.submit(signed(ADA), PROGRAM, &keep).unwrap_err();
-    assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
-    for origin in [signed(ADA), Origin::Program(PROGRAM.into())] {
-        let due = Op::PromiseDue { promise: id };
-        let error = chain.submit(origin, PROGRAM, &due).unwrap_err();
-        assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
+    for id in [1, 2, 3] {
+        seed(chain, id, world.agent, world.ada, 1);
     }
-    assert_eq!(row(chain, id).unwrap().closed, None);
-    assert!(told(chain, thread).is_empty());
-}
-
-#[test]
-fn a_promise_due_now_or_before_is_refused_and_records_nothing() {
-    let world = world();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "promise the past", Some(WINDOW));
-    let past = json!({ "text": "too late", "channel": "general", "seq": 1, "height": 2 });
-    turn(&world, 3, &[("p1", "promise", past)]);
-    let text = refused(chain, thread, "p1");
-    assert!(text.starts_with(code::INVALID_INPUT), "{text}");
-    assert!(open(chain, world.agent).is_empty());
-}
-
-#[test]
-fn a_promise_whose_conversation_closed_wakes_the_agents_current_one_and_moves_there() {
-    let world = world();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "promise then go", Some(WINDOW));
-    turn(&world, 3, &[("p1", "promise", promise("follow up", 20))]);
-    let id = promised(chain, thread, "p1");
-    said(chain, 5, "Promised.");
-    said(chain, 6, "It is recorded.");
-    chain
-        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
+    let host = chain.host(PROGRAM);
+    let untouched = host
+        .borrow()
+        .state
+        .get(&PROMISES.key(&3u64))
+        .cloned()
         .unwrap();
-    chain.at(7, 0);
-    let fresh = world.mention("m2", "a fresh start");
-    assert_ne!(fresh, thread);
-    let due = row(chain, id).unwrap().due;
-    chain.at(due + 1, 0);
-    assert!(told(chain, thread).is_empty(), "{:?}", told(chain, thread));
-    let heard = told(chain, fresh);
-    let [handover, wake] = &heard[..] else {
-        panic!("m1 handed over, then the promise's wake: {heard:?}")
-    };
-    let carried = "notice queue Note: 1 unanswered\n\n";
-    assert!(handover.starts_with(carried), "{handover}");
-    assert!(handover.ends_with("promise then go"), "{handover}");
-    let due = format!("Promise {id} is due: follow up");
-    assert!(wake.starts_with(&due), "{wake}");
-    assert_eq!(row(chain, id).unwrap().thread, fresh);
-}
-
-#[test]
-fn a_conversation_closed_mid_ask_hands_its_unanswered_over_once_that_ask_is_answered() {
-    let world = world();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "promise then go", Some(WINDOW));
-    turn(&world, 3, &[("p1", "promise", promise("follow up", 20))]);
-    let id = promised(chain, thread, "p1");
-    said(chain, 5, "Promised.");
-    chain
-        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
-        .unwrap();
-    assert_ne!(
-        thread_row(chain, thread).asking,
-        Asking::Idle,
-        "the closed conversation's turn ends once its ask is answered"
+    assert_eq!(retire(chain, None, 1), Some(1));
+    assert!(!host.borrow().state.contains_key(&PROMISES.key(&1u64)));
+    assert!(
+        !host
+            .borrow()
+            .state
+            .contains_key(&PROMISING.key(&(world.agent, 1u64)))
     );
-    said(chain, 6, "It is recorded.");
-    chain.at(7, 0);
-    let fresh = world.mention("m2", "a fresh start");
-    assert_ne!(fresh, thread);
-    let due = row(chain, id).unwrap().due;
-    chain.at(due + 1, 0);
-    assert!(told(chain, thread).is_empty(), "{:?}", told(chain, thread));
-    let heard = told(chain, fresh);
-    let [handover, wake] = &heard[..] else {
-        panic!("m1 handed over, then the promise's wake: {heard:?}")
-    };
-    let carried = "notice queue Note: 1 unanswered\n\n";
-    assert!(handover.starts_with(carried), "{handover}");
-    assert!(handover.ends_with("promise then go"), "{handover}");
-    let due = format!("Promise {id} is due: follow up");
-    assert!(wake.starts_with(&due), "{wake}");
-    assert_eq!(row(chain, id).unwrap().thread, fresh);
+    assert!(
+        !host
+            .borrow()
+            .state
+            .contains_key(&ASKING.key(&(world.ada, 1u64)))
+    );
+    assert_eq!(
+        host.borrow().state.get(&PROMISES.key(&3u64)),
+        Some(&untouched)
+    );
+    assert_eq!(retire(chain, Some(1), 1), Some(2));
+    assert_eq!(retire(chain, Some(2), 1), None);
+    assert_eq!(retire(chain, None, 1), None);
+    let error = chain
+        .submit(
+            signed(ADA),
+            PROGRAM,
+            &Op::RetirePromises {
+                after: None,
+                limit: 0,
+            },
+        )
+        .unwrap_err();
+    assert_eq!(error.code, code::INVALID_INPUT);
 }
 
 #[test]
-fn the_agent_lists_its_open_promises_oldest_first() {
-    let world = world();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "promise twice", Some(WINDOW));
-    let two = [
-        ("p1", "promise", promise("one", 30)),
-        ("p2", "promise", promise("two", 40)),
-    ];
-    turn(&world, 3, &two);
-    let (one, two) = (promised(chain, thread, "p1"), promised(chain, thread, "p2"));
-    turn(&world, 5, &[("l1", "promise_list", json!({}))]);
-    let listed = answered(chain, thread, "l1");
-    let rows = listed["promises"].as_array().unwrap();
-    let ids: Vec<u64> = rows
-        .iter()
-        .map(|row| row["promise"].as_u64().unwrap())
-        .collect();
-    assert_eq!(ids, [one.min(two), one.max(two)]);
-    assert_eq!(rows[0]["conversation"], json!(thread));
-    assert_eq!(listed["next"], Value::Null);
+fn old_promise_ops_and_queries_are_vacant_while_surviving_tags_stay_put() {
+    for tag in [35, 36, 37] {
+        let mut bytes = vec![tag];
+        bytes.extend([0; 100]);
+        assert!(abi::decode::<Op>(&bytes).is_err());
+    }
+    for tag in [39, 40, 41] {
+        let mut bytes = vec![tag];
+        bytes.extend([0; 100]);
+        assert!(abi::decode::<Query>(&bytes).is_err());
+    }
+    assert_eq!(abi::encode(&Op::Sweep), [38]);
+    assert_eq!(abi::encode(&Op::Renew { thread: 0 })[0], 39);
+    assert_eq!(abi::encode(&Query::ThreadCard { thread: 0 })[0], 42);
+    for tool in ["promise", "promise_keep", "promise_list"] {
+        assert!(crate::tools::find(tool).is_none());
+    }
 }
 
 #[test]
-fn an_ask_of_a_person_wakes_the_asker_and_only_that_person_closes_it() {
-    let world = world();
+fn retirement_cancels_indexed_callbacks_but_preserves_bookings_and_event_waits() {
+    let world = schemed();
     let chain = &world.chain;
-    let thread = world.opened("m1", "ask Ada to rule", Some(WINDOW));
+    let thread = world.opened("m1", "ordinary wake", Some(WINDOW));
+    let post = json!({ "post_message": {
+        "channel_id": "general", "message_id": "ordinary-scheduled",
+        "blocks": [{ "paragraph": [{ "text": "ordinary wake", "marks": [] }] }], "thread": null
+    }});
     turn(
         &world,
         3,
-        &[("a1", "promise", ask("rule on X", world.ada, 20))],
+        &[
+            (
+                "book",
+                "schedule_run",
+                json!({ "height": 40, "program": "chat", "op": post }),
+            ),
+            ("wait", "wait_for", json!({ "event": { "height": 50 } })),
+        ],
     );
-    let id = promised(chain, thread, "a1");
-    said(chain, 5, "Asked.");
-    let made = row(chain, id).expect("the ask is kept");
-    assert_eq!(
-        (made.owed_by, made.asked_by, made.thread),
-        (world.ada, world.agent, thread)
-    );
-    assert_eq!(owed(chain, world.ada), [id], "Ada owes it");
-    assert_eq!(asked(chain, world.agent), [id], "the agent asked it");
+    let booking = answered(chain, thread, "book")["entry"].as_u64().unwrap();
+    let wait = answered(chain, thread, "wait")["wait"].as_u64().unwrap();
+    seed(chain, 1, world.agent, world.ada, thread);
+    let mut callback = vec![37];
+    callback.extend(1u64.to_le_bytes());
+    let schedule = scheduler::Op::Schedule {
+        height: 30,
+        target: PROGRAM.into(),
+        payload: callback.clone(),
+    };
+    let entry: u64 = abi::decode(
+        &chain
+            .submit(
+                Origin::Program(PROGRAM.into()),
+                scheduler::PROGRAM,
+                &schedule,
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    chain
+        .host(PROGRAM)
+        .borrow_mut()
+        .state
+        .insert(ENTRIES.key(&1u64), abi::encode(&entry));
+    assert_eq!(retire(chain, None, 1), None);
+    let scheduler::Reply::Entry(found) = chain
+        .query(scheduler::PROGRAM, &scheduler::Query::Entry { id: entry })
+        .unwrap()
+    else {
+        panic!("scheduler entry reply")
+    };
+    assert!(found.is_none());
     assert!(
-        owed(chain, world.agent).is_empty(),
-        "the agent owes nothing"
+        !chain
+            .host(PROGRAM)
+            .borrow()
+            .state
+            .contains_key(&ENTRIES.key(&1u64))
     );
-
-    world.mention("m2", "close it yourself");
-    let keep = json!({ "promise": id, "kept": true, "how": "ruled" });
-    turn(&world, 7, &[("k1", "promise_keep", keep)]);
-    let text = refused(chain, thread, "k1");
-    assert!(text.starts_with(code::UNAUTHORIZED), "{text}");
-    said(chain, 9, "Only Ada closes it.");
-
-    chain.at(made.due + 1, 0);
-    let [wake] = told(chain, thread).try_into().expect("one wake");
-    let due = format!("Ask {id} of account {} is due: rule on X", world.ada);
-    assert!(wake.starts_with(&due), "{wake}");
-
-    let keep = Op::Keep {
-        promise: id,
-        kept: true,
-        how: "ruled: X stands".into(),
+    let Reply::Booking(Some(row)) = chain
+        .query(PROGRAM, &Query::Booking { entry: booking })
+        .unwrap()
+    else {
+        panic!("ordinary booking remains")
     };
-    chain.submit(signed(ADA), PROGRAM, &keep).unwrap();
-    let closed = row(chain, id).unwrap().closed.expect("Ada closed it");
-    assert_eq!(
-        (closed.kept, closed.how.as_str()),
-        (true, "ruled: X stands")
+    assert_eq!(row.ran, None);
+    let Reply::Wait(Some(row)) = chain.query(PROGRAM, &Query::Wait { wait }).unwrap() else {
+        panic!("ordinary wait remains")
+    };
+    assert_eq!(row.ended, None);
+    chain.at(41, 0);
+    let Reply::Booking(Some(row)) = chain
+        .query(PROGRAM, &Query::Booking { entry: booking })
+        .unwrap()
+    else {
+        panic!("ordinary booking runs")
+    };
+    assert!(row.ran.is_some());
+    chain.at(51, 0);
+    let Reply::Wait(Some(row)) = chain.query(PROGRAM, &Query::Wait { wait }).unwrap() else {
+        panic!("ordinary wait fires")
+    };
+    assert!(row.ended.is_some());
+    chain.at(4000, 0);
+    assert!(
+        !chain
+            .host(PROGRAM)
+            .borrow()
+            .state
+            .keys()
+            .any(|key| key.starts_with(b"promise-entry/"))
     );
-    assert!(owed(chain, world.ada).is_empty());
-    assert!(asked(chain, world.agent).is_empty());
+    assert!(abi::decode::<Op>(&callback).is_err());
 }
 
 #[test]
-fn an_ask_of_another_agent_wakes_that_agents_conversation_and_the_askers() {
-    let world = world();
+fn old_callback_cannot_rebook_and_retirement_handles_consumed_and_orphan_entries() {
+    let world = schemed();
     let chain = &world.chain;
-    let thread = world.opened("m1", "ask Ranger to check", Some(WINDOW));
-    let create = identity::Op::CreateAgent {
-        name: "Ranger".into(),
+    let thread = world.opened("m1", "unfinished work stays unfinished", Some(WINDOW));
+    seed(chain, 1, world.agent, world.ada, thread);
+    let mut callback = vec![37];
+    callback.extend(1u64.to_le_bytes());
+    let schedule = scheduler::Op::Schedule {
+        height: 30,
+        target: PROGRAM.into(),
+        payload: callback,
     };
-    let ranger = number(identity_op(chain, ADA, create).unwrap());
-    scripted(chain, ranger, CONFIG);
-    let check = ask("check the pods", ranger, 20);
-    turn(&world, 3, &[("a1", "promise", check)]);
-    let id = promised(chain, thread, "a1");
-    said(chain, 5, "Asked.");
-    assert_eq!(owed(chain, ranger), [id]);
-
-    chain.at(6, 0);
-    world.post(ADA, "general", "m9", &format!("<@{ranger}> hello"));
-    let asked_of = Query::Threads {
-        agent: ranger,
-        page: PageRequest::default(),
+    let scheduled = || -> u64 {
+        abi::decode(
+            &chain
+                .submit(
+                    Origin::Program(PROGRAM.into()),
+                    scheduler::PROGRAM,
+                    &schedule,
+                )
+                .unwrap(),
+        )
+        .unwrap()
     };
-    let Reply::Threads(page) = chain.query(&harness(), &asked_of).unwrap() else {
-        panic!("harness answers threads")
-    };
-    let [theirs] = page.items.try_into().expect("Ranger has one conversation");
-
-    chain.at(row(chain, id).unwrap().due + 1, 0);
-    let [owing] = told(chain, theirs.id)
-        .try_into()
-        .expect("Ranger is woken once");
-    let owes = format!(
-        "Ask {id} is due: account {} asked you: check the pods",
-        world.agent
+    let consumed = scheduled();
+    let cancelled = scheduled();
+    chain
+        .submit(
+            Origin::Program(PROGRAM.into()),
+            scheduler::PROGRAM,
+            &scheduler::Op::Cancel { entry: cancelled },
+        )
+        .unwrap();
+    let pending = scheduled();
+    let host = chain.host(PROGRAM);
+    for (id, entry) in [(1u64, consumed), (2, cancelled), (3, pending)] {
+        host.borrow_mut()
+            .state
+            .insert(ENTRIES.key(&id), abi::encode(&entry));
+    }
+    chain.at(31, 0);
+    assert_eq!(
+        host.borrow().state.get(&ENTRIES.key(&1u64)),
+        Some(&abi::encode(&consumed))
     );
-    assert!(owing.starts_with(&owes), "{owing}");
-    let [asking] = told(chain, thread)
-        .try_into()
-        .expect("the asker is woken once");
-    let chase = format!("Ask {id} of account {ranger} is due: check the pods");
-    assert!(asking.starts_with(&chase), "{asking}");
+    chain.at(4000, 0);
+    assert_eq!(
+        host.borrow().state.get(&ENTRIES.key(&1u64)),
+        Some(&abi::encode(&consumed))
+    );
+    let scheduler::Reply::Entry(Some(row)) = chain
+        .query(
+            scheduler::PROGRAM,
+            &scheduler::Query::Entry { id: consumed },
+        )
+        .unwrap()
+    else {
+        panic!("old callback receipt")
+    };
+    assert!(row.receipt.is_some());
+    let row: PromiseRow =
+        abi::decode(host.borrow().state.get(&PROMISES.key(&1u64)).unwrap()).unwrap();
+    assert!(row.closed.is_none());
+    assert_eq!(retire(chain, None, 1), Some(1));
+    assert_eq!(retire(chain, Some(1), 1), Some(2));
+    assert_eq!(retire(chain, Some(2), 1), None);
+    assert!(
+        !host
+            .borrow()
+            .state
+            .keys()
+            .any(|key| key.starts_with(b"promise-entry/") || key.starts_with(b"promise/"))
+    );
 }
 
 #[test]
-fn a_compacted_conversation_hears_its_agents_open_promises_next() {
+fn legacy_rows_are_not_reinjected_after_compaction() {
     let world = world();
     let chain = &world.chain;
     let thread = world.opened("m1", "remember the plan", Some(2_000));
-    turn(
-        &world,
-        3,
-        &[("p1", "promise", promise("post the plan", 50))],
+    seed(chain, 1, world.agent, world.ada, thread);
+    chain.at(3, 0);
+    model_says_after(
+        chain,
+        json!([{ "type": "text", "text": "Noted." }]),
+        "end_turn",
+        1000,
     );
-    let id = promised(chain, thread, "p1");
-    chain.at(5, 0);
-    let words = json!([{ "type": "text", "text": "Promised." }]);
-    model_says_after(chain, words, "end_turn", 1000);
     world.mention("m2", "and now?");
-    chain.at(6, 0);
+    chain.at(4, 0);
     summarized(chain, "Ada set out the plan.");
-    let messages = sent_messages(chain);
-    let last = messages.last().unwrap()["content"].to_string();
-    let listed = last.contains("Your open promises:")
-        && last.contains(&format!("promise {id}"))
-        && last.contains("post the plan");
-    assert!(listed, "{last}");
-}
-
-#[test]
-fn a_promise_whose_bound_conversation_closed_wakes_the_one_opened_next_at_its_place() {
-    let world = world();
-    let chain = &world.chain;
-    let canonical = world.opened("m1", "hello", Some(WINDOW));
-    said(chain, 3, "Hi.");
-    super::wait::channel(&world, "ops");
-    let thread = super::wait::opened_at(&world, "ops");
-    let ask = format!("<@{}> promise then go", world.agent);
-    world.post(ADA, "ops", "o1", &ask);
-    turn(&world, 4, &[("p1", "promise", promise("follow up", 20))]);
-    let id = promised(chain, thread, "p1");
-    said(chain, 6, "Promised.");
-    chain
-        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
-        .unwrap();
-    let heir = super::wait::opened_at(&world, "ops");
-    let due = row(chain, id).unwrap().due;
-    chain.at(due + 1, 0);
-    let words = format!("Promise {id} is due: follow up");
-    let woke = |thread: u64| {
-        told(chain, thread)
-            .iter()
-            .any(|text| text.starts_with(&words))
-    };
-    assert!(woke(heir), "{:?}", told(chain, heir));
-    assert!(!woke(canonical), "{:?}", told(chain, canonical));
-    assert!(!woke(thread));
-    assert_eq!(row(chain, id).unwrap().thread, heir);
+    let sent = json!(sent_messages(chain)).to_string();
+    assert!(!sent.contains("Your open promises:"));
+    assert!(!sent.contains("legacy unfinished work"));
+    assert!(
+        chain
+            .host(PROGRAM)
+            .borrow()
+            .state
+            .contains_key(&PROMISES.key(&1u64))
+    );
 }

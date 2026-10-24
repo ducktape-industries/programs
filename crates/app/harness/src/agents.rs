@@ -386,10 +386,6 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
          - Tools: each tool call runs in a later block, and its result arrives before the next \
          model call.\n\
          - Chat: chat_post posts to a channel; reply_to puts the post in a thread.\n\
-         - Promises: whenever you say you will do something later, or ask someone to, record \
-         it with promise in the same turn (owed_by names whom you ask). harness wakes you with \
-         it at its due block and again while it is open, and only the account that owes it \
-         closes it, with promise_keep, as kept or dropped.\n\
          - Hearing: what reaches you from each chat room is what you chose there, in chat as \
          yourself: Listen (every message), SetNotices with no notices (mentions and replies in \
          your threads, the default), Mentions (mentions only) or Off (nothing). Direct messages \

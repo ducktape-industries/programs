@@ -2087,21 +2087,6 @@
               "Op__RunEnded"
             ],
             [
-              35,
-              "Promise",
-              "Op__Promise"
-            ],
-            [
-              36,
-              "Keep",
-              "Op__Keep"
-            ],
-            [
-              37,
-              "PromiseDue",
-              "Op__PromiseDue"
-            ],
-            [
               38,
               "Sweep",
               "Op__Sweep"
@@ -2110,6 +2095,11 @@
               39,
               "Renew",
               "Op__Renew"
+            ],
+            [
+              40,
+              "RetirePromises",
+              "Op__RetirePromises"
             ]
           ]
         }
@@ -2269,29 +2259,6 @@
       }
     ],
     [
-      "Op__Keep",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "promise",
-                "u64"
-              ],
-              [
-                "kept",
-                "bool"
-              ],
-              [
-                "how",
-                "String"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "Op__NewThread",
       {
         "struct": {
@@ -2319,56 +2286,6 @@
               [
                 "place",
                 "Place"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Op__Promise",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "thread",
-                "u64"
-              ],
-              [
-                "owed_by",
-                "u64"
-              ],
-              [
-                "channel",
-                "String"
-              ],
-              [
-                "seq",
-                "u64"
-              ],
-              [
-                "text",
-                "String"
-              ],
-              [
-                "due",
-                "u64"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Op__PromiseDue",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "promise",
-                "u64"
               ]
             ]
           }
@@ -2428,6 +2345,25 @@
             "named_fields": [
               [
                 "thread",
+                "u64"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    [
+      "Op__RetirePromises",
+      {
+        "struct": {
+          "fields": {
+            "named_fields": [
+              [
+                "after",
+                "Option<u64>"
+              ],
+              [
+                "limit",
                 "u64"
               ]
             ]
@@ -2702,46 +2638,6 @@
               1,
               "Some",
               "Partial"
-            ]
-          ]
-        }
-      }
-    ],
-    [
-      "Option<PromiseClosed>",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "None",
-              "()"
-            ],
-            [
-              1,
-              "Some",
-              "PromiseClosed"
-            ]
-          ]
-        }
-      }
-    ],
-    [
-      "Option<PromiseRow>",
-      {
-        "enum": {
-          "tag_width": 1,
-          "variants": [
-            [
-              0,
-              "None",
-              "()"
-            ],
-            [
-              1,
-              "Some",
-              "PromiseRow"
             ]
           ]
         }
@@ -3278,29 +3174,6 @@
       }
     ],
     [
-      "PageResponse<PromiseRow>",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "height",
-                "u64"
-              ],
-              [
-                "items",
-                "Vec<PromiseRow>"
-              ],
-              [
-                "next",
-                "Option<Vec<u8>>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "PageResponse<ProviderRouteRow>",
       {
         "struct": {
@@ -3570,84 +3443,6 @@
       }
     ],
     [
-      "PromiseClosed",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "height",
-                "u64"
-              ],
-              [
-                "kept",
-                "bool"
-              ],
-              [
-                "how",
-                "String"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "PromiseRow",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "id",
-                "u64"
-              ],
-              [
-                "owed_by",
-                "u64"
-              ],
-              [
-                "asked_by",
-                "u64"
-              ],
-              [
-                "thread",
-                "u64"
-              ],
-              [
-                "channel",
-                "String"
-              ],
-              [
-                "seq",
-                "u64"
-              ],
-              [
-                "text",
-                "String"
-              ],
-              [
-                "made",
-                "u64"
-              ],
-              [
-                "due",
-                "u64"
-              ],
-              [
-                "next",
-                "u64"
-              ],
-              [
-                "closed",
-                "Option<PromiseClosed>"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
       "ProviderRouteRow",
       {
         "struct": {
@@ -3847,21 +3642,6 @@
               "Query__BudgetFacts"
             ],
             [
-              39,
-              "Promises",
-              "Query__Promises"
-            ],
-            [
-              40,
-              "Promise",
-              "Query__Promise"
-            ],
-            [
-              41,
-              "Asked",
-              "Query__Asked"
-            ],
-            [
               42,
               "ThreadCard",
               "Query__ThreadCard"
@@ -3942,25 +3722,6 @@
             "named_fields": [
               [
                 "thread",
-                "u64"
-              ],
-              [
-                "page",
-                "PageRequest"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Query__Asked",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "agent",
                 "u64"
               ],
               [
@@ -4239,40 +4000,6 @@
               [
                 "thread",
                 "u64"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Query__Promise",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "promise",
-                "u64"
-              ]
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Query__Promises",
-      {
-        "struct": {
-          "fields": {
-            "named_fields": [
-              [
-                "agent",
-                "u64"
-              ],
-              [
-                "page",
-                "PageRequest"
               ]
             ]
           }
@@ -4855,16 +4582,6 @@
               "Reply__BudgetFacts"
             ],
             [
-              34,
-              "Promises",
-              "Reply__Promises"
-            ],
-            [
-              35,
-              "Promise",
-              "Reply__Promise"
-            ],
-            [
               36,
               "ConversationModels",
               "Reply__ConversationModels"
@@ -5070,30 +4787,6 @@
           "fields": {
             "unnamed_fields": [
               "Option<Partial>"
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Reply__Promise",
-      {
-        "struct": {
-          "fields": {
-            "unnamed_fields": [
-              "Option<PromiseRow>"
-            ]
-          }
-        }
-      }
-    ],
-    [
-      "Reply__Promises",
-      {
-        "struct": {
-          "fields": {
-            "unnamed_fields": [
-              "PageResponse<PromiseRow>"
             ]
           }
         }
@@ -5322,12 +5015,12 @@
                 "Option<Vec<u8>>"
               ],
               [
-                "Promise",
+                "Renew",
                 "u64"
               ],
               [
-                "Renew",
-                "u64"
+                "RetirePromises",
+                "Option<u64>"
               ]
             ]
           }
@@ -6712,19 +6405,6 @@
       {
         "sequence": {
           "elements": "Frame",
-          "length_range": {
-            "end": 4294967295,
-            "start": 0
-          },
-          "length_width": 4
-        }
-      }
-    ],
-    [
-      "Vec<PromiseRow>",
-      {
-        "sequence": {
-          "elements": "PromiseRow",
           "length_range": {
             "end": 4294967295,
             "start": 0

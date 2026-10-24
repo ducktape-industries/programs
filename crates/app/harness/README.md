@@ -255,8 +255,7 @@ A wait, a wake or a booked run's report for a conversation that has closed reach
 whose `Armed` lists the waits it took over. `Wakes` lists a pending booked run under the
 open conversation its report will reach, following closed predecessors through their heirs,
 not under the closed predecessors. With no heir the report is a notice on the closed one,
-never delivered to another. A promise whose conversation closed reaches its heir, else the
-agent's current conversation. A mention, a direct message or a
+never delivered to another. A mention, a direct message or a
 thread reply that reaches a conversation stays the agent's until the agent posts or
 reacts in its place (that thread, or anywhere in that room for a message outside a
 thread; a reaction answers where the message it is on sits): when the conversation
@@ -276,3 +275,12 @@ naming its input and the queries and ops it sends as the agent in their programs
 shapes, checked against the live schemas before each model call; a file that fails is
 left out and the system prompt says why, and `Query::AgentTools { agent }` lists every
 tool an agent gets with its source
+
+Promises are retired: no obligation creation, acknowledgement, repeating reminder, native promise tool,
+or post-compaction obligation list remains. Old promise op/query tags are vacant; surviving tags
+are unchanged, so pre-existing serialized callbacks cannot execute or rebook. `RetirePromises`
+(anyone) removes at most `limit` legacy ids after `after`, cancelling only scheduler entries indexed
+by those ids and deleting their records and debtor/asker indexes. It returns the last removed id
+when more remain, otherwise null; continue from that cursor. Retirement makes no kept/dropped claim
+about the underlying work. Ordinary booked runs, event waits, note delivery, board state and
+per-agent summary directives are unchanged.

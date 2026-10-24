@@ -2,7 +2,7 @@
 //! account to ask (`routes.rs`), learn the window, summarize when the next answer would not fit,
 //! ask for a streamed reply, acknowledge its calls, and keep asking while tools run independently.
 use ::program::{
-    BlobId, Ctx, Error, ExecCtx, HashKind, Principal, ProgramId, QueryCtx, Range, unexpected_reply,
+    BlobId, Ctx, Error, ExecCtx, HashKind, ProgramId, QueryCtx, Range, unexpected_reply,
     wrong_state,
 };
 use abi::role::egress::{self, http};
@@ -1124,10 +1124,6 @@ fn summarize(
     thread.context = Context::Measured(summary.tokens);
     thread.base = through + 1;
     thread.compact_before = None;
-    if let Some(text) = crate::promises::open_list(ctx, thread.agent)? {
-        let author = Principal::Root;
-        say(ctx, thread, Body::Post { author, text });
-    }
     unseal(ctx, thread)
 }
 
