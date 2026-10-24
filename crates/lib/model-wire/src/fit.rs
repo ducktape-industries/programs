@@ -58,9 +58,10 @@ pub fn tool_id(provider: &str, id: &str) -> String {
     }
 }
 
-fn words(lane: &Lane, block: &Block) -> Option<Block> {
+pub fn words(lane: &Lane, block: &Block) -> Option<Block> {
     let text = match lane.provider.as_str() {
         anthropic::PROVIDER => anthropic::plain(block),
+        codex::PROVIDER => codex::plain(block),
         _ => match block {
             Block::Text { text, .. } => Some(text.clone()),
             _ => None,

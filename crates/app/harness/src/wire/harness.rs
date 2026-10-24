@@ -7,7 +7,7 @@ use abi::role::egress::http::{Head, Method, Response};
 use model_wire::{Block, Class, Event, Failure, Message, Shown, UserBlock};
 use serde_json::{Map, Value, json};
 
-use super::{Answered, Foreign, Header, Summarized, Summary, anthropic};
+use super::{Answered, Foreign, Header, Summarized, Summary};
 use crate::pictures::{Look, Looks};
 use crate::{Body, Flow, Forming, Frame, Partial, Role, Said, tools};
 
@@ -230,15 +230,10 @@ fn untyped(tool: &str, input: String) -> String {
     }
 }
 
-fn plain(said: &Said) -> Option<Block> {
+fn plain(lane: &model_wire::Lane, said: &Said) -> Option<Block> {
     match said {
         Said::ServerToolUse { .. } | Said::ServerToolResult(_) | Said::Cited { .. } => {
-            let plain = anthropic::plain_block(said)?;
-            let text = plain["text"].as_str()?.to_owned();
-            Some(Block::Text {
-                text,
-                citations: Vec::new(),
-            })
+            model_wire::fit::words(lane, &block(said))
         }
         Said::Text(_)
         | Said::Thinking { .. }
@@ -272,7 +267,7 @@ pub(crate) fn message(
                     model_wire::Lane::of(model_wire::anthropic::PROVIDER, model)
                 });
                 let blocks = match foreign.contains(&frame.seq) {
-                    true => said.iter().filter_map(plain).collect(),
+                    true => said.iter().filter_map(|said| plain(&lane, said)).collect(),
                     false => said.iter().map(block).collect(),
                 };
                 Some(Message::Assistant { lane, blocks })

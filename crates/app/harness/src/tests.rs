@@ -9,6 +9,7 @@ mod cached;
 mod chat_channels;
 mod chat_messages;
 mod chat_search;
+mod codex_search;
 mod compact_at;
 mod compaction_instruction;
 mod compaction_progress;

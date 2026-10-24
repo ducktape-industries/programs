@@ -69,7 +69,9 @@ the next answer on its route books it, or `Op::Sweep`, a standing run every
 `DEFAULT_WAIT` (64) blocks that anyone may start, does. The conversation keeps its model
 and provider. `Query::Route { thread }` and `Query::Routes` record the last answerer, not
 a placement preference. Account-bound sealed content and server tools go as plain text on
-unpinned calls, while their lanes preserve who wrote them. `Query::Answerers { thread,
+unpinned calls, while their lanes preserve who wrote them. The harness wire uses the
+originating provider's shared plain-text conversion, preserving search actions and citation
+page titles/URLs without account-bound encrypted state. `Query::Answerers { thread,
 page }` records each turn and summary's service, account and move, and usage records the
 cache-write cost. `Query::Agent` answers what harness
 resolves for an account: its configuration path, the configuration and its provider's

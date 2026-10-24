@@ -7,8 +7,8 @@ use serde_json::{Value, json};
 
 use crate::budget::{self, Budget, Window, header};
 use crate::{
-    Block, Class, Event, Failure, Lane, Message, Reply, Request, Shown, Stop, Thinking, Usage,
-    UserBlock,
+    Block, Class, Event, Failure, Lane, Message, Reply, Request, ServerTool, Shown, Stop, Thinking,
+    Usage, UserBlock,
 };
 
 pub const PROVIDER: &str = "openai";
@@ -56,8 +56,12 @@ fn said(role: &str, content: Vec<Value>) -> Option<Value> {
     (!content.is_empty()).then(|| json!({ "type": "message", "role": role, "content": content }))
 }
 
-fn assistant_text(text: &str) -> Option<Value> {
-    let content = vec![json!({ "type": "output_text", "text": text })];
+fn assistant_text(text: &str, citations: &[String]) -> Option<Value> {
+    let annotations: Vec<Value> = citations
+        .iter()
+        .filter_map(|citation| serde_json::from_str(citation).ok())
+        .collect();
+    let content = vec![json!({ "type": "output_text", "text": text, "annotations": annotations })];
     (!text.is_empty())
         .then(|| said("assistant", content))
         .flatten()
@@ -74,7 +78,7 @@ pub fn body(request: &Request) -> Value {
             Message::Assistant { blocks, .. } => assistant(&mut input, blocks),
         }
     }
-    let tools: Vec<Value> = request
+    let mut tools: Vec<Value> = request
         .tools
         .iter()
         .map(|tool| {
@@ -87,6 +91,10 @@ pub fn body(request: &Request) -> Value {
             })
         })
         .collect();
+    tools.extend(request.server_tools.iter().filter_map(|tool| match tool {
+        ServerTool::WebSearch => Some(json!({ "type": "web_search" })),
+        ServerTool::WebFetch => None,
+    }));
     let mut body = json!({
         "model": request.model,
         "instructions": INSTRUCTIONS,
@@ -144,7 +152,8 @@ fn user(input: &mut Vec<Value>, blocks: &[UserBlock]) {
 fn assistant(input: &mut Vec<Value>, blocks: &[Block]) {
     for block in blocks {
         let item = match block {
-            Block::Text { text, .. } | Block::Summary { text, .. } => assistant_text(text),
+            Block::Text { text, citations } => assistant_text(text, citations),
+            Block::Summary { text, .. } => assistant_text(text, &[]),
             Block::Reasoning { sealed, .. } => sealed
                 .as_deref()
                 .and_then(|item| serde_json::from_str(item).ok()),
@@ -154,9 +163,10 @@ fn assistant(input: &mut Vec<Value>, blocks: &[Block]) {
                 "name": name,
                 "arguments": input,
             })),
-            Block::Redacted { .. }
-            | Block::ServerToolUse { .. }
-            | Block::ServerToolResult { .. } => None,
+            Block::ServerToolResult { sealed } => serde_json::from_str::<Value>(sealed)
+                .ok()
+                .filter(|item| item["type"] == "web_search_call"),
+            Block::Redacted { .. } | Block::ServerToolUse { .. } => None,
         };
         input.extend(item);
     }
@@ -169,21 +179,32 @@ fn text_of(value: &Value, key: &str) -> String {
 fn read_item(item: &Value) -> Option<Block> {
     match item["type"].as_str()? {
         "message" => {
-            let text: String = item["content"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|part| match part["type"].as_str()? {
-                    "output_text" => Some(text_of(part, "text")),
-                    "refusal" => Some(text_of(part, "refusal")),
-                    _ => None,
-                })
-                .collect();
-            Some(Block::Text {
-                text,
-                citations: Vec::new(),
-            })
+            let mut text = String::new();
+            let mut citations = Vec::new();
+            for part in item["content"].as_array().into_iter().flatten() {
+                match part["type"].as_str() {
+                    Some("output_text") => {
+                        let offset = text.chars().count() as u64;
+                        for annotation in part["annotations"].as_array().into_iter().flatten() {
+                            let mut annotation = annotation.clone();
+                            for key in ["start_index", "end_index"] {
+                                if let Some(index) = annotation[key].as_u64() {
+                                    annotation[key] = json!(index + offset);
+                                }
+                            }
+                            citations.push(annotation.to_string());
+                        }
+                        text.push_str(&text_of(part, "text"));
+                    }
+                    Some("refusal") => text.push_str(&text_of(part, "refusal")),
+                    _ => {}
+                }
+            }
+            Some(Block::Text { text, citations })
         }
+        "web_search_call" => Some(Block::ServerToolResult {
+            sealed: item.to_string(),
+        }),
         "function_call" => Some(Block::ToolUse {
             id: text_of(item, "call_id"),
             name: text_of(item, "name"),
@@ -205,6 +226,35 @@ fn read_item(item: &Value) -> Option<Block> {
         }
         _ => None,
     }
+}
+
+pub fn plain(block: &Block) -> Option<String> {
+    let text = match block {
+        Block::Text { text, citations } => {
+            let mut lines = vec![text.clone()];
+            for citation in citations {
+                let Ok(value) = serde_json::from_str::<Value>(citation) else {
+                    continue;
+                };
+                let (title, url) = (text_of(&value, "title"), text_of(&value, "url"));
+                let source = format!("{title} {url}").trim().to_owned();
+                let new_source = !url.is_empty() && !lines.contains(&source);
+                if new_source {
+                    lines.push(source);
+                }
+            }
+            lines.join("\n")
+        }
+        Block::ServerToolResult { sealed } => {
+            let item: Value = serde_json::from_str(sealed).ok()?;
+            if item["type"] != "web_search_call" {
+                return None;
+            }
+            format!("[web_search {}]", item["action"])
+        }
+        _ => return None,
+    };
+    (!text.is_empty()).then_some(text)
 }
 
 fn streamable(block: &Block) -> Option<&str> {

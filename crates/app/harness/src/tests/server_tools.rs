@@ -169,7 +169,7 @@ fn plain_words() -> Vec<Value> {
         "[web_search_tool_result]\nDucktape https://ducktape.example",
         "[web_fetch {\"url\":\"https://ducktape.example\"}]",
         "[web_fetch_tool_result]\nhttps://ducktape.example\nDucktape is a network.",
-        "Ducktape is a network.",
+        "Ducktape is a network.\nDucktape https://ducktape.example",
     ];
     words
         .iter()

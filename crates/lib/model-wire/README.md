@@ -62,6 +62,19 @@ and overrides on unsupported providers are refused by the adapter; Anthropic ove
 unsupported. Ordinary turns do not consume this field. Harness sends it only for summaries,
 outside the system prompt. `fit` preserves it. It is omitted from serialized requests when absent.
 
+## Codex web search
+
+`ServerTool::WebSearch` adds the Codex `web_search` hosted tool beside function tools.
+`WebFetch` has no separate Codex tool mapping. Search runs on the provider; it does not ask
+harness to execute a function. The adapter keeps complete `web_search_call` items in server
+results, including their actions and any encrypted content. Text annotations become citations;
+indices in multiple output-text parts are shifted into the joined text. Continuations to the
+same account replay those items and annotations. Other accounts/providers receive search
+actions and cited page titles/URLs as text, never encrypted content or native annotations.
+Provider entitlement and search availability are determined by the serving account, not by
+request serialization. Harness uses `fit::words` for foreign server blocks and citations
+before it sends history to an adapter, so both layers use the originating provider's conversion.
+
 ## The lane rule (`fit`)
 
 Each adapter fits a request before it spells it, by who wrote each assistant block and who reads
